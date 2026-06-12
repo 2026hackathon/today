@@ -3,3 +3,4 @@ MiniNotch/.build/
 MiniNotch/dist/
 .swiftpm/
 xcuserdata/
+.idea/
