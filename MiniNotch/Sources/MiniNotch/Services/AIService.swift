@@ -352,15 +352,24 @@ final class OpenAIChatAIService: AIService {
         只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
         "dueDate": "yyyy-MM-dd HH:mm" 或 null, "recurrence": "每天"/"每周一"等周期描述（非周期为 null）, \
         "aiExplanation": "一句话中文说明判断依据"}]}。
+        识别标准从宽：聊天里别人对我的请求/我答应别人的事、邮件里的 action、\
+        会议安排、需求描述、bug 报告、"记得/别忘了/要"句式都算待办；\
+        用户特意截这张图就是想存事项，尽量提取出最可能的 1 条而不是返回空；\
+        只有内容完全无行动语义（纯风景/代码/图表）才返回 {"todos": []}。
         当前时间：\(Self.now())。相对时间（明天/周五/下班前）换算成具体时间；\
-        周期任务的 dueDate 给下一次发生时间（今天该时间已过则为明天/下个周期）；没有任务返回 {"todos": []}。
+        周期任务的 dueDate 给下一次发生时间（今天该时间已过则为明天/下个周期）。
         """
         let content: [[String: Any]] = [
             ["type": "text", "text": "提取这张截图里的待办事项"],
             ["type": "image_url", "image_url": ["url": "data:image/png;base64,\(imageData.base64EncodedString())"]],
         ]
         let reply = try await chat(system: system, userContent: content, jsonMode: true)
-        return try Self.decodeDrafts(reply, source: .screenshot)
+        let drafts = try Self.decodeDrafts(reply, source: .screenshot)
+        if drafts.isEmpty {
+            // 「未识别」诊断：把模型原话留在日志里，能直接看到它看见了什么
+            NSLog("[AI] screenshot parsed empty, raw reply: \(reply.prefix(300))")
+        }
+        return drafts
     }
 
     func parseQuickInput(_ text: String) async throws -> TodoDraft {
