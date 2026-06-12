@@ -18,6 +18,7 @@
 - **状态切换只走 `store.present(_:)` / `store.dismiss()`**，动画统一 `IslandAnimation.spring`。
 - **错误不崩 UI**：所有外部调用 `do/catch`，失败走降级路径（spec 里有定义）。
 - **Swift 6 严格并发**：UI 与 Store 都是 `@MainActor`；后台干活用 `Task` + `await MainActor.run` 回主线程。
+- **岛体视图链必须身份稳定**：给岛体写修饰器时禁止 `if cond { self.xxx() } else { self }` 包住宿主——条件翻转会销毁重建整棵子树，壳体形变动画直接失效（闪现替换）。条件一律放进 `overlay { if ... }` / `background { if ... }` 内部（参考 `Effects/GlowEffects.swift` 的写法）。
 - 提交前必须 `cd MiniNotch && swift build` 通过 + `swift run` 冒烟（用菜单栏 Debug 菜单过一遍你改动的状态）。
 
 ## 工作流

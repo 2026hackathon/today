@@ -21,12 +21,12 @@ island 窗口 SHALL 不抢焦点、不占 Dock、覆盖全屏应用、在所有 
 - **WHEN** 用户在任意全屏应用中
 - **THEN** island 仍然吸附刘海位置可见、可交互
 
-### Requirement: 悬停与锁定展开
-island SHALL 支持 hover 弹出预览，点击 SHALL 锁定展开态（鼠标移出不收起），再次点击或按 esc 收起。失去焦点（点击其他应用 / ⌘Tab 切走）SHALL 收起所有非 compact 态。
+### Requirement: 悬停直接展开
+island SHALL 在悬停 compact 态时直接展开完整面板（无中间预览态，点击可跳过悬停延迟立即展开），鼠标移出、esc 或失去焦点（点击其他应用 / ⌘Tab 切走）SHALL 收起所有非 compact 态。
 
-#### Scenario: 悬停预览
-- **WHEN** 鼠标悬停 compact 态 ≥ 0.8s
-- **THEN** 显示最多 3 条待办的 hoverPreview，移出 0.3s 后收回
+#### Scenario: 悬停展开
+- **WHEN** 鼠标悬停 compact 态 ≥ 0.25s（防路过误触发）
+- **THEN** 壳体从刘海向下弹性拉伸，直接展开完整 Today 面板，内容延迟淡入；移出 0.2s 后收回
 
 #### Scenario: 失焦收起
 - **WHEN** island 处于展开/卡片态，用户点击其他应用窗口或通过 ⌘Tab 等方式激活其他应用

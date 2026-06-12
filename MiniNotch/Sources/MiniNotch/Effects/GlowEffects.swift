@@ -57,23 +57,32 @@ extension View {
     ///   所以流光主要在下沿和左右两侧可见（符合预期）。
     ///
     /// 用法：`shape.aiParsingGlow(active: state == .aiWorking, cornerRadius: geo.cornerRadius)`
-    @ViewBuilder
+    ///
+    /// ⚠️ 身份稳定：条件分支只能放在 overlay/background 内部。
+    /// 用 `if active { self... } else { self }` 包住宿主会改变视图身份，
+    /// active 翻转瞬间整棵岛体子树被销毁重建，壳体形变动画全部失效（闪现替换）。
     func aiParsingGlow(active: Bool, cornerRadius: CGFloat) -> some View {
-        if !active {
-            self
-        } else if MotionPreference.reduceMotion {
-            // 降级：静态 accent 边框（无动画、无 Metal）
-            self.overlay(
-                islandBorderShape(cornerRadius: cornerRadius)
-                    .strokeBorder(DS.Colors.accent.opacity(0.85), lineWidth: 1.5)
-                    .allowsHitTesting(false)
-            )
-        } else {
-            self.animatedGlow(
-                states: IslandGlowStates.aiParsing(cornerRadius: cornerRadius),
-                status: .default
-            )
-        }
+        self
+            .overlay {
+                if active && MotionPreference.reduceMotion {
+                    // 降级：静态 accent 边框（无动画、无 Metal）
+                    islandBorderShape(cornerRadius: cornerRadius)
+                        .strokeBorder(DS.Colors.accent.opacity(0.85), lineWidth: 1.5)
+                        .allowsHitTesting(false)
+                }
+            }
+            .background {
+                if active && !MotionPreference.reduceMotion {
+                    // glow 挂在与岛体同形的背景代理上（黑底上不可见），.behind 向外溢光
+                    islandBorderShape(cornerRadius: cornerRadius)
+                        .fill(DS.Colors.islandBG)
+                        .animatedGlow(
+                            states: IslandGlowStates.aiParsing(cornerRadius: cornerRadius),
+                            status: .default
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
     }
 
     /// 紧急/过期：红色脉冲 glow。
@@ -82,23 +91,29 @@ extension View {
     /// - 减弱动态效果开启：退化为静态红色细边框。
     ///
     /// 用法：`shape.urgentGlow(active: state == .urgent, cornerRadius: geo.cornerRadius)`
-    @ViewBuilder
+    ///
+    /// ⚠️ 身份稳定要求同 `aiParsingGlow`，条件只能在 overlay/background 内部。
     func urgentGlow(active: Bool, cornerRadius: CGFloat) -> some View {
-        if !active {
-            self
-        } else if MotionPreference.reduceMotion {
-            // 降级：静态 alert 红边框
-            self.overlay(
-                islandBorderShape(cornerRadius: cornerRadius)
-                    .strokeBorder(DS.Colors.alert.opacity(0.9), lineWidth: 1.5)
-                    .allowsHitTesting(false)
-            )
-        } else {
-            self.animatedGlow(
-                states: IslandGlowStates.urgent(cornerRadius: cornerRadius),
-                status: .default
-            )
-        }
+        self
+            .overlay {
+                if active && MotionPreference.reduceMotion {
+                    // 降级：静态 alert 红边框
+                    islandBorderShape(cornerRadius: cornerRadius)
+                        .strokeBorder(DS.Colors.alert.opacity(0.9), lineWidth: 1.5)
+                        .allowsHitTesting(false)
+                }
+            }
+            .background {
+                if active && !MotionPreference.reduceMotion {
+                    islandBorderShape(cornerRadius: cornerRadius)
+                        .fill(DS.Colors.islandBG)
+                        .animatedGlow(
+                            states: IslandGlowStates.urgent(cornerRadius: cornerRadius),
+                            status: .default
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
     }
 
     /// 完成金色高光：`trigger` 变化时播放一次 ~1s 后自动熄灭。
@@ -123,22 +138,26 @@ struct GoldFlashModifier: ViewModifier {
     @State private var flashing = false
 
     func body(content: Content) -> some View {
-        Group {
-            if !flashing {
-                content
-            } else if MotionPreference.reduceMotion {
-                content.overlay(
+        // 身份稳定：条件只在 overlay/background 内部（理由见 aiParsingGlow 注释）
+        content
+            .overlay {
+                if flashing && MotionPreference.reduceMotion {
                     islandBorderShape(cornerRadius: cornerRadius)
                         .strokeBorder(DS.Colors.gold.opacity(0.85), lineWidth: 1.5)
                         .allowsHitTesting(false)
-                )
-            } else {
-                content.animatedGlow(
-                    states: IslandGlowStates.gold(cornerRadius: cornerRadius),
-                    status: .default
-                )
+                }
             }
-        }
+            .background {
+                if flashing && !MotionPreference.reduceMotion {
+                    islandBorderShape(cornerRadius: cornerRadius)
+                        .fill(DS.Colors.islandBG)
+                        .animatedGlow(
+                            states: IslandGlowStates.gold(cornerRadius: cornerRadius),
+                            status: .default
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
         .onChange(of: trigger) { _, _ in
             flashing = true
         }

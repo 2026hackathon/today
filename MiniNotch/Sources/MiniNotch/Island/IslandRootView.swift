@@ -14,6 +14,9 @@ struct IslandRootView: View {
 
     @State private var isHovering = false
     @State private var hoverTask: Task<Void, Never>?
+    /// 壳体动画高度：实测内容自然高度后由弹簧驱动插值。
+    /// 不能依赖内容自适应（height=nil 时分支切换没有可插值的量，壳体会闪现替换）
+    @State private var measuredContentHeight: CGFloat = 0
 
     private var geo: IslandGeometry {
         IslandGeometry.geometry(for: store.islandState, notchSize: notchSize)
@@ -24,11 +27,23 @@ struct IslandRootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    /// 壳体当前应显示的高度：固定几何态直接用配置值，内容态用实测值
+    private var shellHeight: CGFloat {
+        max(geo.height ?? measuredContentHeight, max(notchSize.height, 32))
+    }
+
     private var islandBody: some View {
         content
+            // 灵动岛编舞：旧内容速隐 → 壳体拉伸 → 新内容带模糊浮现
+            .transition(IslandTransition.content)
             .frame(width: geo.width)
             .frame(height: geo.height)
-            .frame(minHeight: max(notchSize.height, 32))
+            // 实测内容自然高度（在裁切窗口之前测，拿到的是完整尺寸）
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: IslandContentHeightKey.self, value: proxy.size.height)
+            })
+            // 壳体窗口：高度是显式数值 → 弹簧可插值"拉长"；顶对齐保证只向下生长
+            .frame(width: geo.width, height: shellHeight, alignment: .top)
             .background(NotchShape(cornerRadius: geo.cornerRadius).fill(DS.Colors.islandBG))
             .clipShape(NotchShape(cornerRadius: geo.cornerRadius))
             // ── 动效挂载（effects spec）──
@@ -48,6 +63,18 @@ struct IslandRootView: View {
             .onHover { handleHover($0) }
             // 卡片态自动收回：newTask 悬浮 4s 后回落，悬停暂停（F-07）
             .task(id: autoDismissKey) { await autoDismissIfNeeded() }
+            .onPreferenceChange(IslandContentHeightKey.self) { newHeight in
+                Task { @MainActor in applyMeasuredHeight(newHeight) }
+            }
+    }
+
+    private func applyMeasuredHeight(_ newHeight: CGFloat) {
+        guard newHeight > 0, newHeight != measuredContentHeight else { return }
+        if measuredContentHeight == 0 {
+            measuredContentHeight = newHeight   // 启动首帧直接就位，不播动画
+        } else {
+            withAnimation(IslandAnimation.spring) { measuredContentHeight = newHeight }
+        }
     }
 
     // MARK: - 状态 → 视图路由
@@ -95,31 +122,38 @@ struct IslandRootView: View {
     private func handleTap() {
         switch store.islandState {
         case _ where store.islandState.isCompact, .hoverPreview:
+            // 点击 = 不等悬停延迟，立即展开
             store.present(.expanded(tab: .today))
         case .expanded:
-            store.dismiss()
+            break // 面板由悬停驱动，点击面板空白不收起（移出/esc/失焦才收）
         default:
             break // 卡片态点空白不收起，避免误触丢草稿
         }
     }
 
-    /// hover ≥0.8s 弹预览，移出 0.3s 收回（island-shell spec）
+    /// 悬停 0.25s 直接展开完整面板（无中间预览态），移出 0.2s 收回（island-shell spec）
     private func handleHover(_ hovering: Bool) {
         isHovering = hovering
         hoverTask?.cancel()
         hoverTask = Task { [hovering] in
             if hovering {
                 guard store.islandState.isCompact, store.islandState != .aiWorking else { return }
-                try? await Task.sleep(for: .seconds(0.8))
+                try? await Task.sleep(for: .seconds(0.25))
                 guard !Task.isCancelled, isHovering, store.islandState.isCompact else { return }
-                store.present(.hoverPreview)
+                store.present(.expanded(tab: .today))
             } else {
-                guard store.islandState == .hoverPreview else { return }
-                try? await Task.sleep(for: .seconds(0.3))
+                // 悬停驱动的态（预览/展开面板）移出即收；卡片/输入态不受影响
+                guard isHoverDriven(store.islandState) else { return }
+                try? await Task.sleep(for: .seconds(0.2))
                 guard !Task.isCancelled, !isHovering else { return }
                 store.dismiss()
             }
         }
+    }
+
+    private func isHoverDriven(_ state: IslandState) -> Bool {
+        if case .expanded = state { return true }
+        return state == .hoverPreview
     }
 
     // MARK: - 卡片自动收回
@@ -142,10 +176,57 @@ struct IslandRootView: View {
     }
 }
 
+// MARK: - 内容过渡（灵动岛节奏）
+
+/// 旧内容 0.09s 速隐（避免新旧重影）；新内容延迟 0.1s 带模糊+微缩放浮现，
+/// 时序上正好衔接壳体弹簧拉伸的中后段
+private enum IslandTransition {
+    // AnyTransition 非 Sendable，Swift 6 下不能做静态存储属性，用计算属性
+    static var content: AnyTransition { AnyTransition.asymmetric(
+        insertion: .modifier(
+            active: BlurFade(blur: 8, opacity: 0, scale: 0.97),
+            identity: BlurFade(blur: 0, opacity: 1, scale: 1)
+        )
+        .animation(.easeOut(duration: 0.18).delay(0.1)),
+        removal: .modifier(
+            active: BlurFade(blur: 6, opacity: 0, scale: 1),
+            identity: BlurFade(blur: 0, opacity: 1, scale: 1)
+        )
+        .animation(.easeIn(duration: 0.09))
+    ) }
+}
+
+private struct BlurFade: ViewModifier {
+    let blur: CGFloat
+    let opacity: Double
+    let scale: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: blur)
+            .opacity(opacity)
+            .scaleEffect(scale, anchor: .top)
+    }
+}
+
+/// 内容自然高度上报（取 max：分支切换瞬间新旧并存，目标高度以高者为准）
+private struct IslandContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 // MARK: - 刘海形状（上沿直角贴屏、下沿圆角）
 
 struct NotchShape: Shape {
     var cornerRadius: CGFloat = 10
+
+    /// 让 compact(18) ↔ 展开(24) 的圆角跟随形变渐变而不是跳变
+    var animatableData: CGFloat {
+        get { cornerRadius }
+        set { cornerRadius = newValue }
+    }
 
     func path(in rect: CGRect) -> Path {
         let r = min(cornerRadius, rect.height / 2)

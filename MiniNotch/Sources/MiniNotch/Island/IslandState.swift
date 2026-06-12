@@ -73,7 +73,8 @@ struct IslandGeometry: Equatable {
         case .aiWorking:
             return .init(width: compactW + 190, height: compactH, cornerRadius: DS.Radius.islandCompact)
         case .hoverPreview:
-            return .init(width: 280, height: nil, cornerRadius: DS.Radius.island)
+            // 与 compact 同宽：悬停时壳体只向下拉伸，不发生横向跳变
+            return .init(width: compactW + 150, height: nil, cornerRadius: DS.Radius.island)
         case .newTask, .reminder:
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)
         case .batch:

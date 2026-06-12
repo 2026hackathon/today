@@ -43,7 +43,7 @@ struct HoverPreview: View {
                 .foregroundStyle(DS.Colors.text3)
                 .padding(.top, 8)
         }
-        .padding(.top, 36)   // 摄像头区
+        // 摄像头避让由 IslandRootView 路由层统一加（notchHeight+4），这里不再叠加
         .padding(.horizontal, 14)
         .padding(.bottom, 14)
     }

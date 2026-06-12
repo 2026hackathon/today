@@ -279,5 +279,7 @@ final class AppStore: ObservableObject {
 // MARK: - 统一动画（island-shell spec：所有形态切换用同一弹簧）
 
 enum IslandAnimation {
-    static let spring = Animation.spring(response: 0.45, dampingFraction: 0.72)
+    // response 0.38 / damping 0.8：比默认更跟手、轻微回弹不过冲，
+    // 与内容浮现的 delay(0.1)+0.18s 时序衔接（IslandTransition）
+    static let spring = Animation.spring(response: 0.38, dampingFraction: 0.8)
 }
