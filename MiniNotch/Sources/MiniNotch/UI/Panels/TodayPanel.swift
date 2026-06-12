@@ -4,7 +4,7 @@ import SwiftUI
 // ============================================================
 // TodayPanel —— 展开态主面板（today-focus-redesign）。
 // Today 只回答「我今天要关注什么」，按时间相关性组织：
-//   今日日程 → 已超期 → 今日任务（有时间 → 无固定时间）→ 已完成
+//   已超期 → 今日任务（有时间 → 无固定时间，含当天日程/提醒）→ 已完成
 // 来源（截图/Jira/日历/提醒事项…）退化为行内小图标，不再作为分组依据。
 // 非今日内容在 Inbox tab（InboxPanel.swift）。
 // 本文件同时提供 Panels 模块的公共小组件（PanelTabBar / PanelSectionTitle /
@@ -107,14 +107,8 @@ struct TodayPanel: View {
 
             PanelDivider()
 
-            // 3. 今日日程（已完成之上，空则整段隐藏）
-            if !store.todayMeetings.isEmpty {
-                PanelSectionTitle(title: "今日日程", count: store.todayMeetings.count)
-                ForEach(store.todayMeetings) { meeting in
-                    MeetingRow(meeting: meeting)
-                }
-                PanelDivider()
-            }
+            // 今日日程不再单独成段：当天日程/提醒以 .calendar 任务进入「今日任务」
+            // （today-tasks-schedule-reminders spec），完整时间线在日历页签
 
             completedFold
         }
@@ -346,10 +340,12 @@ struct JiraTodoRow: View {
 
 struct MeetingRow: View {
     let meeting: Meeting
+    /// 对应 .calendar 任务已完成（日历页签传入，today-tasks-schedule-reminders spec）
+    var isCompleted: Bool = false
     @State private var hovering = false
     @State private var glowPulse = false
 
-    private var isOngoing: Bool { meeting.status == .ongoing }
+    private var isOngoing: Bool { meeting.status == .ongoing && !isCompleted }
 
     private var dotColor: Color {
         switch meeting.status {
@@ -367,7 +363,12 @@ struct MeetingRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            if meeting.isReminder || isImminent {
+            if isCompleted {
+                // 完成小图标：对应任务在「今日任务」中被勾掉
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DS.Colors.success)
+            } else if meeting.isReminder || isImminent {
                 Image(systemName: "bell.fill")
                     .font(.system(size: 9))
                     .foregroundStyle(DS.Colors.accent)
@@ -390,7 +391,8 @@ struct MeetingRow: View {
             }
             Text(meeting.title)
                 .font(DS.Fonts.todoTitle)
-                .foregroundStyle(.white)
+                .foregroundStyle(isCompleted ? DS.Colors.text3 : .white)
+                .strikethrough(isCompleted, color: DS.Colors.text3)
                 .lineLimit(1)
             if meeting.isReminder {
                 Text("提醒").dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
@@ -443,7 +445,7 @@ struct MeetingRow: View {
             }
         }
         .onHover { hovering = $0 }
-        .opacity(meeting.status == .ended ? 0.65 : 1)
+        .opacity(isCompleted || meeting.status == .ended ? 0.65 : 1)
     }
 }
 

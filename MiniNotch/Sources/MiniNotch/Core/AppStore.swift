@@ -37,6 +37,8 @@ final class AppStore: ObservableObject {
     var onTodoLanded: ((Todo) -> Void)?
     /// 手动刷新的实际同步逻辑（Jira/日历），AppDelegate 装配
     var onRefresh: (() async -> Void)?
+    /// 提醒事项任务完成/撤销 → EventKit 回写（calendarItemIdentifier, 完成态），AppDelegate 装配
+    var onReminderCompletionChanged: ((String, Bool) -> Void)?
 
     // MARK: - 日历权限（未授权时日历面板空态引导授权）
 
@@ -331,6 +333,11 @@ final class AppStore: ObservableObject {
         completionFlash += 1
         onTodoCompleted?(todos[i])
 
+        // 提醒事项来源：回写 EventKit isCompleted（日历事件无完成语义，不回写）
+        if let key = reminderEventId(of: todos[i]) {
+            onReminderCompletionChanged?(key, true)
+        }
+
         // 周期任务（每天/每周X）：完成本次后自动排下一次
         // （在庆祝判断之前 append，周期任务不算"清零"）
         if let next = Self.nextOccurrence(of: todos[i]) {
@@ -360,6 +367,11 @@ final class AppStore: ObservableObject {
         let completedAt = todos[i].completedAt
         todos[i].completedAt = nil
         crownedToday = false
+
+        // 提醒事项撤销完成：回写取消，否则下一轮合并会按 EventKit 完成态把它翻回已完成
+        if let key = reminderEventId(of: todos[i]) {
+            onReminderCompletionChanged?(key, false)
+        }
 
         // 周期任务撤销完成：回收完成时自动生成的下一次，避免重复
         if !todo.tags.filter({ $0.hasPrefix("每") }).isEmpty, let completedAt {
@@ -420,7 +432,66 @@ final class AppStore: ObservableObject {
 
     func replaceMeetings(_ new: [Meeting]) {
         meetings = new
+        mergeCalendarTodos()
         refreshCompactState()
+    }
+
+    /// 当天日程/提醒 → `.calendar` 任务合并（today-tasks-schedule-reminders spec）。
+    /// 按 calendarEventId upsert：标题/时间以日历为准，本地完成/snooze 状态保留（不复活）；
+    /// 本次同步未出现且未完成的项 prune（事件被删 / 跨天残留 / 权限回收清空）。
+    private func mergeCalendarTodos() {
+        // 今日且携带稳定标识的项才入任务；演示数据无标识不参与。
+        // 重复事件同日多实例共享 eventIdentifier → 取首个（按 start 升序）
+        var seen = Set<String>()
+        var fetched: [(meeting: Meeting, key: String)] = []
+        for meeting in todayMeetings {
+            guard let key = meeting.eventIdentifier, !seen.contains(key) else { continue }
+            seen.insert(key)
+            fetched.append((meeting, key))
+        }
+
+        todos.removeAll { todo in
+            guard todo.source == .calendar, !todo.isCompleted,
+                  let key = todo.calendarEventId else { return false }
+            return !seen.contains(key)
+        }
+
+        for (meeting, key) in fetched {
+            // 全天事件/无时间提醒不给 dueDate：落「无固定时间」分区，不触发提醒、不计超期
+            let dueDate = meeting.isAllDay ? nil : meeting.start
+            if let i = todos.firstIndex(where: { $0.source == .calendar && $0.calendarEventId == key }) {
+                todos[i].title = meeting.title
+                todos[i].dueDate = dueDate
+                // 提醒在外部（Apple 提醒事项）被勾掉 → 本地任务跟随完成。
+                // 单向同步：EventKit 未完成不清本地完成态（不复活规则优先）
+                if meeting.isCompleted, todos[i].completedAt == nil {
+                    todos[i].completedAt = Date()
+                }
+            } else if !meeting.isCompleted {
+                // 静默入库：日历同步每 15min 一轮，不播降落动效/通知卡；
+                // 外部已完成的提醒不再生成任务（只在日历页签打勾展示）
+                todos.append(Todo(title: meeting.title, source: .calendar,
+                                  dueDate: dueDate, calendarEventId: key))
+            }
+        }
+    }
+
+    /// todo 对应「提醒事项」时返回其 EventKit 标识（回写判定用；日历事件返回 nil）
+    private func reminderEventId(of todo: Todo) -> String? {
+        guard todo.source == .calendar, let key = todo.calendarEventId,
+              meetings.contains(where: { $0.eventIdentifier == key && $0.isReminder })
+        else { return nil }
+        return key
+    }
+
+    /// 日历页签完成标识：提醒事项以 EventKit 完成态为准（回写后/外部勾选都能立即反映）；
+    /// 日历事件按对应 `.calendar` 任务匹配，限定今日——重复事件跨天共享
+    /// eventIdentifier，其他天的实例不该跟着打勾
+    func isMeetingCompleted(_ meeting: Meeting) -> Bool {
+        if meeting.isCompleted { return true }
+        guard Calendar.current.isDateInToday(meeting.start),
+              let key = meeting.eventIdentifier else { return false }
+        return todos.contains { $0.source == .calendar && $0.calendarEventId == key && $0.isCompleted }
     }
 
     /// 外部 ticket 源同步（Jira / GitHub PR 共用）：按 jiraKey 合并 + 按来源镜像清理。

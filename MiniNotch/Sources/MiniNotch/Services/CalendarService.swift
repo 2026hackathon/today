@@ -24,30 +24,33 @@ enum CalendarServiceError: Error {
 protocol CalendarService: AnyObject {
     /// 查询指定日期范围内的所有会议和提醒事项（按 start 升序由实现方保证）
     func fetchMeetings(in range: ClosedRange<Date>) async throws -> [Meeting]
+    /// 提醒事项完成态回写 EventKit（completed=false 用于撤销完成，
+    /// today-tasks-schedule-reminders spec）
+    func setReminderCompleted(identifier: String, completed: Bool) async throws
 }
 
-/// 协议默认扩展：便捷方法 fetchTodayMeetings() 委托给 fetchMeetings(in: .today)
+/// 协议默认扩展：便捷方法 fetchTodayMeetings() 委托给 fetchMeetings(in: .today)；
+/// setReminderCompleted 默认空操作（Mock 无真实提醒可回写）
 @MainActor
 extension CalendarService {
     func fetchTodayMeetings() async throws -> [Meeting] {
         try await fetchMeetings(in: .today)
     }
+
+    func setReminderCompleted(identifier: String, completed: Bool) async throws {}
 }
 
 /// 同步窗口常量 + 日期范围便捷构造
 enum CalendarSyncConfig {
-    /// 同步窗口：过去天数（含今天共 syncDaysPast+1 天）
-    static let syncDaysPast = 29
-    /// 同步窗口：未来天数
-    static let syncDaysFuture = 6
+    /// 同步窗口：未来天数（日历只展示今天起到未来 7 天，不含历史）
+    static let syncDaysFuture = 7
 
-    /// 默认同步范围：[today - syncDaysPast, today + syncDaysFuture + 1)
+    /// 默认同步范围：[today 00:00, today + syncDaysFuture + 1)
     static func defaultRange() -> ClosedRange<Date> {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
-        let lower = cal.date(byAdding: .day, value: -syncDaysPast, to: todayStart)!
         let upper = cal.date(byAdding: .day, value: syncDaysFuture + 1, to: todayStart)!
-        return lower...upper
+        return todayStart...upper
     }
 }
 
@@ -235,7 +238,9 @@ final class EventKitCalendarService: CalendarService {
                     link: linkInfo?.0,
                     platform: linkInfo?.1,
                     attendees: ev.attendees?.compactMap(\.name) ?? [],
-                    calendarName: ev.calendar.title
+                    calendarName: ev.calendar.title,
+                    eventIdentifier: ev.eventIdentifier,
+                    isAllDay: ev.isAllDay
                 )
             }
         }
@@ -244,8 +249,15 @@ final class EventKitCalendarService: CalendarService {
         let reminderStatus = EKEventStore.authorizationStatus(for: .reminder)
         if reminderStatus == .fullAccess {
             let reminderCalendars = eventStore.calendars(for: .reminder)
-            let predicate = eventStore.predicateForIncompleteReminders(
+            let incompletePredicate = eventStore.predicateForIncompleteReminders(
                 withDueDateStarting: range.lowerBound, ending: range.upperBound,
+                calendars: reminderCalendars
+            )
+            // 已完成的提醒也要拉：日历页签保留该行并打勾（不然完成回写后整行消失）。
+            // 完成时间窗口向前多放 30 天兜底「提前勾掉未来提醒」的情况，due 仍按 range 过滤
+            let completedLower = Calendar.current.date(byAdding: .day, value: -30, to: range.lowerBound)!
+            let completedPredicate = eventStore.predicateForCompletedReminders(
+                withCompletionDateStarting: completedLower, ending: range.upperBound,
                 calendars: reminderCalendars
             )
 
@@ -253,12 +265,14 @@ final class EventKitCalendarService: CalendarService {
             // 注意：completion 在 EventKit 后台队列回调，闭包内不能执行 MainActor 隔离代码
             // （会触发运行时隔离断言崩溃）；EKReminder 非 Sendable 也不能跨隔离域传递。
             // 所以映射在回调队列上用 nonisolated 方法就地完成，只回传 Sendable 的 [Meeting]。
-            let reminderMeetings: [Meeting] = await withCheckedContinuation { continuation in
-                eventStore.fetchReminders(matching: predicate) { reminders in
-                    continuation.resume(returning: Self.mapReminders(reminders ?? []))
+            for predicate in [incompletePredicate, completedPredicate] {
+                let reminderMeetings: [Meeting] = await withCheckedContinuation { continuation in
+                    eventStore.fetchReminders(matching: predicate) { reminders in
+                        continuation.resume(returning: Self.mapReminders(reminders ?? [], dueWithin: range))
+                    }
                 }
+                results += reminderMeetings
             }
-            results += reminderMeetings
         }
 
         // 权限全无才报错
@@ -270,13 +284,29 @@ final class EventKitCalendarService: CalendarService {
         return results.sorted { $0.start < $1.start }
     }
 
-    /// EKReminder → Meeting 映射。nonisolated：在 EventKit 回调队列上执行，
+    /// 提醒完成态回写：按 calendarItemIdentifier 找到 EKReminder 写 isCompleted 并保存。
+    /// 找不到（已被外部删除）视为成功——本地状态本就不回滚
+    func setReminderCompleted(identifier: String, completed: Bool) async throws {
+        guard let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
+            NSLog("[Calendar] setReminderCompleted: \(identifier) not found (deleted externally?)")
+            return
+        }
+        reminder.isCompleted = completed
+        try eventStore.save(reminder, commit: true)
+        NSLog("[Calendar] setReminderCompleted: \(reminder.title ?? identifier) → \(completed)")
+    }
+
+    /// EKReminder → Meeting 映射（due 在 range 内才保留——已完成提醒按完成时间拉取，
+    /// 可能带出窗口外的 due）。nonisolated：在 EventKit 回调队列上执行，
     /// 不触碰 MainActor 状态（Meeting 为 Sendable struct，可安全跨队列返回）。
-    nonisolated private static func mapReminders(_ reminders: [EKReminder]) -> [Meeting] {
+    nonisolated private static func mapReminders(
+        _ reminders: [EKReminder], dueWithin range: ClosedRange<Date>
+    ) -> [Meeting] {
         let cal = Calendar.current
         return reminders.compactMap { reminder -> Meeting? in
             guard let dc = reminder.dueDateComponents,
-                  let dueDate = cal.date(from: dc) else { return nil }
+                  let dueDate = cal.date(from: dc),
+                  range.contains(dueDate) else { return nil }
             return Meeting(
                 title: reminder.title ?? "(无标题)",
                 start: dueDate,
@@ -285,7 +315,10 @@ final class EventKitCalendarService: CalendarService {
                 platform: nil,
                 attendees: [],
                 calendarName: reminder.calendar.title,
-                isReminder: true
+                isReminder: true,
+                eventIdentifier: reminder.calendarItemIdentifier,
+                isAllDay: dc.hour == nil, // 只有日期没有时间的提醒 → 无固定时间
+                isCompleted: reminder.isCompleted
             )
         }
     }

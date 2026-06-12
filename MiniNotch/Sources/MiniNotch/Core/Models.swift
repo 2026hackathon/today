@@ -96,6 +96,8 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
     /// AI 紧急度判断依据，如「检测到『今晚之前』关键词」
     var aiExplanation: String?
     var tags: [String] = []
+    /// 日历/提醒来源的 EventKit 稳定标识（合并同步与日历页签完成状态匹配的键）
+    var calendarEventId: String?
 
     var isCompleted: Bool { completedAt != nil }
 
@@ -120,7 +122,8 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         jiraKey: String? = nil, jiraURL: URL? = nil, jiraStatus: String? = nil,
         jiraStatusCategory: String? = nil,
         jiraAssigner: String? = nil, storyPoints: Double? = nil,
-        aiExplanation: String? = nil, tags: [String] = []
+        aiExplanation: String? = nil, tags: [String] = [],
+        calendarEventId: String? = nil
     ) {
         self.id = id; self.title = title; self.note = note
         self.source = source; self.priority = priority
@@ -131,6 +134,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         self.jiraStatusCategory = jiraStatusCategory
         self.jiraAssigner = jiraAssigner; self.storyPoints = storyPoints
         self.aiExplanation = aiExplanation; self.tags = tags
+        self.calendarEventId = calendarEventId
     }
 
     /// 向后兼容解码（review-fixes #4）：合成 Codable 不会用属性默认值兜底，
@@ -157,6 +161,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         storyPoints = try? c.decodeIfPresent(Double.self, forKey: .storyPoints)
         aiExplanation = try? c.decodeIfPresent(String.self, forKey: .aiExplanation)
         tags = (try? c.decodeIfPresent([String].self, forKey: .tags)) ?? []
+        calendarEventId = try? c.decodeIfPresent(String.self, forKey: .calendarEventId)
     }
 }
 
@@ -198,6 +203,14 @@ struct Meeting: Identifiable, Codable, Equatable, Sendable {
     var calendarName: String?
     /// 是否来自「提醒事项」（true 时 link/platform 通常为 nil，UI 用不同样式渲染）
     var isReminder: Bool = false
+    /// EventKit 稳定标识（EKEvent.eventIdentifier / EKReminder.calendarItemIdentifier），
+    /// .calendar 任务合并与完成状态匹配的键；演示数据为 nil（不入任务）
+    var eventIdentifier: String? = nil
+    /// 全天事件 / 无具体时间的提醒（对应任务落「无固定时间」分区，不按时间排）
+    var isAllDay: Bool = false
+    /// 提醒事项在 EventKit 中的完成态（日历事件恒 false）——
+    /// 已完成提醒保留在日历页签并打勾，外部勾选经合并同步进本地任务
+    var isCompleted: Bool = false
 
     enum Status { case upcoming, ongoing, ended }
 
@@ -207,6 +220,26 @@ struct Meeting: Identifiable, Codable, Equatable, Sendable {
         if now < start { return .upcoming }
         if now > end { return .ended }
         return .ongoing
+    }
+}
+
+/// 向后兼容解码（与 Todo 同理）：合成 Codable 不用属性默认值兜底，
+/// 新增非可选字段会让旧 meetings.json 整体解码失败。放 extension 里保留合成 memberwise init。
+extension Meeting {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        start = (try? c.decodeIfPresent(Date.self, forKey: .start)) ?? Date()
+        end = (try? c.decodeIfPresent(Date.self, forKey: .end)) ?? start
+        link = try? c.decodeIfPresent(URL.self, forKey: .link)
+        platform = try? c.decodeIfPresent(MeetingPlatform.self, forKey: .platform)
+        attendees = (try? c.decodeIfPresent([String].self, forKey: .attendees)) ?? []
+        calendarName = try? c.decodeIfPresent(String.self, forKey: .calendarName)
+        isReminder = (try? c.decodeIfPresent(Bool.self, forKey: .isReminder)) ?? false
+        eventIdentifier = try? c.decodeIfPresent(String.self, forKey: .eventIdentifier)
+        isAllDay = (try? c.decodeIfPresent(Bool.self, forKey: .isAllDay)) ?? false
+        isCompleted = (try? c.decodeIfPresent(Bool.self, forKey: .isCompleted)) ?? false
     }
 }
 

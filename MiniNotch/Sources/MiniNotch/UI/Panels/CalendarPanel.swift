@@ -109,6 +109,7 @@ struct CalendarPanel: View {
 private struct DateSection: View {
     let date: Date
     let meetings: [Meeting]
+    @EnvironmentObject var store: AppStore
 
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
 
@@ -116,7 +117,7 @@ private struct DateSection: View {
         VStack(alignment: .leading, spacing: 4) {
             header
             ForEach(meetings) { meeting in
-                MeetingRow(meeting: meeting)
+                MeetingRow(meeting: meeting, isCompleted: store.isMeetingCompleted(meeting))
             }
         }
         .padding(.horizontal, 8)

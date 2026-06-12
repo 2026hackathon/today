@@ -246,6 +246,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.refreshAISuggestion()
         }
 
+        // 提醒事项任务完成/撤销 → EventKit 回写（失败仅记日志，本地状态不回滚）
+        store.onReminderCompletionChanged = { [weak self] identifier, completed in
+            Task { @MainActor in
+                guard let service = self?.currentCalendarService() else { return }
+                do {
+                    try await service.setReminderCompleted(identifier: identifier, completed: completed)
+                } catch {
+                    NSLog("[Calendar] setReminderCompleted failed: \(error)")
+                }
+            }
+        }
+
         // ── 日历三层同步（apple-calendar-integration spec）──
         // Layer 1: 事件驱动（EKEventStoreChanged → 即时刷新）—— 权限授予后才挂接
         // Layer 3: 前台刷新（展开面板时立即拉一次）
@@ -371,10 +383,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if store.calendarAuthState != state { store.calendarAuthState = state }
     }
 
-    /// 首次同步检查：如果从未完成过首次同步，执行 30 天窗口历史数据拉取
+    /// 首次同步检查：如果从未完成过首次同步，执行默认窗口（今天起 7 天）拉取
     private func performInitialSyncIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: "calendarInitialSyncCompleted") else { return }
-        NSLog("[Calendar] performing initial historical sync (30-day window)")
+        NSLog("[Calendar] performing initial sync (today + 7-day window)")
         Task { @MainActor [weak self] in
             guard let self else { return }
             guard let service = self.currentCalendarService() else { return }
