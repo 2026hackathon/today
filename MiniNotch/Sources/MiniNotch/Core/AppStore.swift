@@ -33,6 +33,16 @@ final class AppStore: ObservableObject {
     /// 刷新进行中（刷新按钮转圈用）
     @Published private(set) var isRefreshing = false
 
+    /// Today 面板底部的 AI 一句话建议（AppDelegate 调 AIService 生成后注入；
+    /// 默认值即未配置 Key / 生成失败时的兜底文案）
+    @Published private(set) var aiSuggestion = "建议: 上午先清超期项，会议间隙处理今日任务。"
+
+    func updateAISuggestion(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        aiSuggestion = trimmed
+    }
+
     /// 手动刷新：立即同步外部数据源，不等轮询周期
     func refresh() {
         guard !isRefreshing, let onRefresh else { return }

@@ -187,6 +187,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 手动刷新按钮 → 立即同步 Jira + 日历
         store.onRefresh = { [weak self] in
             await self?.syncExternalSources(notifyJira: true)
+            self?.refreshAISuggestion()
+        }
+
+        // 启动后等首轮 Jira/日历同步落地，再生成 Today 底部一句话建议
+        refreshAISuggestion(afterSeconds: 3)
+    }
+
+    /// 生成 Today 面板底部的 AI 一句话建议（失败保持现有/兜底文案）
+    private func refreshAISuggestion(afterSeconds delay: Double = 0) {
+        Task { @MainActor in
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            if let text = try? await currentAIService().generateDailySuggestion(store.reportContext) {
+                store.updateAISuggestion(text)
+            }
         }
     }
 

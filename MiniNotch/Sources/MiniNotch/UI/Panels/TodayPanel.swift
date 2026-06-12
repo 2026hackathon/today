@@ -104,9 +104,8 @@ struct TodayPanel: View {
 
             completedFold
 
-            // 底部 AI 建议条
-            // TODO: B 接 AIService 后替换为真实建议
-            PanelAISuggestion(text: "建议: 上午先清超期项，会议间隙处理今日任务。")
+            // 底部 AI 建议条（AIService 生成，失败/未配置 Key 时是兜底文案）
+            PanelAISuggestion(text: store.aiSuggestion)
                 .padding(.top, 6)
         }
         .padding(.horizontal, 16)

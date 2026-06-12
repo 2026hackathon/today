@@ -29,6 +29,8 @@ protocol AIService: AnyObject {
     func parseQuickInput(_ text: String) async throws -> TodoDraft
     func generateMorningReport(_ ctx: ReportContext) async throws -> String
     func generateEveningReport(_ ctx: ReportContext) async throws -> String
+    /// 一句话行动建议（Today 面板底部建议条，30 字内）
+    func generateDailySuggestion(_ ctx: ReportContext) async throws -> String
 }
 
 // MARK: - Mock 实现（固定延迟 ~1.2s，永不失败 —— ai-pipeline spec）
@@ -233,6 +235,13 @@ final class MockAIService: AIService {
         return md
     }
 
+    // MARK: 一句话建议（固定文案，真实现走 LLM）
+
+    func generateDailySuggestion(_ ctx: ReportContext) async throws -> String {
+        try? await Task.sleep(for: .seconds(0.3))
+        return "建议: 上午先清超期项，会议间隙处理今日任务。"
+    }
+
     // MARK: 格式化辅助
 
     private static let dateLineFormatter: DateFormatter = {
@@ -346,6 +355,18 @@ final class OpenAIChatAIService: AIService {
             ## 📅 今日会议、## 🧩 Jira、## 💡 建议（含明早第一件事 + 休息提醒）。语气温和。
             """
         )
+    }
+
+    func generateDailySuggestion(_ ctx: ReportContext) async throws -> String {
+        let reply = try await chat(
+            system: """
+            你是用户的个人工作助理。根据上下文给出一句话行动建议：30 字以内、\
+            以「建议: 」开头、具体可执行（点名最该先做的事、如何利用会议间隙），不要换行。
+            """,
+            userContent: [["type": "text", "text": Self.contextText(ctx)]],
+            jsonMode: false
+        )
+        return reply.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: 内部
@@ -517,6 +538,11 @@ final class AnthropicAIService: AIService {
     func generateEveningReport(_ ctx: ReportContext) async throws -> String {
         guard !apiKey.isEmpty else { throw AIServiceError.notConfigured }
         // TODO: B 接真实 LLM 调用（ctx 序列化进 prompt，要求中文 markdown 晚报）
+        throw AIServiceError.notImplemented
+    }
+
+    func generateDailySuggestion(_ ctx: ReportContext) async throws -> String {
+        guard !apiKey.isEmpty else { throw AIServiceError.notConfigured }
         throw AIServiceError.notImplemented
     }
 }
