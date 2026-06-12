@@ -71,7 +71,11 @@ struct IslandGeometry: Equatable {
         let compactH = max(notchSize.height, 32)
 
         switch state {
-        case .idle, .normal, .near, .urgent, .justCompleted, .celebrate:
+        case .idle:
+            // 非活跃态收窄：内容只有「图标+数｜✓」，两翼各 ~55pt 足够，
+            // 今日做完后刘海尽量低存在感（宽度变化由弹簧平滑过渡）
+            return .init(width: compactW + 110, height: compactH, cornerRadius: DS.Radius.islandCompact)
+        case .normal, .near, .urgent, .justCompleted, .celebrate:
             // 真刘海中央是摄像头，compact 内容显示在两侧"翅膀"（各 ~75pt）
             return .init(width: compactW + 150, height: compactH, cornerRadius: DS.Radius.islandCompact)
         case .aiWorking:
