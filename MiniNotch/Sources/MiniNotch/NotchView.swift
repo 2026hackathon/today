@@ -12,14 +12,15 @@ struct NotchView: View {
     let notchSize: CGSize
     let expandedSize: CGSize
 
+    /// 当前可见尺寸 —— 悬停热区严格等于这个尺寸
+    private var currentSize: CGSize {
+        isExpanded ? expandedSize : notchSize
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             NotchShape(cornerRadius: 10)
                 .fill(.black)
-                .frame(
-                    width: isExpanded ? expandedSize.width : notchSize.width,
-                    height: isExpanded ? expandedSize.height : notchSize.height
-                )
                 .shadow(color: .black.opacity(isExpanded ? 0.3 : 0), radius: 12, y: 4)
 
             if isExpanded {
@@ -28,19 +29,17 @@ struct NotchView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .frame(width: expandedSize.width, height: expandedSize.height, alignment: .top)
-        .contentShape(
-            NotchShape(cornerRadius: 10)
-                .size(
-                    width: isExpanded ? expandedSize.width : notchSize.width,
-                    height: isExpanded ? expandedSize.height : notchSize.height
-                )
-        )
+        // 关键：这一层 frame 决定 onHover 的热区。
+        // 收起时只有刘海那一小块（水平居中、贴顶），展开后才是整个面板。
+        .frame(width: currentSize.width, height: currentSize.height, alignment: .top)
+        .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                 isExpanded = hovering
             }
         }
+        // 外层撑满窗口，保证布局位置稳定（顶部居中）
+        .frame(width: expandedSize.width, height: expandedSize.height, alignment: .top)
     }
 
     // MARK: - 展开态内容（占位，等待各模块接入）

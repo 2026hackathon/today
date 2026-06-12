@@ -29,7 +29,13 @@ enum NotchGeometry {
     static func notchSize(on screen: NSScreen) -> CGSize {
         let topInset = screen.safeAreaInsets.top
         if topInset > 0 {
-            // 刘海宽度没有公开 API，常见值 ~200pt
+            // auxiliaryTopLeft/RightArea 是刘海两侧的菜单栏区域（macOS 12+），
+            // 屏幕总宽减去两侧即为刘海精确宽度
+            if let left = screen.auxiliaryTopLeftArea,
+               let right = screen.auxiliaryTopRightArea {
+                let width = screen.frame.width - left.width - right.width
+                return CGSize(width: width, height: topInset)
+            }
             return CGSize(width: 200, height: topInset)
         }
         return fallbackSize
