@@ -56,7 +56,7 @@ struct TodayPanel: View {
             // 分组 2：JIRA TICKETS
             PanelSectionTitle(title: "JIRA TICKETS", count: store.jiraTodos.count)
             ForEach(store.jiraTodos) { todo in
-                JiraTodoRow(todo: todo) { store.complete(todo) }
+                JiraTodoRow(todo: todo)
             }
 
             PanelDivider()
@@ -166,12 +166,16 @@ private struct PersonalTodoRow: View {
 
 private struct JiraTodoRow: View {
     let todo: Todo
-    let onComplete: () -> Void
     @State private var hovering = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            PanelCheckCircle(action: onComplete)
+            // Jira 是只读集成（PRD Out of Scope：不改 Jira 状态），
+            // 不提供完成操作，用静态图标占住完成圈的位置保持对齐
+            Image(systemName: "briefcase.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(DS.Colors.text3)
+                .frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     if let key = todo.jiraKey {

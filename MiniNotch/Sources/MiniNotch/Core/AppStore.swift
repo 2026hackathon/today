@@ -77,7 +77,7 @@ final class AppStore: ObservableObject {
 
     private func derivedCompactState() -> IslandState {
         if isAIWorking { return .aiWorking }
-        if crownedToday && pendingTodos.isEmpty { return .celebrate }
+        if crownedToday && pendingTodos.allSatisfy({ $0.source == .jira }) { return .celebrate }
         guard let nearest = nextDue else {
             return pendingTodos.isEmpty ? .idle : .normal
         }
@@ -165,7 +165,8 @@ final class AppStore: ObservableObject {
         completionFlash += 1
         onTodoCompleted?(todos[i])
 
-        if pendingTodos.isEmpty {
+        // Jira 是只读集成不可完成，庆祝以「个人 Todo 清零」为准
+        if pendingTodos.allSatisfy({ $0.source == .jira }) {
             // 完成今日全部 → 全屏庆祝 + 皇冠（effects spec）
             crownedToday = true
             onCompletedAll?()
