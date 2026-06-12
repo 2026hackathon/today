@@ -12,7 +12,7 @@ struct SettingsPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             PanelTabBar(current: .settings)
-            ScrollView {
+            PanelScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     apiSection
                     hotkeySection
@@ -24,7 +24,7 @@ struct SettingsPanel: View {
                 .padding(.bottom, 18)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .scrollIndicators(.hidden)
+            
         }
         .padding(.top, 36) // 摄像头区留位
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

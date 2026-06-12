@@ -13,7 +13,7 @@ struct MorningReportPanel: View {
     @EnvironmentObject var store: AppStore
 
     var body: some View {
-        ScrollView {
+        PanelScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
 
@@ -30,7 +30,7 @@ struct MorningReportPanel: View {
             .padding(.bottom, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .scrollIndicators(.hidden)
+        
         .padding(.top, 36) // 摄像头区留位
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }

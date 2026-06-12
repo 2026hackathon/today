@@ -23,7 +23,7 @@ struct TodayPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             PanelTabBar(current: currentTab)
-            ScrollView {
+            PanelScrollView {
                 switch currentTab {
                 case .inbox:
                     InboxPanel()
@@ -33,7 +33,7 @@ struct TodayPanel: View {
                     todayBody
                 }
             }
-            .scrollIndicators(.hidden)
+            
         }
         .padding(.top, 36) // 摄像头区留位（prototype .island-body）
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
