@@ -261,7 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 喂全部 pendingTodos 会让 AI 建议 Inbox 里明天的事，和面板列表对不上
     private func todaySuggestionContext() -> ReportContext {
         ReportContext(
-            pendingTodos: store.overdueTodos + store.todayTimedTodos + store.todayUntimedTodos,
+            pendingTodos: store.overdueTodos + store.todayTimedTodos + store.todayUntimedTodos + store.todayExternalTodos,
             completedToday: store.completedToday,
             meetings: store.todayMeetings
         )

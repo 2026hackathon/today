@@ -74,15 +74,16 @@ struct TodayPanel: View {
             // 2. 今日任务：有时间按时间排 → 细分隔线 → 无固定时间按优先级排
             PanelSectionTitle(
                 title: "今日任务",
-                count: store.todayTimedTodos.count + store.todayUntimedTodos.count
+                count: store.todayTimedTodos.count + store.todayUntimedTodos.count + store.todayExternalTodos.count
             )
-            if store.todayTimedTodos.isEmpty && store.todayUntimedTodos.isEmpty {
+            if store.todayTimedTodos.isEmpty && store.todayUntimedTodos.isEmpty && store.todayExternalTodos.isEmpty {
                 Text("今天没有要处理的任务")
                     .font(DS.Fonts.meta)
                     .foregroundStyle(DS.Colors.text3)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
             }
+            // 可点击完成的个人任务置顶：有时间按时间排 → 无时间按优先级排
             ForEach(store.todayTimedTodos) { todo in
                 TaskRow(todo: todo)
             }
@@ -91,6 +92,15 @@ struct TodayPanel: View {
                     PanelMiniDividerLabel(text: "无固定时间")
                 }
                 ForEach(store.todayUntimedTodos) { todo in
+                    TaskRow(todo: todo)
+                }
+            }
+            // 外部只读项沉底（Jira/GitHub 不可完成，不挡可操作任务）
+            if !store.todayExternalTodos.isEmpty {
+                if !store.todayTimedTodos.isEmpty || !store.todayUntimedTodos.isEmpty {
+                    PanelMiniDividerLabel(text: "Jira · GitHub")
+                }
+                ForEach(store.todayExternalTodos) { todo in
                     TaskRow(todo: todo)
                 }
             }
