@@ -99,42 +99,67 @@ final class MockAIService: AIService {
         let now = Date()
         var explanations: [String] = []
 
-        // 「X点」→ 该小时
-        var parsedHour: Int?
-        if let match = trimmed.firstMatch(of: #/(\d{1,2})\s*点/#),
-           let h = Int(match.1), (0...23).contains(h) {
-            parsedHour = h
-            explanations.append("检测到「\(h)点」")
-        }
-
-        // 日期关键词
         var dueDate: Date?
-        if trimmed.contains("明天") {
-            let tomorrow = cal.date(byAdding: .day, value: 1, to: now) ?? now
-            dueDate = cal.date(bySettingHour: parsedHour ?? 18, minute: 0, second: 0, of: tomorrow)
-            explanations.append("检测到「明天」关键词")
-        } else if trimmed.contains("今晚") || trimmed.contains("今天") {
-            dueDate = cal.date(bySettingHour: parsedHour ?? 18, minute: 0, second: 0, of: now)
-            explanations.append("检测到「今晚/今天」→ 今天 \(parsedHour ?? 18):00")
-        } else if let h = parsedHour {
-            // 只有小时无日期：默认今天该小时；已过则顺延到明天
-            var candidate = cal.date(bySettingHour: h, minute: 0, second: 0, of: now)
-            if let c = candidate, c < now {
-                candidate = cal.date(byAdding: .day, value: 1, to: c)
-                explanations.append("\(h)点已过，顺延到明天")
+
+        // ── 相对时间：「N分钟后 / N(个)小时后 / 半小时后」优先级最高 ──
+        if let match = trimmed.firstMatch(of: #/(\d+)\s*分钟后/#), let m = Int(match.1) {
+            dueDate = now.addingTimeInterval(Double(m) * 60)
+            explanations.append("「\(m)分钟后」→ \(Self.hm(dueDate!))")
+        } else if let match = trimmed.firstMatch(of: #/(\d+)\s*个?小时后/#), let h = Int(match.1) {
+            dueDate = now.addingTimeInterval(Double(h) * 3600)
+            explanations.append("「\(h)小时后」→ \(Self.hm(dueDate!))")
+        } else if trimmed.contains("半小时后") || trimmed.contains("半个小时后") {
+            dueDate = now.addingTimeInterval(30 * 60)
+            explanations.append("「半小时后」→ \(Self.hm(dueDate!))")
+        } else {
+            // ── 绝对时间：「(时段)X点(半)」，时段前缀决定上下午 ──
+            var parsedHour: Int?
+            var parsedMinute = 0
+            if let match = trimmed.firstMatch(of: #/(\d{1,2})\s*点(半)?/#),
+               var h = Int(match.1), (0...23).contains(h) {
+                if match.2 != nil { parsedMinute = 30 }
+                // 时段前缀：下午/傍晚/晚上/今晚 +12；中午=12；凌晨/早上/上午 原样
+                let idx = trimmed.range(of: "\(h)")?.lowerBound ?? trimmed.startIndex
+                let prefix = String(trimmed[..<idx])
+                if h < 12, prefix.contains("下午") || prefix.contains("傍晚")
+                    || prefix.contains("晚上") || prefix.contains("今晚") || prefix.contains("晚间") {
+                    h += 12
+                } else if prefix.contains("中午"), h < 11 {
+                    h = 12
+                }
+                parsedHour = h
+                explanations.append("解析时间 \(h):\(String(format: "%02d", parsedMinute))")
             }
-            dueDate = candidate
+
+            if trimmed.contains("明天") {
+                let tomorrow = cal.date(byAdding: .day, value: 1, to: now) ?? now
+                dueDate = cal.date(bySettingHour: parsedHour ?? 18, minute: parsedMinute, second: 0, of: tomorrow)
+                explanations.append("「明天」")
+            } else if trimmed.contains("今晚") || trimmed.contains("今天") {
+                dueDate = cal.date(bySettingHour: parsedHour ?? 18, minute: parsedMinute, second: 0, of: now)
+            } else if let h = parsedHour {
+                // 只有时间无日期：默认今天；真的已过才顺延到明天
+                var candidate = cal.date(bySettingHour: h, minute: parsedMinute, second: 0, of: now)
+                if let c = candidate, c < now {
+                    candidate = cal.date(byAdding: .day, value: 1, to: c)
+                    explanations.append("该时间已过，顺延到明天")
+                }
+                dueDate = candidate
+            }
         }
 
-        // 优先级：紧急关键词 或 24h 内截止 → high
+        // ── 优先级标准（review：临近 ≠ 紧急，例行小事不因 deadline 提级）──
+        // 高：仅明确紧急词；低：例行/周期类；其余默认中
         var priority: Priority = .medium
         let lower = trimmed.lowercased()
-        if trimmed.contains("紧急") || trimmed.contains("立即") || lower.contains("asap") {
+        let urgentWords = ["紧急", "立即", "马上", "尽快"]
+        let routineWords = ["喝水", "打卡", "休息", "站起来", "眼睛", "伸展", "提醒我"]
+        if urgentWords.contains(where: trimmed.contains) || lower.contains("asap") {
             priority = .high
-            explanations.append("含「紧急/ASAP/立即」关键词 → 高优先级")
-        } else if let due = dueDate, due.timeIntervalSince(now) < 24 * 3600 {
-            priority = .high
-            explanations.append("24 小时内截止 → 高优先级")
+            explanations.append("含紧急关键词 → 高")
+        } else if routineWords.contains(where: trimmed.contains) {
+            priority = .low
+            explanations.append("例行提醒类 → 低")
         }
 
         // 周期任务：「每天/每日」→ 每天标签（完成后 AppStore 自动排下一次）
@@ -152,6 +177,13 @@ final class MockAIService: AIService {
             aiExplanation: explanations.isEmpty ? nil : explanations.joined(separator: "；"),
             tags: tags
         )
+    }
+
+    /// "HH:mm"
+    nonisolated private static func hm(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
     }
 
     // MARK: 晨报 / 晚报（中文 markdown，结构：问候/优先处理/今日会议/个人 Todo/Jira/建议）
@@ -337,9 +369,13 @@ final class OpenAIChatAIService: AIService {
         只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
         "dueDate": "yyyy-MM-dd HH:mm" 或 null, "recurrence": "每天"/"每周一"等周期描述（非周期为 null）, \
         "aiExplanation": "一句话中文说明判断依据"}]}。
-        当前时间：\(Self.now())。title 保留原意但去掉时间词和周期词；含紧急/ASAP 或 24h 内截止 → high；\
-        周期任务（每天/每周X…）的 dueDate 给下一次发生时间（今天该时间已过则为明天/下个周期），\
-        且不适用 24h 提升规则——日常习惯类按重要性给 low/medium。
+        当前时间：\(Self.now())。title 保留原意但去掉时间词和周期词。\
+        时间解析：支持相对时间（「15分钟后」「2小时后」= 当前时间 + 偏移）；\
+        「晚上10点」=22:00、「下午3点」=15:00（时段前缀决定上下午）；\
+        只有当解析出的时间确实早于当前时间才顺延到明天。\
+        优先级标准（临近 ≠ 紧急）：仅文本含紧急语气（紧急/ASAP/立即/马上/尽快/不能拖）→ high；\
+        喝水/打卡/休息等例行琐事 → low（即使截止临近也不提升）；其余有明确事项的 → medium。\
+        周期任务（每天/每周X…）的 dueDate 给下一次发生时间（今天该时间已过则为明天/下个周期）。
         """
         let reply = try await chat(system: system, userContent: [["type": "text", "text": text]], jsonMode: true)
         guard let draft = try Self.decodeDrafts(reply, source: .manual).first else {
