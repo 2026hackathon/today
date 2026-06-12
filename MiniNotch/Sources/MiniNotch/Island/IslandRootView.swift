@@ -152,8 +152,15 @@ struct IslandRootView: View {
     }
 
     private func isHoverDriven(_ state: IslandState) -> Bool {
-        if case .expanded = state { return true }
-        return state == .hoverPreview
+        switch state {
+        case .expanded(let tab):
+            // 设置页在打字（API Key 等），鼠标移出不收起；esc / 失焦仍可收
+            tab != .settings
+        case .hoverPreview:
+            true
+        default:
+            false
+        }
     }
 
     // MARK: - 卡片自动收回

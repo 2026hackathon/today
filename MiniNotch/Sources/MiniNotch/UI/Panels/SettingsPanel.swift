@@ -76,6 +76,7 @@ struct SettingsPanel: View {
             SettingsRow(label: "Token") {
                 SettingsInputField(placeholder: "API Token", text: $store.settings.jiraAPIToken, secure: true)
             }
+            JiraConnectionTestRow()
 
             SettingsCardDivider()
 
@@ -177,6 +178,78 @@ private struct SettingsValueText: View {
     }
 }
 
+// MARK: - Jira 测试连接行（结果就地反馈：成功显示 ticket 数，失败显示原因）
+
+private struct JiraConnectionTestRow: View {
+    @EnvironmentObject var store: AppStore
+
+    private enum TestState: Equatable {
+        case idle, testing
+        case success(Int)
+        case failure(String)
+    }
+    @State private var state: TestState = .idle
+
+    var body: some View {
+        HStack(spacing: 8) {
+            switch state {
+            case .idle:
+                Spacer()
+            case .testing:
+                ProgressView()
+                    .controlSize(.small)
+                Spacer()
+            case .success(let count):
+                Text("✓ 连接正常 · \(count) 个指派 ticket")
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.success)
+                Spacer(minLength: 8)
+            case .failure(let message):
+                Text("✗ \(message)")
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.alert)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 8)
+            }
+
+            Button {
+                runTest()
+            } label: {
+                Text(state == .testing ? "测试中…" : "测试连接")
+                    .font(DS.Fonts.button)
+                    .foregroundStyle(DS.Colors.accent)
+            }
+            .buttonStyle(.plain)
+            .disabled(state == .testing)
+        }
+    }
+
+    private func runTest() {
+        state = .testing
+        let settings = store.settings
+        Task { @MainActor in
+            do {
+                let service = RealJiraService(
+                    baseURL: settings.jiraBaseURL,
+                    email: settings.jiraEmail,
+                    apiToken: settings.jiraAPIToken
+                )
+                let tickets = try await service.fetchAssignedTickets()
+                state = .success(tickets.count)
+            } catch JiraServiceError.notConfigured {
+                state = .failure("请先填写 URL / Email / Token")
+            } catch JiraServiceError.http(let code) {
+                state = .failure(code == 401 || code == 403
+                    ? "认证失败 (\(code))，检查 Email/Token"
+                    : "请求失败 HTTP \(code)，检查 URL")
+            } catch {
+                state = .failure("网络错误：\(error.localizedDescription)")
+            }
+        }
+    }
+}
+
 // MARK: - 已配置/未配置 状态文字
 
 private struct SettingsStatusText: View {
@@ -200,9 +273,9 @@ private struct SettingsInputField: View {
     var body: some View {
         Group {
             if secure {
-                SecureField(placeholder, text: $text)
+                SecureField("", text: $text)
             } else {
-                TextField(placeholder, text: $text)
+                TextField("", text: $text)
             }
         }
         .textFieldStyle(.plain)
@@ -211,6 +284,18 @@ private struct SettingsInputField: View {
         .foregroundStyle(DS.Colors.text1)
         .padding(.horizontal, 9)
         .frame(width: 180, height: 24)
+        // 自绘占位符：.plain 样式下 prompt 的颜色样式不生效，黑底上看不清，
+        // 改为文字为空时自己叠一层（颜色完全走 DS token）
+        .overlay(alignment: .leading) {
+            if text.isEmpty {
+                Text(placeholder)
+                    .font(DS.Fonts.compactSide)
+                    .foregroundStyle(DS.Colors.text3)
+                    .lineLimit(1)
+                    .padding(.horizontal, 9)
+                    .allowsHitTesting(false)
+            }
+        }
         .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: DS.Radius.s))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.s)

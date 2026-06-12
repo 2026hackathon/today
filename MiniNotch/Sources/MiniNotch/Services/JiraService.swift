@@ -16,6 +16,8 @@ enum JiraServiceError: Error {
     /// baseURL/email/token 未配置或真实现未接
     case notConfigured
     case invalidResponse
+    /// 非 2xx 响应（设置页「测试连接」按状态码给出具体提示）
+    case http(Int)
 }
 
 @MainActor
@@ -107,7 +109,7 @@ final class RealJiraService: JiraService {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             NSLog("[Jira] fetch failed: HTTP \(code)")
-            throw JiraServiceError.invalidResponse
+            throw JiraServiceError.http(code)
         }
 
         let result = try JSONDecoder().decode(SearchResponse.self, from: data)

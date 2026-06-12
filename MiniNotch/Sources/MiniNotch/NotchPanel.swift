@@ -38,4 +38,25 @@ final class NotchPanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// accessory 应用没有主菜单，⌘V/⌘C 等编辑快捷键没有 Edit 菜单可分发，
+    /// 系统会直接丢弃 —— 这里手动路由给响应链，面板里的输入框才能粘贴/复制
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let key = event.charactersIgnoringModifiers?.lowercased()
+
+        if modifiers == .command {
+            switch key {
+            case "v": if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self) { return true }
+            case "c": if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self) { return true }
+            case "x": if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: self) { return true }
+            case "a": if NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: self) { return true }
+            case "z": if NSApp.sendAction(Selector(("undo:")), to: nil, from: self) { return true }
+            default: break
+            }
+        } else if modifiers == [.command, .shift], key == "z" {
+            if NSApp.sendAction(Selector(("redo:")), to: nil, from: self) { return true }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }

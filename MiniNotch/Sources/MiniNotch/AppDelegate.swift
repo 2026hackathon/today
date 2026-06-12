@@ -33,8 +33,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         setupStatusBar()
+        installEditMenu()
         showPanel()
         setupDismissOnFocusLoss()
+        setupKeyboardFocusForInputStates()
         wireServices()
         startPolling()
         maybeShowMorningReport()
@@ -73,6 +75,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func dismissOnFocusLoss() {
         guard store.islandState.isDismissable else { return }
         store.dismiss()
+    }
+
+    // MARK: - 输入态键盘支持（⌘V 粘贴等）
+
+    /// ⌘V/⌘C 等编辑快捷键经由主菜单的 Edit 菜单分发——accessory 应用默认没有
+    /// 主菜单，必须手动装载，否则 SwiftUI 输入框收不到粘贴指令
+    private func installEditMenu() {
+        let mainMenu = NSMenu()
+
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let appItem = NSMenuItem()
+        appItem.submenu = appMenu
+        mainMenu.addItem(appItem)
+
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let editItem = NSMenuItem()
+        editItem.submenu = editMenu
+        mainMenu.addItem(editItem)
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    /// 进入需要打字的状态（设置页 / ⌘N 快速录入）时激活应用：
+    /// 菜单快捷键只对「活跃应用」分发，nonactivating 面板光成为 key window 不够。
+    /// 只在输入态激活，普通悬停展开不抢其他应用的焦点
+    private func setupKeyboardFocusForInputStates() {
+        store.$islandState
+            .receive(on: RunLoop.main)
+            .sink { [weak self] state in
+                guard let self else { return }
+                let needsKeyboard: Bool = switch state {
+                case .quickInput, .expanded(tab: .settings): true
+                default: false
+                }
+                if needsKeyboard {
+                    NSApp.activate(ignoringOtherApps: true)
+                    self.panel?.makeKey()
+                }
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - 服务装配
