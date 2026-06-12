@@ -38,6 +38,21 @@ final class AppStore: ObservableObject {
     /// 手动刷新的实际同步逻辑（Jira/日历），AppDelegate 装配
     var onRefresh: (() async -> Void)?
 
+    // MARK: - 日历权限（未授权时日历面板空态引导授权）
+
+    /// 日历权限 UI 状态（AppDelegate 按 EKAuthorizationStatus 维护）
+    enum CalendarAuthUIState: Equatable, Sendable {
+        case authorized    // 日历/提醒至少一项可读
+        case needsRequest  // 未决定 → 可直接弹系统授权弹窗
+        case denied        // 被拒/受限 → 系统不允许再弹，只能去系统设置开启
+    }
+    /// 默认 authorized：AppDelegate 写入真实状态前，空态不闪授权引导
+    @Published var calendarAuthState: CalendarAuthUIState = .authorized
+    /// 「允许访问日历 / 前往系统设置」按钮动作，AppDelegate 装配
+    var onRequestCalendarAccess: (() -> Void)?
+
+    func requestCalendarAccess() { onRequestCalendarAccess?() }
+
     /// 刷新进行中（刷新按钮转圈用）
     @Published private(set) var isRefreshing = false
 

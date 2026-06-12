@@ -251,10 +251,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Layer 3: 前台刷新（展开面板时立即拉一次）
         store.$islandState
             .sink { [weak self] newState in
-                guard case .expanded = newState else { return }
-                Task { @MainActor in self?.refreshCalendarMeetings() }
+                guard case .expanded(let tab) = newState else { return }
+                Task { @MainActor in
+                    self?.refreshCalendarMeetings()
+                    // 点开日历页签 = 明确意图：权限未决定时直接弹系统授权弹窗
+                    if tab == .calendar { self?.promptCalendarAccessIfNeeded() }
+                }
             }
             .store(in: &cancellables)
+
+        // 日历面板空态「允许访问日历 / 前往系统设置」按钮
+        store.onRequestCalendarAccess = { [weak self] in
+            self?.handleCalendarAccessRequest()
+        }
 
         // 启动后等首轮 Jira/日历同步落地，再生成 Today 底部一句话建议
         refreshAISuggestion(afterSeconds: 3)
@@ -280,11 +289,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    /// accessory 应用临时激活 → 请求日历权限 → 恢复 accessory。
-    /// 不临时激活的话系统权限弹窗不会显示（LSUIElement 应用无前台权限）。
+    /// 启动时的日历权限处理：已授权 → 挂监听拉数据；未决定 → 弹系统授权弹窗。
     private func requestCalendarAccess() {
-        // 如果已有权限或被拒，不需要弹窗
         let status = EKEventStore.authorizationStatus(for: .event)
+        updateCalendarAuthUIState()
         guard status == .notDetermined else {
             if status == .fullAccess {
                 // 老用户路径不经过 requestAccess()，需补挂 EKEventStoreChanged 监听，
@@ -296,7 +304,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        promptCalendarAccessDialog()
+    }
 
+    /// 弹系统日历授权弹窗（仅 .notDetermined 时系统才会真的弹）。
+    /// accessory 应用需临时切 .regular 激活策略，否则系统权限弹窗不显示
+    /// （LSUIElement 应用无前台权限）；结束后恢复 accessory。
+    private func promptCalendarAccessDialog() {
         Task { @MainActor [weak self] in
             guard let self else { return }
             // 临时切为 regular 激活策略（让系统允许弹窗）
@@ -309,6 +323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.setActivationPolicy(.accessory)
             // accessory 模式下需要重新 orderFront 面板
             self.panel?.orderFrontRegardless()
+            self.updateCalendarAuthUIState()
 
             if granted {
                 self.wireCalendarLayer1()
@@ -318,6 +333,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("[Calendar] permission denied — meetings stay empty (no mock fill)")
             }
         }
+    }
+
+    /// 点开日历页签时权限仍未决定 → 主动弹授权弹窗
+    private func promptCalendarAccessIfNeeded() {
+        updateCalendarAuthUIState()
+        guard EKEventStore.authorizationStatus(for: .event) == .notDetermined else { return }
+        promptCalendarAccessDialog()
+    }
+
+    /// 空态按钮动作：未决定 → 弹系统弹窗；被拒 → 系统不允许 App 再弹，打开系统设置日历隐私页
+    private func handleCalendarAccessRequest() {
+        switch EKEventStore.authorizationStatus(for: .event) {
+        case .notDetermined:
+            promptCalendarAccessDialog()
+        case .fullAccess:
+            updateCalendarAuthUIState()
+            refreshCalendarMeetings()
+        default: // denied / restricted / writeOnly
+            NSWorkspace.shared.open(URL(string:
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
+        }
+    }
+
+    /// 把 EKAuthorizationStatus 映射进 store（CalendarPanel 空态授权引导用）
+    private func updateCalendarAuthUIState() {
+        let events = EKEventStore.authorizationStatus(for: .event)
+        let reminders = EKEventStore.authorizationStatus(for: .reminder)
+        let state: AppStore.CalendarAuthUIState
+        if events == .fullAccess || reminders == .fullAccess {
+            state = .authorized
+        } else if events == .notDetermined {
+            state = .needsRequest
+        } else {
+            state = .denied // denied / restricted / writeOnly（writeOnly 读不到日程）
+        }
+        if store.calendarAuthState != state { store.calendarAuthState = state }
     }
 
     /// 首次同步检查：如果从未完成过首次同步，执行 30 天窗口历史数据拉取

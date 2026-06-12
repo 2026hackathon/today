@@ -63,21 +63,44 @@ struct CalendarPanel: View {
             .padding(.top, 4)
     }
 
-    // MARK: - 空态
+    // MARK: - 空态（未授权时引导授权）
 
     private var emptyState: some View {
         VStack(spacing: 10) {
-            Image(systemName: "calendar")
+            Image(systemName: store.calendarAuthState == .authorized
+                  ? "calendar" : "calendar.badge.exclamationmark")
                 .font(.system(size: 24))
                 .foregroundStyle(DS.Colors.text3)
-            Text("暂无日程")
-                .font(DS.Fonts.button)
-                .foregroundStyle(DS.Colors.text3)
-            Text("手动创建或账户同步的日程和提醒会显示在这里")
-                .font(DS.Fonts.meta)
-                .foregroundStyle(DS.Colors.text3)
+            switch store.calendarAuthState {
+            case .authorized:
+                emptyText(title: "暂无日程", detail: "手动创建或账户同步的日程和提醒会显示在这里")
+            case .needsRequest:
+                emptyText(title: "尚未授权访问日历", detail: "授权后日程和提醒会显示在这里，并随苹果日历自动同步")
+                authButton("允许访问日历")
+            case .denied:
+                emptyText(title: "日历访问已被拒绝", detail: "请在 系统设置 → 隐私与安全性 → 日历 中允许本应用")
+                authButton("前往系统设置")
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 380)
+    }
+
+    @ViewBuilder
+    private func emptyText(title: String, detail: String) -> some View {
+        Text(title)
+            .font(DS.Fonts.button)
+            .foregroundStyle(DS.Colors.text3)
+        Text(detail)
+            .font(DS.Fonts.meta)
+            .foregroundStyle(DS.Colors.text3)
+    }
+
+    private func authButton(_ title: String) -> some View {
+        Button(title) { store.requestCalendarAccess() }
+            .font(DS.Fonts.button)
+            .foregroundStyle(DS.Colors.accent)
+            .buttonStyle(.plain)
+            .padding(.top, 4)
     }
 }
 
