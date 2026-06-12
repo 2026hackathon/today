@@ -235,7 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return mockJiraService
     }
 
-    /// Jira 60s / 日历 60min 轮询（integrations spec）
+    /// Jira（间隔可在设置中调）/ 日历 60min 轮询（integrations spec）
     private func startPolling() {
         pollingTasks.append(Task { @MainActor [weak self] in
             // 首轮同步静默：初始全量不算「新分配」，之后的新 key 才弹通知卡
@@ -245,7 +245,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.store.mergeJiraTodos(tickets, notify: didInitialSync)
                     didInitialSync = true
                 }
-                try? await Task.sleep(for: .seconds(60))
+                // 每轮重读设置，改完下个周期生效；下限 15s 防 API 限流
+                let interval = max(15, self?.store.settings.jiraPollSeconds ?? 60)
+                try? await Task.sleep(for: .seconds(interval))
             }
         })
         pollingTasks.append(Task { @MainActor [weak self] in

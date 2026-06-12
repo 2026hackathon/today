@@ -170,6 +170,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     var jiraBaseURL = ""
     var jiraEmail = ""
     var jiraAPIToken = ""
+    /// Jira 轮询间隔（秒），设置面板可调，下个轮询周期生效
+    var jiraPollSeconds = 60
     /// 飞书 webhook / Bark 推送
     var feishuWebhook = ""
     var barkToken = ""
@@ -190,6 +192,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         jiraBaseURL = try c.decodeIfPresent(String.self, forKey: .jiraBaseURL) ?? ""
         jiraEmail = try c.decodeIfPresent(String.self, forKey: .jiraEmail) ?? ""
         jiraAPIToken = try c.decodeIfPresent(String.self, forKey: .jiraAPIToken) ?? ""
+        jiraPollSeconds = try c.decodeIfPresent(Int.self, forKey: .jiraPollSeconds) ?? 60
         feishuWebhook = try c.decodeIfPresent(String.self, forKey: .feishuWebhook) ?? ""
         barkToken = try c.decodeIfPresent(String.self, forKey: .barkToken) ?? ""
     }

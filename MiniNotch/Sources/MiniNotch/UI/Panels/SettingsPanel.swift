@@ -77,6 +77,9 @@ struct SettingsPanel: View {
             SettingsRow(label: "Token") {
                 SettingsInputField(placeholder: "API Token", text: $store.settings.jiraAPIToken, secure: true)
             }
+            SettingsRow(label: "轮询间隔") {
+                SettingsPollIntervalPicker(seconds: $store.settings.jiraPollSeconds)
+            }
             JiraConnectionTestRow()
 
             SettingsCardDivider()
@@ -329,5 +332,52 @@ private struct SettingsCardDivider: View {
         Rectangle()
             .fill(DS.Colors.border)
             .frame(height: 1)
+    }
+}
+
+// MARK: - 轮询间隔选择（30s/1min/2min/5min 下拉）
+
+private struct SettingsPollIntervalPicker: View {
+    @Binding var seconds: Int
+    @State private var hovering = false
+
+    private static let options: [(value: Int, label: String)] = [
+        (30, "30 秒"), (60, "1 分钟"), (120, "2 分钟"), (300, "5 分钟"),
+    ]
+
+    private var currentLabel: String {
+        Self.options.first { $0.value == seconds }?.label ?? "\(seconds) 秒"
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(Self.options, id: \.value) { option in
+                Button {
+                    seconds = option.value
+                } label: {
+                    if option.value == seconds {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(option.label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(currentLabel)
+                    .font(DS.Fonts.compactSide)
+                    .foregroundStyle(hovering ? DS.Colors.text1 : DS.Colors.text3)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .semibold))
+                    .foregroundStyle(DS.Colors.text3)
+            }
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovering = $0 }
     }
 }
