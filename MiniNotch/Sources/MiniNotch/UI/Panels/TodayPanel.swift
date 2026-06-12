@@ -324,23 +324,42 @@ private struct MeetingRow: View {
 private struct CompletedRow: View {
     let todo: Todo
     let onUncomplete: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 10) {
+            // 反悔入口 1：悬停时勾变撤销图标（热区扩大，描边/小图标直接点不中）
             Button(action: onUncomplete) {
-                Image(systemName: "checkmark.circle.fill")
+                Image(systemName: hovering ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill")
                     .font(.system(size: 14))
-                    .foregroundStyle(DS.Colors.text3)
+                    .foregroundStyle(hovering ? DS.Colors.accent : DS.Colors.text3)
+                    .padding(4)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .padding(-4) // 抵消热区 padding，对齐不变
             Text(todo.title)
                 .font(DS.Fonts.todoTitle)
                 .foregroundStyle(DS.Colors.text3)
                 .strikethrough(true, color: DS.Colors.text3)
             Spacer(minLength: 0)
+            // 反悔入口 2：悬停行尾出现明确的「撤销」按钮（可发现性）
+            if hovering {
+                Button(action: onUncomplete) {
+                    Text("撤销")
+                        .font(DS.Fonts.tag)
+                        .foregroundStyle(DS.Colors.accent)
+                        .padding(.horizontal, 7)
+                        .frame(height: 18)
+                        .background(DS.Colors.accentSoft, in: RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
+        .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+        .onHover { hovering = $0 }
     }
 }
 
@@ -355,10 +374,14 @@ struct PanelCheckCircle: View {
             Circle()
                 .strokeBorder(hovering ? DS.Colors.text1 : DS.Colors.text3, lineWidth: 1.5)
                 .frame(width: 16, height: 16)
+                // 形状的点击判定只算画了像素的区域——纯描边圆只有 1.5pt 的环可点，
+                // 圆心是空的。扩到 24×24 实心热区，否则要点很多次才能命中
+                .padding(4)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .padding(.top, 1)
+        .padding(.top, -3) // 抵消热区 padding，视觉位置不变
     }
 }
 

@@ -225,7 +225,9 @@ final class AppStore: ObservableObject {
             crownedToday = true
             onCompletedAll?()
             present(.celebrate)
-        } else {
+        } else if islandState.isCompact {
+            // justCompleted 是 compact 闪光态——只在收缩态播；
+            // 在展开面板里点完成时保持面板不塌，金色高光(completionFlash)照常播
             flashJustCompleted()
         }
     }
