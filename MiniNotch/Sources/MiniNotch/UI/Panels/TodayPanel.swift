@@ -283,6 +283,9 @@ struct JiraTodoRow: View {
 struct MeetingRow: View {
     let meeting: Meeting
     @State private var hovering = false
+    @State private var glowPulse = false
+
+    private var isOngoing: Bool { meeting.status == .ongoing }
 
     private var dotColor: Color {
         switch meeting.status {
@@ -292,27 +295,38 @@ struct MeetingRow: View {
         }
     }
 
+    /// 距开始 ≤30 分钟视为「快到了」：状态点换成提醒铃铛
+    private var isImminent: Bool {
+        guard !meeting.isReminder, meeting.status == .upcoming else { return false }
+        return meeting.start.timeIntervalSinceNow <= 30 * 60
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            if meeting.isReminder {
+            if meeting.isReminder || isImminent {
                 Image(systemName: "bell.fill")
                     .font(.system(size: 9))
                     .foregroundStyle(DS.Colors.accent)
             } else {
                 Circle().fill(dotColor).frame(width: 6, height: 6)
+                    // 进行中：绿点带呼吸光晕
+                    .shadow(
+                        color: isOngoing ? DS.Colors.success.opacity(glowPulse ? 0.9 : 0.35) : .clear,
+                        radius: glowPulse ? 4 : 2
+                    )
             }
             if !meeting.isReminder || meeting.start != meeting.end {
                 Text("\(PanelFormat.hm(meeting.start))-\(PanelFormat.hm(meeting.end))")
                     .font(DS.Fonts.compactSide)
-                    .foregroundStyle(DS.Colors.text2)
+                    .foregroundStyle(DS.Colors.text1)
             } else {
                 Text(PanelFormat.hm(meeting.start))
                     .font(DS.Fonts.compactSide)
-                    .foregroundStyle(DS.Colors.text2)
+                    .foregroundStyle(DS.Colors.text1)
             }
             Text(meeting.title)
                 .font(DS.Fonts.todoTitle)
-                .foregroundStyle(DS.Colors.text1)
+                .foregroundStyle(.white)
                 .lineLimit(1)
             if meeting.isReminder {
                 Text("提醒").dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
@@ -345,9 +359,27 @@ struct MeetingRow: View {
             }
         }
         .padding(8)
-        .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+        .background(
+            hovering ? DS.Colors.surface1 : (isOngoing ? DS.Colors.success.opacity(0.06) : Color.clear),
+            in: RoundedRectangle(cornerRadius: DS.Radius.m)
+        )
+        .overlay {
+            // 进行中：细描边 + 呼吸微光
+            if isOngoing {
+                RoundedRectangle(cornerRadius: DS.Radius.m)
+                    .strokeBorder(DS.Colors.success.opacity(glowPulse ? 0.4 : 0.15), lineWidth: 1)
+            }
+        }
+        .shadow(color: isOngoing ? DS.Colors.success.opacity(glowPulse ? 0.3 : 0.1) : .clear, radius: 7)
+        .onAppear {
+            if isOngoing {
+                withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+                    glowPulse = true
+                }
+            }
+        }
         .onHover { hovering = $0 }
-        .opacity(meeting.status == .ended ? 0.4 : 1)
+        .opacity(meeting.status == .ended ? 0.65 : 1)
     }
 }
 

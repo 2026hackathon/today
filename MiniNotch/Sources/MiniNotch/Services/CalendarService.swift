@@ -154,9 +154,25 @@ final class EventKitCalendarService: CalendarService {
         EKEventStore.authorizationStatus(for: .event)
     }
 
+    /// 权限在之前的启动中已授予时调用：补挂 EKEventStoreChanged 监听。
+    /// requestAccess() 只在首次（.notDetermined）走到，老用户不调这个的话
+    /// 外部改日程只能等 15min 兜底轮询。
+    func startObservingIfAuthorized() {
+        let events = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+        let reminders = EKEventStore.authorizationStatus(for: .reminder) == .fullAccess
+        guard events || reminders else { return }
+        hasAccess = events
+        hasRemindersAccess = reminders
+        startObservingChanges()
+    }
+
     // MARK: - 事件监听（权限授予后才开启）
 
+    private var isObserving = false
+
     private func startObservingChanges() {
+        guard !isObserving else { return }
+        isObserving = true
         NotificationCenter.default.addObserver(
             forName: .EKEventStoreChanged,
             object: eventStore,
@@ -168,7 +184,7 @@ final class EventKitCalendarService: CalendarService {
 
     /// 1s 防抖：批量编辑场景下只触发一次刷新
     private func scheduleDebouncedRefresh() {
-        guard hasAccess else { return } // 无权限时不触发，避免死循环
+        guard hasAccess || hasRemindersAccess else { return } // 无权限时不触发，避免死循环
         changeDebounceTask?.cancel()
         changeDebounceTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
@@ -179,14 +195,30 @@ final class EventKitCalendarService: CalendarService {
 
     // MARK: - 拉取
 
+    /// 可同步的事件日历：只保留用户手动创建或账户（iCloud/Google/Exchange 等）同步的可写日历。
+    /// 排除系统自动生成的只读日历——「生日」「节假日」等订阅日历、Siri 建议（找到的活动）。
+    private static func isSyncableCalendar(_ calendar: EKCalendar) -> Bool {
+        if calendar.type == .birthday || calendar.type == .subscription { return false }
+        if let sourceType = calendar.source?.sourceType,
+           sourceType == .birthdays || sourceType == .subscribed { return false }
+        // 兜底：系统注入的日历（Siri 建议等）一律不可写，可写即用户/账户日历
+        return calendar.allowsContentModifications
+    }
+
     func fetchMeetings(in range: ClosedRange<Date>) async throws -> [Meeting] {
         var results: [Meeting] = []
 
+        // 长生命周期 EKEventStore 的缓存可能落后于外部编辑，拉取前先刷新数据源
+        eventStore.refreshSourcesIfNecessary()
+
         // ── 1. 日历事件 ──
         let eventStatus = EKEventStore.authorizationStatus(for: .event)
-        if eventStatus == .fullAccess {
+        let syncableCalendars = eventStatus == .fullAccess
+            ? eventStore.calendars(for: .event).filter(Self.isSyncableCalendar)
+            : []
+        if eventStatus == .fullAccess, !syncableCalendars.isEmpty {
             let predicate = eventStore.predicateForEvents(
-                withStart: range.lowerBound, end: range.upperBound, calendars: nil
+                withStart: range.lowerBound, end: range.upperBound, calendars: syncableCalendars
             )
             let events = eventStore.events(matching: predicate)
 
@@ -232,7 +264,7 @@ final class EventKitCalendarService: CalendarService {
             throw CalendarServiceError.accessDenied
         }
 
-        NSLog("[Calendar] events=%d, reminders portion included, range=\(range.lowerBound)~\(range.upperBound)", results.filter { !$0.isReminder }.count)
+        NSLog("[Calendar] calendars=%d, events=%d, range=\(range.lowerBound)~\(range.upperBound)", syncableCalendars.count, results.filter { !$0.isReminder }.count)
         return results.sorted { $0.start < $1.start }
     }
 

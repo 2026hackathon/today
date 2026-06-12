@@ -2,8 +2,8 @@ import SwiftUI
 
 // ============================================================
 // CalendarPanel —— 日历独立页签（按日期分组展示多日会议）。
-// 样式对齐 Today/Inbox：PanelScrollView + PanelSectionTitle +
-// MeetingRow + PanelDivider，不另造时间轴样式。
+// 每个日期段带「日号徽章 + 相对日期」头部，今天的段落用
+// surface 卡片高亮并自动滚动定位；行复用 MeetingRow。
 // ============================================================
 
 struct CalendarPanel: View {
@@ -37,20 +37,9 @@ struct CalendarPanel: View {
     // MARK: - 分组内容
 
     private var groupedList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 概览行（对齐 Today 的问候行样式）
-            Text("近 30 天 \(store.meetings.count) 场会议")
-                .font(DS.Fonts.button)
-                .foregroundStyle(DS.Colors.text2)
-                .padding(.horizontal, 2)
-                .padding(.top, 4)
-                .padding(.bottom, 12)
-
-            // 按日期分组
-            ForEach(Array(store.meetingsByDate.enumerated()), id: \.element.date) { index, entry in
-                if index > 0 {
-                    PanelDivider()
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            overviewRow
+            ForEach(store.meetingsByDate, id: \.date) { entry in
                 DateSection(date: entry.date, meetings: entry.meetings)
             }
         }
@@ -60,6 +49,20 @@ struct CalendarPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// 概览行（对齐 Today 的问候行样式）：日程/提醒分开计数
+    private var overviewRow: some View {
+        let eventCount = store.meetings.filter { !$0.isReminder }.count
+        let reminderCount = store.meetings.count - eventCount
+        var parts: [String] = []
+        if eventCount > 0 { parts.append("\(eventCount) 场日程") }
+        if reminderCount > 0 { parts.append("\(reminderCount) 个提醒") }
+        return Text(parts.joined(separator: " · "))
+            .font(DS.Fonts.button)
+            .foregroundStyle(DS.Colors.text2)
+            .padding(.horizontal, 10)
+            .padding(.top, 4)
+    }
+
     // MARK: - 空态
 
     private var emptyState: some View {
@@ -67,10 +70,10 @@ struct CalendarPanel: View {
             Image(systemName: "calendar")
                 .font(.system(size: 24))
                 .foregroundStyle(DS.Colors.text3)
-            Text("暂无会议")
+            Text("暂无日程")
                 .font(DS.Fonts.button)
                 .foregroundStyle(DS.Colors.text3)
-            Text("苹果日历中的会议会显示在这里")
+            Text("手动创建或账户同步的日程和提醒会显示在这里")
                 .font(DS.Fonts.meta)
                 .foregroundStyle(DS.Colors.text3)
         }
@@ -78,7 +81,7 @@ struct CalendarPanel: View {
     }
 }
 
-// MARK: - 日期段落（PanelSectionTitle + 该日 MeetingRow 列表）
+// MARK: - 日期段落（日号徽章头部 + 该日 MeetingRow 列表）
 
 private struct DateSection: View {
     let date: Date
@@ -87,36 +90,59 @@ private struct DateSection: View {
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            PanelSectionTitle(
-                title: sectionTitle,
-                count: meetings.count,
-                color: isToday ? DS.Colors.accent : DS.Colors.text3
-            )
+        VStack(alignment: .leading, spacing: 4) {
+            header
             ForEach(meetings) { meeting in
                 MeetingRow(meeting: meeting)
             }
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        // 所有段落同 padding 保证左对齐，仅今天有卡片底色
+        .background(
+            isToday ? DS.Colors.surface1 : .clear,
+            in: RoundedRectangle(cornerRadius: DS.Radius.l)
+        )
         .id(date) // ScrollViewReader 定位用
     }
 
-    private var sectionTitle: String {
+    private var header: some View {
+        HStack(spacing: 9) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(relativeLabel)
+                    .font(DS.Fonts.button)
+                    .foregroundStyle(isToday ? DS.Colors.accent : DS.Colors.text1)
+                Text(fullLabel)
+                    .font(DS.Fonts.tag)
+                    .foregroundStyle(DS.Colors.text3)
+            }
+            Spacer(minLength: 0)
+            Text("\(meetings.count) 项")
+                .font(DS.Fonts.tag)
+                .foregroundStyle(DS.Colors.text3)
+        }
+        .padding(.bottom, 4)
+    }
+
+    /// 第一行：今天/昨天/明天/周X
+    private var relativeLabel: String {
         let cal = Calendar.current
-        if cal.isDateInToday(date) {
-            let f = DateFormatter()
-            f.dateFormat = "M月d日"
-            return "今天 \(f.string(from: date))"
-        }
-        let yesterday = cal.date(byAdding: .day, value: -1, to: Date())!
-        if cal.isDate(cal.startOfDay(for: date), inSameDayAs: cal.startOfDay(for: yesterday)) {
-            let f = DateFormatter()
-            f.dateFormat = "M月d日"
-            return "昨天 \(f.string(from: date))"
-        }
-        // 其他日期：M月d日 周X
+        if cal.isDateInToday(date) { return "今天" }
+        if cal.isDateInYesterday(date) { return "昨天" }
+        if cal.isDateInTomorrow(date) { return "明天" }
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "M月d日 EEE"
+        f.dateFormat = "EEE"
+        return f.string(from: date)
+    }
+
+    /// 第二行：M月d日（今天/昨天/明天 时补充周X，避免与第一行的周X重复）
+    private var fullLabel: String {
+        let cal = Calendar.current
+        let isRelative = cal.isDateInToday(date) || cal.isDateInYesterday(date) || cal.isDateInTomorrow(date)
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = isRelative ? "M月d日 EEE" : "M月d日"
         return f.string(from: date)
     }
 }

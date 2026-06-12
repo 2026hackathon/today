@@ -274,6 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let status = EKEventStore.authorizationStatus(for: .event)
         guard status == .notDetermined else {
             if status == .fullAccess {
+                // 老用户路径不经过 requestAccess()，需补挂 EKEventStoreChanged 监听，
+                // 否则外部改日程只能等 15min 兜底轮询
+                eventKitCalendarService.startObservingIfAuthorized()
                 wireCalendarLayer1()
                 performInitialSyncIfNeeded()
                 refreshCalendarMeetings() // 已有权限 → 立即拉一次
