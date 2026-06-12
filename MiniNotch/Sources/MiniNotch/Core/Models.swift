@@ -161,8 +161,11 @@ struct AppSettings: Codable, Equatable, Sendable {
     var eveningReportHour = 18
     /// 装饰性动效开关（撒花/烟花/流光）
     var effectsEnabled = true
-    /// AI API Key（B 接真实现后使用；为空时走 Mock）
+    /// AI 配置：OpenAI 兼容端点（Azure Foundry 的 .../openai/v1 也行）；Key 为空走 Mock
     var aiAPIKey = ""
+    var aiBaseURL = ""
+    /// 模型/部署名（Azure 上必须是部署名，例如 gpt-5.5）
+    var aiModel = ""
     /// Jira 配置（C 接真实现后使用）
     var jiraBaseURL = ""
     var jiraEmail = ""
@@ -170,6 +173,26 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// 飞书 webhook / Bark 推送
     var feishuWebhook = ""
     var barkToken = ""
+
+    init() {}
+
+    /// 向后兼容解码：新增字段在旧 settings.json 里缺失时取默认值。
+    /// 不写这个的话，加任何新字段都会让整个解码失败 → 用户已配置的 Jira/Key 全部丢失
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        quietHourStart = try c.decodeIfPresent(Int.self, forKey: .quietHourStart) ?? 22
+        quietHourEnd = try c.decodeIfPresent(Int.self, forKey: .quietHourEnd) ?? 8
+        eveningReportHour = try c.decodeIfPresent(Int.self, forKey: .eveningReportHour) ?? 18
+        effectsEnabled = try c.decodeIfPresent(Bool.self, forKey: .effectsEnabled) ?? true
+        aiAPIKey = try c.decodeIfPresent(String.self, forKey: .aiAPIKey) ?? ""
+        aiBaseURL = try c.decodeIfPresent(String.self, forKey: .aiBaseURL) ?? ""
+        aiModel = try c.decodeIfPresent(String.self, forKey: .aiModel) ?? ""
+        jiraBaseURL = try c.decodeIfPresent(String.self, forKey: .jiraBaseURL) ?? ""
+        jiraEmail = try c.decodeIfPresent(String.self, forKey: .jiraEmail) ?? ""
+        jiraAPIToken = try c.decodeIfPresent(String.self, forKey: .jiraAPIToken) ?? ""
+        feishuWebhook = try c.decodeIfPresent(String.self, forKey: .feishuWebhook) ?? ""
+        barkToken = try c.decodeIfPresent(String.self, forKey: .barkToken) ?? ""
+    }
 
     func isQuietHour(_ date: Date = Date()) -> Bool {
         let hour = Calendar.current.component(.hour, from: date)

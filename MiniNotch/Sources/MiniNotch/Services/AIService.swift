@@ -263,6 +263,224 @@ final class MockAIService: AIService {
     }
 }
 
+// MARK: - AI 默认配置（hackathon：端点/模型固定，设置页只填 Key）
+
+enum AIDefaults {
+    /// 团队共用的 Azure Foundry 资源（OpenAI 兼容 /v1 端点）
+    static let baseURL = "https://murphy-key-resource.services.ai.azure.com/openai/v1"
+    /// 该资源唯一的部署：识图和文本生成都用它。
+    /// 注意：换部署前先确认资源上真的部署了（目录可见 ≠ 已部署，没部署调用 404）
+    static let model = "gpt-5.5"
+    /// 推理力度：low 足够做「明天中午前」类日期换算（实测 ~3s），
+    /// minimal 该模型不支持，medium 以上只会拖慢岛上等待动画
+    static let reasoningEffort = "low"
+}
+
+// MARK: - OpenAI 兼容真实现（Azure AI Foundry /openai/v1 实测可用）
+
+/// 任何 OpenAI 兼容端点都能用：baseURL 填到 /v1 为止。
+/// Azure Foundry：https://<resource>.services.ai.azure.com/openai/v1，
+/// model 必须是**部署名**（不是目录里的模型名），Bearer 鉴权实测通过。
+@MainActor
+final class OpenAIChatAIService: AIService {
+
+    private let baseURL: String
+    private let apiKey: String
+    private let model: String
+
+    /// - Parameters: 来自 settings.aiBaseURL / aiAPIKey / aiModel（AppDelegate 装配）
+    init(baseURL: String, apiKey: String, model: String) {
+        self.baseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
+        self.apiKey = apiKey
+        self.model = model
+    }
+
+    // MARK: AIService
+
+    func parseScreenshot(_ imageData: Data) async throws -> [TodoDraft] {
+        let system = """
+        你是任务提取助手。从用户的截图（聊天记录/会议纪要/邮件等）中提取待办事项。
+        只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
+        "dueDate": "yyyy-MM-dd HH:mm" 或 null, "aiExplanation": "一句话中文说明判断依据"}]}。
+        当前时间：\(Self.now())。相对时间（明天/周五/下班前）换算成具体时间；没有任务返回 {"todos": []}。
+        """
+        let content: [[String: Any]] = [
+            ["type": "text", "text": "提取这张截图里的待办事项"],
+            ["type": "image_url", "image_url": ["url": "data:image/png;base64,\(imageData.base64EncodedString())"]],
+        ]
+        let reply = try await chat(system: system, userContent: content, jsonMode: true)
+        return try Self.decodeDrafts(reply, source: .screenshot)
+    }
+
+    func parseQuickInput(_ text: String) async throws -> TodoDraft {
+        let system = """
+        你是任务解析助手。把用户的一句话解析成一个待办事项。
+        只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
+        "dueDate": "yyyy-MM-dd HH:mm" 或 null, "aiExplanation": "一句话中文说明判断依据"}]}。
+        当前时间：\(Self.now())。title 保留原意但去掉时间词；含紧急/ASAP 或 24h 内截止 → high。
+        """
+        let reply = try await chat(system: system, userContent: [["type": "text", "text": text]], jsonMode: true)
+        guard let draft = try Self.decodeDrafts(reply, source: .manual).first else {
+            throw AIServiceError.invalidResponse
+        }
+        return draft
+    }
+
+    func generateMorningReport(_ ctx: ReportContext) async throws -> String {
+        try await report(
+            ctx,
+            instruction: """
+            生成中文 markdown 晨报，以「# ☀️ 早安！」开头，结构依次为：
+            一句话概览、## 🔥 优先处理（最多3条，加粗标题+截止说明）、## 📅 今日会议、\
+            ## ✅ 个人 Todo、## 🧩 Jira、## 💡 建议（2-3条可执行建议）。语气轻快简洁。
+            """
+        )
+    }
+
+    func generateEveningReport(_ ctx: ReportContext) async throws -> String {
+        try await report(
+            ctx,
+            instruction: """
+            生成中文 markdown 晚报，以「# 🌙 晚上好，来复盘今天」开头，结构依次为：
+            一句话完成度概览、## 🎉 今日完成（删除线列出）、## 🔥 优先处理（结转明天，最多3条）、\
+            ## 📅 今日会议、## 🧩 Jira、## 💡 建议（含明早第一件事 + 休息提醒）。语气温和。
+            """
+        )
+    }
+
+    // MARK: 内部
+
+    private func report(_ ctx: ReportContext, instruction: String) async throws -> String {
+        let reply = try await chat(
+            system: "你是用户的个人工作助理。只输出 markdown 正文，不要代码块包裹。\(instruction)",
+            userContent: [["type": "text", "text": Self.contextText(ctx)]],
+            jsonMode: false
+        )
+        return reply.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// chat completions 核心调用（jsonMode = response_format json_object）
+    private func chat(system: String, userContent: [[String: Any]], jsonMode: Bool) async throws -> String {
+        guard !apiKey.isEmpty, !baseURL.isEmpty, !model.isEmpty else {
+            throw AIServiceError.notConfigured
+        }
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            throw AIServiceError.notConfigured
+        }
+
+        var body: [String: Any] = [
+            "model": model,
+            "reasoning_effort": AIDefaults.reasoningEffort,
+            "messages": [
+                ["role": "system", "content": system],
+                ["role": "user", "content": userContent],
+            ],
+        ]
+        if jsonMode { body["response_format"] = ["type": "json_object"] }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            NSLog("[AI] HTTP \(code): \(String(data: data.prefix(300), encoding: .utf8) ?? "")")
+            throw AIServiceError.invalidResponse
+        }
+        guard let content = try JSONDecoder().decode(ChatResponse.self, from: data)
+            .choices.first?.message.content, !content.isEmpty else {
+            throw AIServiceError.invalidResponse
+        }
+        return content
+    }
+
+    // MARK: 解析
+
+    private struct ChatResponse: Decodable {
+        struct Choice: Decodable {
+            struct Message: Decodable { let content: String? }
+            let message: Message
+        }
+        let choices: [Choice]
+    }
+
+    private struct DraftsEnvelope: Decodable { let todos: [DraftDTO] }
+    private struct DraftDTO: Decodable {
+        let title: String
+        let priority: String?
+        let dueDate: String?
+        let aiExplanation: String?
+    }
+
+    nonisolated private static func decodeDrafts(_ reply: String, source: TodoSource) throws -> [TodoDraft] {
+        // 防御：个别情况下模型仍会用 ```json 围栏包 JSON
+        var text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("```") {
+            text = text
+                .replacingOccurrences(of: "```json", with: "")
+                .replacingOccurrences(of: "```", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let data = text.data(using: .utf8),
+              let envelope = try? JSONDecoder().decode(DraftsEnvelope.self, from: data) else {
+            throw AIServiceError.invalidResponse
+        }
+        return envelope.todos.map { dto in
+            TodoDraft(
+                title: dto.title,
+                source: source,
+                priority: Priority(rawValue: dto.priority ?? "") ?? .medium,
+                dueDate: dto.dueDate.flatMap(Self.parseDate),
+                aiExplanation: dto.aiExplanation
+            )
+        }
+    }
+
+    // MARK: 时间
+
+    nonisolated private static let dateTime: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        f.timeZone = .current
+        return f
+    }()
+
+    nonisolated private static func now() -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy-MM-dd HH:mm EEEE"
+        return f.string(from: Date())
+    }
+
+    nonisolated private static func parseDate(_ raw: String) -> Date? {
+        dateTime.date(from: raw)
+    }
+
+    /// ReportContext → 纯文本上下文（喂给 LLM）
+    nonisolated private static func contextText(_ ctx: ReportContext) -> String {
+        var lines = ["当前时间：\(now())"]
+        lines.append("\n未完成待办（\(ctx.pendingTodos.count)）：")
+        for t in ctx.pendingTodos {
+            let due = t.dueDate.map { dateTime.string(from: $0) } ?? "无截止"
+            let src = t.source == .jira ? "Jira \(t.jiraKey ?? "")（\(t.jiraStatus ?? "To Do")）" : "个人"
+            lines.append("- \(t.title) | \(t.priority.label) | \(due) | \(src)")
+        }
+        lines.append("\n今日已完成（\(ctx.completedToday.count)）：")
+        for t in ctx.completedToday { lines.append("- \(t.title)") }
+        lines.append("\n今日会议（\(ctx.meetings.count)）：")
+        for m in ctx.meetings {
+            let plat = m.platform.map { "（\($0.label)）" } ?? ""
+            lines.append("- \(dateTime.string(from: m.start))–\(dateTime.string(from: m.end)) \(m.title)\(plat)")
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
 // MARK: - Anthropic 真实现骨架（B 接管）
 
 @MainActor

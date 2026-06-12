@@ -16,7 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - 服务（换真实现改这里 —— 见 docs/MODULES.md）
 
-    private lazy var aiService: AIService = MockAIService()           // owner B: 换 AnthropicAIService(apiKey:)
+    /// Mock 常驻：AI 配置不全时兜底（CODING_GUIDELINES：保留 Mock）
+    private let mockAIService = MockAIService()
     private lazy var captureService: CaptureService = HotkeyCaptureService() // owner C
     /// Mock 常驻：配置不全时兜底 + Debug「模拟 Jira 新分配」演示
     private let mockJiraService = MockJiraService()
@@ -134,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.store.isAIWorking = true
             Task { @MainActor in
                 do {
-                    var drafts = try await self.aiService.parseScreenshot(data)
+                    var drafts = try await self.currentAIService().parseScreenshot(data)
                     for i in drafts.indices { drafts[i].screenshotPath = path }
                     self.store.isAIWorking = false
                     if drafts.count >= 3 {
@@ -186,6 +187,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 按配置动态选择 Jira 服务：三项齐全 → Real，否则 → Mock。
     /// 每个轮询周期重新判定，设置面板改完即生效，无需重启（integrations spec delta）。
+    /// AI：填了 Key 就走真实 AI（端点/模型用 AIDefaults 固定值，settings 留作隐藏覆盖口），否则 Mock
+    private func currentAIService() -> AIService {
+        let s = store.settings
+        guard !s.aiAPIKey.isEmpty else { return mockAIService }
+        return OpenAIChatAIService(
+            baseURL: s.aiBaseURL.isEmpty ? AIDefaults.baseURL : s.aiBaseURL,
+            apiKey: s.aiAPIKey,
+            model: s.aiModel.isEmpty ? AIDefaults.model : s.aiModel
+        )
+    }
+
     private func currentJiraService() -> JiraService {
         let s = store.settings
         if !s.jiraBaseURL.isEmpty, !s.jiraEmail.isEmpty, !s.jiraAPIToken.isEmpty {
@@ -234,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(true, forKey: key)
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2)) // 等面板就位
-            let text = (try? await aiService.generateMorningReport(store.reportContext)) ?? ""
+            let text = (try? await currentAIService().generateMorningReport(store.reportContext)) ?? ""
             store.present(.morningReport(text: text))
         }
     }
@@ -246,7 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               !UserDefaults.standard.bool(forKey: key) else { return }
         UserDefaults.standard.set(true, forKey: key)
         Task { @MainActor in
-            let text = (try? await aiService.generateEveningReport(store.reportContext)) ?? ""
+            let text = (try? await currentAIService().generateEveningReport(store.reportContext)) ?? ""
             store.present(.eveningReport(text: text))
         }
     }
@@ -330,7 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let root = IslandRootView(
             notchSize: notchSize,
             onParse: { [weak self] text in
-                try? await self?.aiService.parseQuickInput(text)
+                try? await self?.currentAIService().parseQuickInput(text)
             }
         )
         .environmentObject(store)
@@ -394,14 +406,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func debugMorning() {
         Task { @MainActor in
-            let text = (try? await aiService.generateMorningReport(store.reportContext)) ?? ""
+            let text = (try? await currentAIService().generateMorningReport(store.reportContext)) ?? ""
             store.present(.morningReport(text: text))
         }
     }
 
     @objc private func debugEvening() {
         Task { @MainActor in
-            let text = (try? await aiService.generateEveningReport(store.reportContext)) ?? ""
+            let text = (try? await currentAIService().generateEveningReport(store.reportContext)) ?? ""
             store.present(.eveningReport(text: text))
         }
     }

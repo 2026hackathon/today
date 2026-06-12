@@ -35,10 +35,11 @@ struct SettingsPanel: View {
     private var apiSection: some View {
         SettingsSection(label: "API 配置") {
             SettingsRow(label: "AI API Key") {
-                SettingsInputField(placeholder: "sk-...", text: $store.settings.aiAPIKey, secure: true)
+                SettingsInputField(placeholder: "Azure Key", text: $store.settings.aiAPIKey, secure: true)
             }
+            // 端点/模型固定在 AIDefaults（团队共用 Azure 资源），UI 不暴露
             SettingsRow(label: "模型") {
-                Text("未配置时使用 Mock 演示数据")
+                Text("\(AIDefaults.model)（内置）· 未配置 Key 时用 Mock")
                     .font(DS.Fonts.compactSide)
                     .foregroundStyle(DS.Colors.text3)
             }
