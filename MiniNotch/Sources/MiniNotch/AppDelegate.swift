@@ -245,8 +245,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.store.mergeJiraTodos(tickets, notify: didInitialSync)
                     didInitialSync = true
                 }
-                // 每轮重读设置，改完下个周期生效；下限 15s 防 API 限流
-                let interval = max(15, self?.store.settings.jiraPollSeconds ?? 60)
+                // 每轮重读设置，改完下个周期生效；下限 5s（演示「现场分配」用，常规建议 ≥30s）
+                let interval = max(5, self?.store.settings.jiraPollSeconds ?? 60)
                 try? await Task.sleep(for: .seconds(interval))
             }
         })

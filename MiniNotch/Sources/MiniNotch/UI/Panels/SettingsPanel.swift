@@ -342,7 +342,7 @@ private struct SettingsPollIntervalPicker: View {
     @State private var hovering = false
 
     private static let options: [(value: Int, label: String)] = [
-        (30, "30 秒"), (60, "1 分钟"), (120, "2 分钟"), (300, "5 分钟"),
+        (5, "5 秒"), (30, "30 秒"), (60, "1 分钟"), (120, "2 分钟"), (300, "5 分钟"),
     ]
 
     private var currentLabel: String {
