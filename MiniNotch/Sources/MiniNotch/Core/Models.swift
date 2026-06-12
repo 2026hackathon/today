@@ -190,10 +190,13 @@ struct Meeting: Identifiable, Codable, Equatable, Sendable {
     var platform: MeetingPlatform?
     var attendees: [String] = []
     var calendarName: String?
+    /// 是否来自「提醒事项」（true 时 link/platform 通常为 nil，UI 用不同样式渲染）
+    var isReminder: Bool = false
 
     enum Status { case upcoming, ongoing, ended }
 
     var status: Status {
+        if isReminder { return .upcoming } // 提醒事项不参与 ongoing/ended 判断
         let now = Date()
         if now < start { return .upcoming }
         if now > end { return .ended }

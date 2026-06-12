@@ -280,7 +280,7 @@ struct JiraTodoRow: View {
 
 // MARK: - 会议行
 
-private struct MeetingRow: View {
+struct MeetingRow: View {
     let meeting: Meeting
     @State private var hovering = false
 
@@ -294,19 +294,33 @@ private struct MeetingRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Circle().fill(dotColor).frame(width: 6, height: 6)
-            Text("\(PanelFormat.hm(meeting.start))-\(PanelFormat.hm(meeting.end))")
-                .font(DS.Fonts.compactSide)
-                .foregroundStyle(DS.Colors.text2)
+            if meeting.isReminder {
+                Image(systemName: "bell.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(DS.Colors.accent)
+            } else {
+                Circle().fill(dotColor).frame(width: 6, height: 6)
+            }
+            if !meeting.isReminder || meeting.start != meeting.end {
+                Text("\(PanelFormat.hm(meeting.start))-\(PanelFormat.hm(meeting.end))")
+                    .font(DS.Fonts.compactSide)
+                    .foregroundStyle(DS.Colors.text2)
+            } else {
+                Text(PanelFormat.hm(meeting.start))
+                    .font(DS.Fonts.compactSide)
+                    .foregroundStyle(DS.Colors.text2)
+            }
             Text(meeting.title)
                 .font(DS.Fonts.todoTitle)
                 .foregroundStyle(DS.Colors.text1)
                 .lineLimit(1)
-            if let platform = meeting.platform {
+            if meeting.isReminder {
+                Text("提醒").dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
+            } else if let platform = meeting.platform {
                 Text(platform.label).dsTag()
             }
             Spacer(minLength: 0)
-            if let link = meeting.link {
+            if !meeting.isReminder, let link = meeting.link {
                 Button {
                     NSWorkspace.shared.open(link)
                 } label: {
@@ -316,6 +330,16 @@ private struct MeetingRow: View {
                         .padding(.horizontal, 7)
                         .frame(height: 18)
                         .background(DS.Colors.accentSoft, in: RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+            }
+            if meeting.isReminder, let link = meeting.link {
+                Button {
+                    NSWorkspace.shared.open(link)
+                } label: {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(DS.Colors.accent)
                 }
                 .buttonStyle(.plain)
             }
@@ -426,7 +450,7 @@ struct PanelTabBar: View {
     }
 
     private var visibleTabs: [PanelTab] {
-        current == .settings ? PanelTab.allCases : [.today, .inbox, .favorites]
+        current == .settings ? PanelTab.allCases : [.today, .calendar, .inbox, .favorites]
     }
 }
 

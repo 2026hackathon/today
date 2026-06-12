@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import EventKit
 import SwiftUI
 
 // ============================================================
@@ -23,8 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let mockJiraService = MockJiraService()
     /// Mock 常驻：配置不全时兜底 + Debug「模拟 PR 新分配」演示
     private let mockGitHubService = MockGitHubService()
-    /// 真实日历服务（EventKit 实现完成前 fetch 抛错 → 上层按空列表处理，不再用 Mock 会议填充）
-    private lazy var calendarService: CalendarService = EventKitCalendarService()
+    /// EventKit 真实日历服务（权限就绪时使用；被拒/失败 → 上层按空列表处理，不用 Mock 填充）
+    private let eventKitCalendarService = EventKitCalendarService()
     private lazy var reminderScheduler: ReminderScheduler = TimerReminderScheduler()
     private lazy var pushService: PushService = NoopPushService()     // owner C: 按 settings 换 Feishu/Bark
 
@@ -53,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuTrackingObserver()
         setupKeyboardFocusForInputStates()
         wireServices()
+        requestCalendarAccess()    // accessory 应用需临时激活才能弹权限弹窗
         startPolling()
         maybeShowMorningReport()
     }
@@ -231,6 +233,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.refreshAISuggestion()
         }
 
+        // ── 日历三层同步（apple-calendar-integration spec）──
+        // Layer 1: 事件驱动（EKEventStoreChanged → 即时刷新）—— 权限授予后才挂接
+        // Layer 3: 前台刷新（展开面板时立即拉一次）
+        store.$islandState
+            .sink { [weak self] newState in
+                guard case .expanded = newState else { return }
+                Task { @MainActor in self?.refreshCalendarMeetings() }
+            }
+            .store(in: &cancellables)
+
         // 启动后等首轮 Jira/日历同步落地，再生成 Today 底部一句话建议
         refreshAISuggestion(afterSeconds: 3)
     }
@@ -255,12 +267,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    /// accessory 应用临时激活 → 请求日历权限 → 恢复 accessory。
+    /// 不临时激活的话系统权限弹窗不会显示（LSUIElement 应用无前台权限）。
+    private func requestCalendarAccess() {
+        // 如果已有权限或被拒，不需要弹窗
+        let status = EKEventStore.authorizationStatus(for: .event)
+        guard status == .notDetermined else {
+            if status == .fullAccess {
+                wireCalendarLayer1()
+                performInitialSyncIfNeeded()
+                refreshCalendarMeetings() // 已有权限 → 立即拉一次
+            }
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // 临时切为 regular 激活策略（让系统允许弹窗）
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+
+            let granted = await self.eventKitCalendarService.requestAccess()
+
+            // 恢复 accessory 模式（不占 Dock、不出现在 ⌘Tab）
+            NSApp.setActivationPolicy(.accessory)
+            // accessory 模式下需要重新 orderFront 面板
+            self.panel?.orderFrontRegardless()
+
+            if granted {
+                self.wireCalendarLayer1()
+                self.performInitialSyncIfNeeded()
+                self.refreshCalendarMeetings()
+            } else {
+                NSLog("[Calendar] permission denied — meetings stay empty (no mock fill)")
+            }
+        }
+    }
+
+    /// 首次同步检查：如果从未完成过首次同步，执行 30 天窗口历史数据拉取
+    private func performInitialSyncIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: "calendarInitialSyncCompleted") else { return }
+        NSLog("[Calendar] performing initial historical sync (30-day window)")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard let service = self.currentCalendarService() else { return }
+            do {
+                let range = CalendarSyncConfig.defaultRange()
+                let meetings = try await service.fetchMeetings(in: range)
+                self.store.replaceMeetings(meetings)
+                UserDefaults.standard.set(true, forKey: "calendarInitialSyncCompleted")
+                NSLog("[Calendar] initial sync complete: %d meetings", meetings.count)
+            } catch {
+                NSLog("[Calendar] initial sync failed: \(error) — will retry next launch")
+            }
+        }
+    }
+
     /// 立即同步外部数据源（刷新按钮 / 轮询共用）
     private func syncExternalSources(notifyJira: Bool) async {
         await syncJira(notify: notifyJira)
         await syncGitHub(notify: notifyJira)
-        // 日历拉取失败/未实现 → 空列表（顺带清掉历史演示会议）
-        store.replaceMeetings((try? await calendarService.fetchTodayMeetings()) ?? [])
+        // 日历：权限被拒/拉取失败 → 空列表（顺带清掉历史演示会议，不用 Mock 填充）
+        var meetings: [Meeting] = []
+        if let calendar = currentCalendarService() {
+            meetings = (try? await calendar.fetchMeetings(in: CalendarSyncConfig.defaultRange())) ?? []
+        }
+        store.replaceMeetings(meetings)
+    }
+
+    /// 挂接 Layer 1 事件驱动回调（仅在权限授予后调用）
+    private func wireCalendarLayer1() {
+        eventKitCalendarService.onCalendarChanged = { [weak self] in
+            Task { @MainActor in self?.refreshCalendarMeetings() }
+        }
+    }
+
+    /// 拉取一次日历会议（三层同步共用入口）
+    private func refreshCalendarMeetings() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard let service = self.currentCalendarService() else {
+                self.store.replaceMeetings([]) // 权限被拒 → 清空，不用 Mock 填充
+                return
+            }
+            do {
+                let range = CalendarSyncConfig.defaultRange()
+                let meetings = try await service.fetchMeetings(in: range)
+                let msg = "[Calendar] \(meetings.count) meetings, range=\(range.lowerBound.formatted(.dateTime.month().day()))~\(range.upperBound.formatted(.dateTime.month().day())), service=\(type(of: service))"
+                NSLog("%@", msg)
+                Self.appendCalLog(msg)
+                self.store.replaceMeetings(meetings)
+            } catch {
+                let msg = "[Calendar] failed: \(error)"
+                NSLog("%@", msg)
+                Self.appendCalLog(msg)
+            }
+        }
+    }
+
+    private static func appendCalLog(_ msg: String) {
+        let url = URL(fileURLWithPath: NSHomeDirectory() + "/Library/Application Support/MiniNotch/calendar-debug.log")
+        let line = "\(Date()): \(msg)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if FileManager.default.fileExists(atPath: url.path),
+           let fh = try? FileHandle(forWritingTo: url) {
+            fh.seekToEndOfFile(); fh.write(data); fh.closeFile()
+        } else {
+            try? data.write(to: url)
+        }
     }
 
     /// 按配置动态选择 Jira 服务：三项齐全 → Real，否则 → Mock。
@@ -321,6 +435,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 按 EventKit 权限动态选择日历服务。
+    /// - fullAccess / notDetermined → EventKit（notDetermined 时首次拉取会弹权限弹窗）
+    /// - denied / restricted → nil（权限被拒 → 空列表，不用 Mock 填充）
+    private func currentCalendarService() -> CalendarService? {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        switch status {
+        case .denied, .restricted:
+            return nil
+        default: // .fullAccess, .notDetermined
+            return eventKitCalendarService
+        }
+    }
+
     /// Jira + GitHub（间隔共用，设置中调）/ 日历 60min 轮询（integrations spec）
     private func startPolling() {
         pollingTasks.append(Task { @MainActor [weak self] in
@@ -332,6 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(for: .seconds(interval))
             }
         })
+        // Layer 2: 定时兜底（15min），兜住 EKEventStoreChanged 通知丢失的边角
         pollingTasks.append(Task { @MainActor [weak self] in
             // GitHub PR 轮询：与 Jira 同款（基线静默 + 间隔共用）
             while !Task.isCancelled {
@@ -342,11 +470,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
         pollingTasks.append(Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                if let self {
-                    // 失败/未实现 → 空列表（顺带清掉历史演示会议）
-                    self.store.replaceMeetings((try? await self.calendarService.fetchTodayMeetings()) ?? [])
-                }
-                try? await Task.sleep(for: .seconds(60 * 60))
+                self?.refreshCalendarMeetings()
+                try? await Task.sleep(for: .seconds(15 * 60))
             }
         })
         // 晚报：每分钟检查是否到点（reminders/ai-pipeline spec）

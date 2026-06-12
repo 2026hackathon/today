@@ -115,6 +115,8 @@ struct IslandRootView: View {
         case .expanded(let tab):
             if tab == .settings {
                 SettingsPanel()
+            } else if tab == .calendar {
+                CalendarPanel()
             } else {
                 TodayPanel()
             }

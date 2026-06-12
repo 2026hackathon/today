@@ -7,6 +7,7 @@ import Foundation
 
 enum PanelTab: String, CaseIterable, Sendable {
     case today = "Today"
+    case calendar = "日历"
     case inbox = "Inbox"
     case favorites = "收藏"
     case settings = "设置"

@@ -26,5 +26,9 @@
     <false/>
     <key>NSSupportsSuddenTermination</key>
     <false/>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>MiniNotch 需要读取日历以展示今日会议和加入会议链接。</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>MiniNotch 需要读取提醒事项以展示今日待办提醒。</string>
 </dict>
 </plist>

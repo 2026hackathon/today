@@ -173,6 +173,16 @@ final class AppStore: ObservableObject {
             .sorted { $0.start < $1.start }
     }
 
+    /// 按日期分组的会议列表（CalendarPanel 多日视图消费）
+    /// 每组包含日期（startOfDay）和该日所有会议（按 start 升序），按日期升序排列
+    var meetingsByDate: [(date: Date, meetings: [Meeting])] {
+        let cal = Calendar.current
+        let grouped = Dictionary(grouping: meetings) { cal.startOfDay(for: $0.start) }
+        return grouped
+            .map { (date: $0.key, meetings: $0.value.sorted { $0.start < $1.start }) }
+            .sorted { $0.date < $1.date }
+    }
+
     // MARK: - 今日焦点派生（today-focus-redesign spec）
     // Today 只回答「我今天要关注什么」：按时间相关性筛选，来源只是行内标识。
 
@@ -431,6 +441,7 @@ final class AppStore: ObservableObject {
         crownedToday = false
         todos = Self.demoTodos()
         meetings = Self.demoMeetings()
+        UserDefaults.standard.removeObject(forKey: "calendarInitialSyncCompleted")
         dismiss()
     }
 
