@@ -27,6 +27,21 @@ final class AppStore: ObservableObject {
     var onCompletedAll: (() -> Void)?
     var onTodoCompleted: ((Todo) -> Void)?
     var onTodoLanded: ((Todo) -> Void)?
+    /// 手动刷新的实际同步逻辑（Jira/日历），AppDelegate 装配
+    var onRefresh: (() async -> Void)?
+
+    /// 刷新进行中（刷新按钮转圈用）
+    @Published private(set) var isRefreshing = false
+
+    /// 手动刷新：立即同步外部数据源，不等轮询周期
+    func refresh() {
+        guard !isRefreshing, let onRefresh else { return }
+        isRefreshing = true
+        Task { @MainActor [weak self] in
+            await onRefresh()
+            self?.isRefreshing = false
+        }
+    }
 
     // MARK: - 动效触发器（UI 绑定，effects 模块消费）
 

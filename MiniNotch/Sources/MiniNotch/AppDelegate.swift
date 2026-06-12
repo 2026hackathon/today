@@ -183,6 +183,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.store.settings.effectsEnabled else { return }
             CelebrationWindowController.shared.celebrate(streakDays: self.bumpClearStreak())
         }
+
+        // 手动刷新按钮 → 立即同步 Jira + 日历
+        store.onRefresh = { [weak self] in
+            await self?.syncExternalSources(notifyJira: true)
+        }
+    }
+
+    /// 立即同步外部数据源（刷新按钮 / 轮询共用）
+    private func syncExternalSources(notifyJira: Bool) async {
+        if let tickets = try? await currentJiraService().fetchAssignedTickets() {
+            store.mergeJiraTodos(tickets, notify: notifyJira)
+        }
+        if let meetings = try? await calendarService.fetchTodayMeetings() {
+            store.replaceMeetings(meetings)
+        }
     }
 
     /// 按配置动态选择 Jira 服务：三项齐全 → Real，否则 → Mock。

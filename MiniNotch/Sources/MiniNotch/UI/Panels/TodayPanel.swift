@@ -405,6 +405,7 @@ struct PanelTabBar: View {
             }
             Spacer(minLength: 0)
             if current != .settings {
+                PanelRefreshButton()
                 PanelIconButton(symbol: "plus") { store.present(.quickInput) }
                 PanelIconButton(symbol: "gearshape.fill") { store.present(.expanded(tab: .settings)) }
             }
@@ -435,6 +436,37 @@ struct PanelTabButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+/// 刷新按钮：立即同步 Jira/日历，刷新中转圈并禁用
+struct PanelRefreshButton: View {
+    @EnvironmentObject var store: AppStore
+    @State private var hovering = false
+    @State private var spinAngle = 0.0
+
+    var body: some View {
+        Button { store.refresh() } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(store.isRefreshing ? DS.Colors.accent : (hovering ? DS.Colors.text1 : DS.Colors.text3))
+                .rotationEffect(.degrees(spinAngle))
+                .frame(width: 26, height: 26)
+                .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+        }
+        .buttonStyle(.plain)
+        .disabled(store.isRefreshing)
+        .onHover { hovering = $0 }
+        .onChange(of: store.isRefreshing) { _, refreshing in
+            if refreshing {
+                withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
+                    spinAngle = 360
+                }
+            } else {
+                withAnimation(.linear(duration: 0.1)) { spinAngle = 0 }
+            }
+        }
+        .help("立即同步 Jira 与日历")
     }
 }
 
