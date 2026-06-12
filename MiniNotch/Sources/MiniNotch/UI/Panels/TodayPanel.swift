@@ -58,16 +58,7 @@ struct TodayPanel: View {
                 .padding(.top, 4)
                 .padding(.bottom, 12)
 
-            // 1. 今日日程（空则整段隐藏）
-            if !store.todayMeetings.isEmpty {
-                PanelSectionTitle(title: "今日日程", count: store.todayMeetings.count)
-                ForEach(store.todayMeetings) { meeting in
-                    MeetingRow(meeting: meeting)
-                }
-                PanelDivider()
-            }
-
-            // 2. 已超期（红色高亮，空则隐藏）
+            // 1. 已超期（红色高亮，空则隐藏）
             if !store.overdueTodos.isEmpty {
                 PanelSectionTitle(title: "已超期", count: store.overdueTodos.count, color: DS.Colors.alert)
                 ForEach(store.overdueTodos) { todo in
@@ -76,7 +67,7 @@ struct TodayPanel: View {
                 PanelDivider()
             }
 
-            // 3. 今日任务：有时间按时间排 → 细分隔线 → 无固定时间按优先级排
+            // 2. 今日任务：有时间按时间排 → 细分隔线 → 无固定时间按优先级排
             PanelSectionTitle(
                 title: "今日任务",
                 count: store.todayTimedTodos.count + store.todayUntimedTodos.count
@@ -101,6 +92,15 @@ struct TodayPanel: View {
             }
 
             PanelDivider()
+
+            // 3. 今日日程（已完成之上，空则整段隐藏）
+            if !store.todayMeetings.isEmpty {
+                PanelSectionTitle(title: "今日日程", count: store.todayMeetings.count)
+                ForEach(store.todayMeetings) { meeting in
+                    MeetingRow(meeting: meeting)
+                }
+                PanelDivider()
+            }
 
             completedFold
 
