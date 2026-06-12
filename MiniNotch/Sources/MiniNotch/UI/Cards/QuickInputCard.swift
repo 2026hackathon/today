@@ -128,11 +128,12 @@ struct QuickInputCard: View {
                     .foregroundStyle(DS.Colors.text3)
                     .frame(width: 50, alignment: .leading)
                 HStack(spacing: 6) {
-                    Text(draft.priority.label)
-                        .dsTag(
-                            draft.priority == .high ? DS.Colors.alert : DS.Colors.text3,
-                            bg: draft.priority == .high ? DS.Colors.alertSoft : DS.Colors.surface1
-                        )
+                    // 三档可点选：AI 给的是建议值，允许用户在创建前改
+                    HStack(spacing: 4) {
+                        ForEach(Priority.allCases, id: \.self) { p in
+                            priorityChip(p, selected: draft.priority == p)
+                        }
+                    }
                     if let explanation = draft.aiExplanation, !explanation.isEmpty {
                         Text(explanation)
                             .font(DS.Fonts.meta)
@@ -167,6 +168,27 @@ struct QuickInputCard: View {
         }
         .font(DS.Fonts.button)
         .padding(.vertical, 4)
+    }
+
+    private func priorityChip(_ p: Priority, selected: Bool) -> some View {
+        Button {
+            setPriority(p)
+        } label: {
+            Text(p.label)
+                .dsTag(
+                    p == .high ? DS.Colors.alert : DS.Colors.text2,
+                    bg: p == .high ? DS.Colors.alertSoft : DS.Colors.surface1
+                )
+                .opacity(selected ? 1 : 0.35)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 用户改写 AI 建议的优先级（注意：继续输入触发重新解析后会被 AI 新结果覆盖）
+    private func setPriority(_ p: Priority) {
+        guard case .parsed(var draft) = phase, draft.priority != p else { return }
+        draft.priority = p
+        phase = .parsed(draft)
     }
 
     private var aiMark: some View {
