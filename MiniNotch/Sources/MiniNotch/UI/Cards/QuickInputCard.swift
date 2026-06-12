@@ -20,11 +20,18 @@ struct QuickInputCard: View {
     @State private var text = ""
     @State private var phase: Phase = .idle
     @State private var skipAI = false
+    /// 手动模式（跳过 AI / 无解析结果）下用户自选的截止与优先级
+    @State private var manualDue: Date?
+    @State private var manualPriority: Priority = .medium
     @State private var parseTask: Task<Void, Never>?
     @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let notice = store.quickInputNotice {
+                noticeBanner(notice)
+            }
+
             inputRow
 
             if !skipAI {
@@ -35,6 +42,10 @@ struct QuickInputCard: View {
                     preview(draft)
                 }
             }
+            // 手动模式（跳过 AI / 尚无解析结果）：提供手动 截止/优先级 选择
+            if skipAI || (phase != .parsing && !isParsed) {
+                manualControls
+            }
 
             actions
         }
@@ -42,6 +53,95 @@ struct QuickInputCard: View {
         .padding(.bottom, 6)
         .onAppear { focused = true }
         .onDisappear { parseTask?.cancel() }
+    }
+
+    private var isParsed: Bool {
+        if case .parsed = phase { return true }
+        return false
+    }
+
+    /// 截图解析失败/未识别的提示（alert 色，来自 store.quickInputNotice）
+    private func noticeBanner(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10))
+            Text(text)
+                .font(DS.Fonts.meta)
+        }
+        .foregroundStyle(DS.Colors.alert)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DS.Colors.alertSoft, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+        .padding(.horizontal, 14)
+        .padding(.bottom, 10)
+    }
+
+    // MARK: - 手动 截止/优先级（跳过 AI / 无解析结果时展示）
+
+    private var manualControls: some View {
+        HStack(spacing: 8) {
+            Text("手动")
+                .font(DS.Fonts.sectionTitle)
+                .kerning(0.8)
+                .foregroundStyle(DS.Colors.text3)
+            dueMenu(current: manualDue) { manualDue = $0 }
+            HStack(spacing: 4) {
+                ForEach(Priority.allCases, id: \.self) { p in
+                    Button {
+                        manualPriority = p
+                    } label: {
+                        Text(p.label)
+                            .dsTag(
+                                p == .high ? DS.Colors.alert : DS.Colors.text2,
+                                bg: p == .high ? DS.Colors.alertSoft : DS.Colors.surface1
+                            )
+                            .opacity(manualPriority == p ? 1 : 0.35)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .overlay(alignment: .top) {
+            Rectangle().fill(DS.Colors.border).frame(height: 1)
+        }
+    }
+
+    /// 截止时间下拉（手动模式与 AI 预览共用）
+    private func dueMenu(current: Date?, onSet: @escaping (Date?) -> Void) -> some View {
+        Menu {
+            Button("无截止") { onSet(nil) }
+            Button("1 小时后") { onSet(Date().addingTimeInterval(3600)) }
+            Button("今晚 18:00") {
+                onSet(Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: Date()))
+            }
+            Button("今晚 22:00") {
+                onSet(Calendar.current.date(bySettingHour: 22, minute: 0, second: 0, of: Date()))
+            }
+            Button("明天 09:00") {
+                let t = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+                onSet(Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: t))
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 9))
+                Text(current?.dsShortLabel ?? "截止时间")
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .semibold))
+            }
+            .font(DS.Fonts.meta)
+            .foregroundStyle(current == nil ? DS.Colors.text3 : DS.Colors.text1)
+            .padding(.horizontal, 8)
+            .frame(height: 20)
+            .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     // MARK: - 输入行（› 前缀 + 输入框 + return 键帽）
@@ -121,7 +221,17 @@ struct QuickInputCard: View {
                 .padding(.bottom, 8)
 
             previewRow(key: "标题", value: draft.title)
-            previewRow(key: "截止", value: draft.dueDate?.dsShortLabel ?? "无", aiMarked: true)
+            HStack(spacing: 8) {
+                Text("截止")
+                    .foregroundStyle(DS.Colors.text3)
+                    .frame(width: 50, alignment: .leading)
+                // AI 给的是建议值，点击可改
+                dueMenu(current: draft.dueDate) { setDue($0) }
+                Spacer()
+                aiMark
+            }
+            .font(DS.Fonts.button)
+            .padding(.vertical, 4)
 
             HStack(spacing: 8) {
                 Text("优先级")
@@ -184,6 +294,13 @@ struct QuickInputCard: View {
         .buttonStyle(.plain)
     }
 
+    /// 用户改写 AI 建议的截止时间（继续输入重新解析后会被新结果覆盖）
+    private func setDue(_ date: Date?) {
+        guard case .parsed(var draft) = phase else { return }
+        draft.dueDate = date
+        phase = .parsed(draft)
+    }
+
     /// 用户改写 AI 建议的优先级（注意：继续输入触发重新解析后会被 AI 新结果覆盖）
     private func setPriority(_ p: Priority) {
         guard case .parsed(var draft) = phase, draft.priority != p else { return }
@@ -241,8 +358,8 @@ struct QuickInputCard: View {
         if !skipAI, case .parsed(let draft) = phase {
             store.add(draft.toTodo())
         } else {
-            // 无解析结果 / 跳过 AI：原文本做标题，manual 来源
-            store.add(Todo(title: trimmed, source: .manual))
+            // 无解析结果 / 跳过 AI：原文本做标题 + 手动选择的截止/优先级
+            store.add(Todo(title: trimmed, source: .manual, priority: manualPriority, dueDate: manualDue))
         }
         store.dismiss()
     }

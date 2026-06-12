@@ -47,6 +47,9 @@ final class AppStore: ObservableObject {
     /// 用户已开始编辑当前卡片（聚焦输入/点击）→ 解除自动收回（review-fixes #8）
     @Published var cardHeld = false
 
+    /// 快速录入卡顶部的提示条（截图解析失败/未识别时由 AppDelegate 注入，dismiss 清除）
+    @Published var quickInputNotice: String?
+
     /// Today 面板底部的 AI 一句话建议（AppDelegate 调 AIService 生成后注入；
     /// 默认值即未配置 Key / 生成失败时的兜底文案）
     @Published private(set) var aiSuggestion = "建议: 上午先清超期项，会议间隙处理今日任务。"
@@ -98,6 +101,7 @@ final class AppStore: ObservableObject {
     /// 回落到自动派生的 compact 态
     func dismiss() {
         cardHeld = false
+        quickInputNotice = nil
         expireCrownIfStale()
         withAnimation(IslandAnimation.spring) { islandState = derivedCompactState() }
     }

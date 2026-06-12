@@ -202,6 +202,10 @@ struct PersonalTodoRow: View {
                 }
             }
             Spacer(minLength: 0)
+            // 截图来源：行尾缩略图，点击用「预览」打开原图
+            if let path = todo.screenshotPath {
+                ScreenshotThumb(path: path)
+            }
         }
         .padding(8)
         .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
@@ -216,6 +220,56 @@ struct PersonalTodoRow: View {
         case .wechat: "message.fill"
         case .manual, .jira, .github: nil
         }
+    }
+}
+
+// MARK: - 截图缩略图（行尾，点击看原图）
+
+struct ScreenshotThumb: View {
+    let path: String
+    @State private var image: NSImage?
+    @State private var hovering = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 38, height: 26)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(hovering ? DS.Colors.text2 : DS.Colors.border, lineWidth: 1)
+                    )
+                    .onTapGesture {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                    }
+                    .onHover { hovering = $0 }
+                    .help("点击查看原始截图")
+            }
+        }
+        .task(id: path) {
+            image = Self.thumbnail(for: path)
+        }
+    }
+
+    /// 解码并缓存小尺寸缩略图（避免列表滚动反复解码原图）
+    @MainActor private static var cache: [String: NSImage] = [:]
+
+    @MainActor private static func thumbnail(for path: String) -> NSImage? {
+        if let hit = cache[path] { return hit }
+        guard FileManager.default.fileExists(atPath: path),
+              let full = NSImage(contentsOfFile: path) else { return nil }
+        let targetW: CGFloat = 76 // 2x 显示尺寸
+        let scale = targetW / max(full.size.width, 1)
+        let size = NSSize(width: targetW, height: full.size.height * scale)
+        let thumb = NSImage(size: size)
+        thumb.lockFocus()
+        full.draw(in: NSRect(origin: .zero, size: size))
+        thumb.unlockFocus()
+        cache[path] = thumb
+        return thumb
     }
 }
 

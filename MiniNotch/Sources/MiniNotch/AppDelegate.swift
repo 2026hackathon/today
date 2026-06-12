@@ -174,11 +174,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     } else if let first = drafts.first {
                         self.store.present(.newTask(draft: first))
                     } else {
-                        self.store.present(.quickInput) // 没识别到 → 手动录入兜底
+                        // 没识别到 → 手动录入兜底，给出明确提示
+                        self.store.quickInputNotice = "截图里未识别到待办，可手动录入"
+                        self.store.present(.quickInput)
                     }
                 } catch {
                     NSLog("[AI] parse failed: \(error)")
                     self.store.isAIWorking = false
+                    self.store.quickInputNotice = "AI 解析失败（网络/Key 问题），已切换手动录入"
                     self.store.present(.quickInput)
                 }
             }
@@ -631,7 +634,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func captureTodo() { captureService.captureForTodo() }
     @objc private func captureFavorite() { captureService.captureForFavorite() }
-    @objc private func quickNew() { store.present(.quickInput) }
+    @objc private func quickNew() {
+        store.quickInputNotice = nil
+        store.present(.quickInput)
+    }
 
     @objc private func quitApp() { NSApp.terminate(nil) }
 
