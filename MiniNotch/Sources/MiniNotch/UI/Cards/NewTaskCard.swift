@@ -89,6 +89,10 @@ struct NewTaskCard: View {
             .font(DS.Fonts.cardTitle)
             .foregroundStyle(DS.Colors.text1)
             .focused($titleFocused)
+            .onChange(of: titleFocused) { _, focused in
+                // 开始输入标题 → 解除自动收回（review-fixes #8）
+                if focused { store.cardHeld = true }
+            }
             .padding(.horizontal, 4)
             .padding(.vertical, 3)
             .background(

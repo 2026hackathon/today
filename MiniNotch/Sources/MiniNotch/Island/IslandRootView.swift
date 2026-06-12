@@ -97,13 +97,14 @@ struct IslandRootView: View {
                 .padding(.top, max(notchSize.height, 32) + 4)
 
         case .newTask(let draft):
-            NewTaskCard(draft: draft)
+            // .id 绑定视图身份：连续两次截图时第二张卡不残留上一张的 @State 草稿（review-fixes #7）
+            NewTaskCard(draft: draft).id(draft.id)
 
         case .reminder(let todo):
             ReminderCard(todo: todo)
 
         case .batch(let drafts):
-            BatchCard(drafts: drafts)
+            BatchCard(drafts: drafts).id(drafts.map(\.id))
 
         case .quickInput:
             QuickInputCard(onParse: onParse)
@@ -154,7 +155,8 @@ struct IslandRootView: View {
                 // 悬停驱动的态（预览/展开面板）移出即收；卡片/输入态不受影响
                 guard isHoverDriven(store.islandState) else { return }
                 try? await Task.sleep(for: .seconds(0.2))
-                guard !Task.isCancelled, !isHovering else { return }
+                // 菜单跟踪中（Debug/右键菜单）鼠标在菜单上不算离开（review-fixes #12）
+                guard !Task.isCancelled, !isHovering, !store.isMenuTracking else { return }
                 store.dismiss()
             }
         }
@@ -182,8 +184,10 @@ struct IslandRootView: View {
     private func autoDismissIfNeeded() async {
         guard case .newTask = store.islandState else { return }
         try? await Task.sleep(for: .seconds(4))
-        // 悬停期间暂停倒计时
-        while isHovering {
+        // 暂停条件：悬停中 / 菜单打开（优先级 Menu 弹出时鼠标在菜单上）/
+        // 用户已开始编辑（cardHeld，聚焦或点击过卡片 → 永不自动收，等用户保存/忽略）
+        // （review-fixes #8/#12）
+        while isHovering || store.isMenuTracking || store.cardHeld {
             try? await Task.sleep(for: .seconds(0.5))
             if Task.isCancelled { return }
         }

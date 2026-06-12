@@ -28,6 +28,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var reminderScheduler: ReminderScheduler = TimerReminderScheduler()
     private lazy var pushService: PushService = NoopPushService()     // owner C: 按 settings 换 Feishu/Bark
 
+    /// 外部源同步基线：首次「成功」同步后置位，之后的新 key 才弹通知卡。
+    /// 失败不置位（review-fixes #2：否则首轮断网 → 第二轮全量误报为新分配）
+    private var jiraBaselineSynced = false
+    private var githubBaselineSynced = false
+    /// 未配置时的清空只在启动后第一次同步执行（清历史 Mock/旧数据）；
+    /// 运行期未配置多半是用户正在设置页编辑凭证，跳过同步避免 prune
+    /// 误删真实数据（review-fixes #1）
+    private var didLaunchCleanupJira = false
+    private var didLaunchCleanupGitHub = false
+
     private var cancellables = Set<AnyCancellable>()
     private var pollingTasks: [Task<Void, Never>] = []
     private var clickOutsideMonitor: Any?
@@ -40,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installEditMenu()
         showPanel()
         setupDismissOnFocusLoss()
+        setupMenuTrackingObserver()
         setupKeyboardFocusForInputStates()
         wireServices()
         startPolling()
@@ -73,6 +84,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let activated = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             guard activated?.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
             Task { @MainActor in self?.dismissOnFocusLoss() }
+        }
+    }
+
+    /// 任意 NSMenu（Debug 菜单/右键菜单/卡内 Menu）跟踪期间，
+    /// 悬停收起与卡片倒计时让路（review-fixes #12）
+    private func setupMenuTrackingObserver() {
+        NotificationCenter.default.addObserver(
+            forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.store.isMenuTracking = true }
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.store.isMenuTracking = false }
         }
     }
 
@@ -166,7 +192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             switch level {
             case .due, .overdue:
-                self.store.present(.reminder(todo: todo))
+                // 输入态不抢占（打字中的草稿无价）；推送照发，过期级 5 分钟后会再来
+                switch self.store.islandState {
+                case .quickInput, .newTask, .batch: break
+                default: self.store.present(.reminder(todo: todo))
+                }
                 Task { await self.pushService.push(title: "⏰ 任务到期", body: todo.title) }
             case .oneHour, .fifteenMin:
                 self.store.refreshCompactState()
@@ -262,44 +292,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 拉取一轮 Jira：未配置时合并空列表（prune 清掉历史 Mock/失效残留）
     private func syncJira(notify: Bool) async {
         guard let service = currentJiraService() else {
-            store.mergeJiraTodos([], notify: false)
-            return
+            if !didLaunchCleanupJira {
+                didLaunchCleanupJira = true
+                store.mergeJiraTodos([], notify: false)
+            }
+            return // 运行期未配置（编辑凭证窗口）：跳过，不 prune
         }
+        didLaunchCleanupJira = true
         if let tickets = try? await service.fetchAssignedTickets() {
-            store.mergeJiraTodos(tickets, notify: notify)
+            store.mergeJiraTodos(tickets, notify: notify && jiraBaselineSynced)
+            jiraBaselineSynced = true
         }
     }
 
     /// 拉取一轮 GitHub PR：未配置时合并空列表（prune 清残留）
     private func syncGitHub(notify: Bool) async {
         guard let service = currentGitHubService() else {
-            store.mergeExternalTodos([], source: .github, notify: false)
-            return
+            if !didLaunchCleanupGitHub {
+                didLaunchCleanupGitHub = true
+                store.mergeExternalTodos([], source: .github, notify: false)
+            }
+            return // 运行期未配置：跳过，不 prune（review-fixes #1）
         }
+        didLaunchCleanupGitHub = true
         if let prs = try? await service.fetchMyPullRequests() {
-            store.mergeExternalTodos(prs, source: .github, notify: notify)
+            store.mergeExternalTodos(prs, source: .github, notify: notify && githubBaselineSynced)
+            githubBaselineSynced = true
         }
     }
 
     /// Jira + GitHub（间隔共用，设置中调）/ 日历 60min 轮询（integrations spec）
     private func startPolling() {
         pollingTasks.append(Task { @MainActor [weak self] in
-            // 首轮同步静默：初始全量不算「新分配」，之后的新 key 才弹通知卡
-            var didInitialSync = false
+            // 首轮静默由 jiraBaselineSynced 统一管理（成功同步才建立基线）
             while !Task.isCancelled {
-                await self?.syncJira(notify: didInitialSync)
-                didInitialSync = true
+                await self?.syncJira(notify: true)
                 // 每轮重读设置，改完下个周期生效；下限 5s（演示「现场分配」用，常规建议 ≥30s）
                 let interval = max(5, self?.store.settings.jiraPollSeconds ?? 60)
                 try? await Task.sleep(for: .seconds(interval))
             }
         })
         pollingTasks.append(Task { @MainActor [weak self] in
-            // GitHub PR 轮询：与 Jira 同款（首轮静默 + 间隔共用）
-            var didInitialSync = false
+            // GitHub PR 轮询：与 Jira 同款（基线静默 + 间隔共用）
             while !Task.isCancelled {
-                await self?.syncGitHub(notify: didInitialSync)
-                didInitialSync = true
+                await self?.syncGitHub(notify: true)
                 let interval = max(5, self?.store.settings.jiraPollSeconds ?? 60)
                 try? await Task.sleep(for: .seconds(interval))
             }
@@ -345,6 +381,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let key = "eveningShown-\(todayKey)"
         guard Calendar.current.component(.hour, from: now) == store.settings.eveningReportHour,
               !UserDefaults.standard.bool(forKey: key) else { return }
+        // 不抢占展开态/卡片态：标记不消耗，下一分钟轮询再试（review-fixes #11）
+        guard store.islandState.isCompact else { return }
         UserDefaults.standard.set(true, forKey: key)
         Task { @MainActor in
             let text = (try? await currentAIService().generateEveningReport(store.reportContext)) ?? ""
@@ -486,7 +524,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 优先用真实任务数据预览批量卡（不足 3 条才回退 Mock 会议纪要）
     @objc private func debugBatch() {
-        let real = store.personalTodos.prefix(5).map(Self.draftFrom)
+        let real = store.personalTodos.prefix(5).map { Self.draftFrom($0) }
         if real.count >= 3 {
             store.present(.batch(drafts: Array(real)))
             return

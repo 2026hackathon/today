@@ -81,16 +81,20 @@ final class TimerReminderScheduler: ReminderScheduler {
         for todo in todos where !todo.isCompleted {
             guard let due = todo.dueDate else { continue }
 
-            // Snooze 处理
+            // Snooze 处理（review-fixes #9）：压住期间静默；到点后以 snooze
+            // 时间为新的有效截止走标准分级管线（due 一次 + 过期每 5 分钟重复），
+            // 不再一次性提醒后永久静音。key 含 effectiveDue 时间戳，
+            // 每次 snooze 自动获得独立的提醒额度。
+            let effectiveDue: Date
             if let snooze = todo.snoozedUntil {
                 if snooze > now { continue } // 压住中，跳过所有级别
-                // snooze 到点 → due 级重新提醒（每次 snooze 一次）
-                fire(todo, level: .due, key: "\(todo.id.uuidString)-snoozed-\(Int(snooze.timeIntervalSince1970))")
-                continue
+                effectiveDue = snooze
+            } else {
+                effectiveDue = due
             }
 
-            let interval = due.timeIntervalSince(now)
-            let dueTs = Int(due.timeIntervalSince1970)
+            let interval = effectiveDue.timeIntervalSince(now)
+            let dueTs = Int(effectiveDue.timeIntervalSince1970)
             let base = "\(todo.id.uuidString)-\(dueTs)"
 
             switch interval {

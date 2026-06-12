@@ -96,15 +96,61 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
 
     var isCompleted: Bool { completedAt != nil }
 
+    /// 超期锚点 = snoozedUntil ?? dueDate（review-fixes #9）：
+    /// snooze 到未来 → 不超期、回「今日任务」；snooze 过期才重新计超期
     var isOverdue: Bool {
-        guard let due = dueDate, !isCompleted else { return false }
-        return due < Date()
+        guard !isCompleted, let anchor = snoozedUntil ?? dueDate else { return false }
+        return anchor < Date()
     }
 
     /// "3 SP" / "0.5 SP"（整数去掉小数点）
     var storyPointsLabel: String? {
         guard let sp = storyPoints else { return nil }
         return sp == sp.rounded() ? "\(Int(sp)) SP" : "\(sp) SP"
+    }
+
+    init(
+        id: UUID = UUID(), title: String, note: String? = nil,
+        source: TodoSource = .manual, priority: Priority = .medium,
+        dueDate: Date? = nil, createdAt: Date = Date(), completedAt: Date? = nil,
+        snoozedUntil: Date? = nil, snoozeCount: Int = 0, screenshotPath: String? = nil,
+        jiraKey: String? = nil, jiraURL: URL? = nil, jiraStatus: String? = nil,
+        jiraAssigner: String? = nil, storyPoints: Double? = nil,
+        aiExplanation: String? = nil, tags: [String] = []
+    ) {
+        self.id = id; self.title = title; self.note = note
+        self.source = source; self.priority = priority
+        self.dueDate = dueDate; self.createdAt = createdAt; self.completedAt = completedAt
+        self.snoozedUntil = snoozedUntil; self.snoozeCount = snoozeCount
+        self.screenshotPath = screenshotPath
+        self.jiraKey = jiraKey; self.jiraURL = jiraURL; self.jiraStatus = jiraStatus
+        self.jiraAssigner = jiraAssigner; self.storyPoints = storyPoints
+        self.aiExplanation = aiExplanation; self.tags = tags
+    }
+
+    /// 向后兼容解码（review-fixes #4）：合成 Codable 不会用属性默认值兜底，
+    /// 任何人加一个字段都会让旧 todos.json 整体解码失败 → 被空数组覆盖 → 数据丢失。
+    /// 这里逐字段 decodeIfPresent，缺失/类型不符取默认值。改字段记得同步这里。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        note = try? c.decodeIfPresent(String.self, forKey: .note)
+        source = (try? c.decodeIfPresent(TodoSource.self, forKey: .source)) ?? .manual
+        priority = (try? c.decodeIfPresent(Priority.self, forKey: .priority)) ?? .medium
+        dueDate = try? c.decodeIfPresent(Date.self, forKey: .dueDate)
+        createdAt = (try? c.decodeIfPresent(Date.self, forKey: .createdAt)) ?? Date()
+        completedAt = try? c.decodeIfPresent(Date.self, forKey: .completedAt)
+        snoozedUntil = try? c.decodeIfPresent(Date.self, forKey: .snoozedUntil)
+        snoozeCount = (try? c.decodeIfPresent(Int.self, forKey: .snoozeCount)) ?? 0
+        screenshotPath = try? c.decodeIfPresent(String.self, forKey: .screenshotPath)
+        jiraKey = try? c.decodeIfPresent(String.self, forKey: .jiraKey)
+        jiraURL = try? c.decodeIfPresent(URL.self, forKey: .jiraURL)
+        jiraStatus = try? c.decodeIfPresent(String.self, forKey: .jiraStatus)
+        jiraAssigner = try? c.decodeIfPresent(String.self, forKey: .jiraAssigner)
+        storyPoints = try? c.decodeIfPresent(Double.self, forKey: .storyPoints)
+        aiExplanation = try? c.decodeIfPresent(String.self, forKey: .aiExplanation)
+        tags = (try? c.decodeIfPresent([String].self, forKey: .tags)) ?? []
     }
 }
 

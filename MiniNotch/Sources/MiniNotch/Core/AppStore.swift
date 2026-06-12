@@ -22,6 +22,14 @@ final class AppStore: ObservableObject {
     @Published var isAIWorking = false { didSet { refreshCompactState() } }
     /// 今日全部完成后 compact 显示皇冠
     @Published private(set) var crownedToday = false
+    /// 加冕日期：跨天自动失效（review-fixes #13）
+    private var crownedDate: Date?
+
+    private func expireCrownIfStale() {
+        if crownedToday, let d = crownedDate, !Calendar.current.isDateInToday(d) {
+            crownedToday = false
+        }
+    }
 
     /// 状态变化的副作用回调（动效/庆祝窗口挂这里，由 AppDelegate 装配）
     var onCompletedAll: (() -> Void)?
@@ -32,6 +40,12 @@ final class AppStore: ObservableObject {
 
     /// 刷新进行中（刷新按钮转圈用）
     @Published private(set) var isRefreshing = false
+
+    /// 任意 NSMenu 跟踪中（Debug 菜单/右键菜单/卡内 Menu）——
+    /// 悬停收起与卡片倒计时让路（review-fixes #12，AppDelegate 观察系统通知维护）
+    @Published var isMenuTracking = false
+    /// 用户已开始编辑当前卡片（聚焦输入/点击）→ 解除自动收回（review-fixes #8）
+    @Published var cardHeld = false
 
     /// Today 面板底部的 AI 一句话建议（AppDelegate 调 AIService 生成后注入；
     /// 默认值即未配置 Key / 生成失败时的兜底文案）
@@ -77,16 +91,20 @@ final class AppStore: ObservableObject {
 
     /// 切换到事件态（卡片/展开/晨晚报）
     func present(_ state: IslandState) {
+        cardHeld = false
         withAnimation(IslandAnimation.spring) { islandState = state }
     }
 
     /// 回落到自动派生的 compact 态
     func dismiss() {
+        cardHeld = false
+        expireCrownIfStale()
         withAnimation(IslandAnimation.spring) { islandState = derivedCompactState() }
     }
 
     /// 数据变化后刷新 compact 态（仅当前处于 compact 时生效，不打断卡片/展开态）
     func refreshCompactState() {
+        expireCrownIfStale()
         guard islandState.isCompact else { return }
         let derived = derivedCompactState()
         if derived != islandState {
@@ -115,6 +133,9 @@ final class AppStore: ObservableObject {
     /// 最近一个截止时间（未完成，未被 snooze 压住）
     var nextDue: Date? {
         pendingTodos.compactMap { todo -> Date? in
+            // 与 overdueTodos 口径一致：非活跃 Jira 的陈年 duedate 不驱动紧急色
+            // （否则 compact 红色 urgent 而面板里无任何超期项，review-fixes #10）
+            if todo.source == .jira, !isActiveJira(todo) { return nil }
             if let snooze = todo.snoozedUntil, snooze > Date() { return nil }
             return todo.dueDate
         }.min()
@@ -250,6 +271,7 @@ final class AppStore: ObservableObject {
         if pendingTodos.allSatisfy({ $0.source == .jira }) {
             // 完成今日全部 → 全屏庆祝 + 皇冠（effects spec）
             crownedToday = true
+            crownedDate = Date()
             onCompletedAll?()
             present(.celebrate)
         } else if islandState.isCompact {
@@ -318,7 +340,8 @@ final class AppStore: ObservableObject {
         withAnimation(IslandAnimation.spring) { islandState = .justCompleted }
         completedFlashTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.2))
-            guard !Task.isCancelled else { return }
+            // 闪光窗口内用户可能已展开面板 / 被 jiraLanded 抢占——仍是闪光态才回落
+            guard !Task.isCancelled, self?.islandState == .justCompleted else { return }
             self?.dismiss()
         }
     }
