@@ -184,6 +184,8 @@ final class AppStore: ObservableObject {
         return sorted(pendingTodos.filter { todo in
             guard !timedIDs.contains(todo.id), !overdueIDs.contains(todo.id) else { return false }
             if todo.source == .jira { return isActiveJira(todo) }
+            // GitHub PR：待 review / 已指派本身就是「当下要处理」，恒入今日任务
+            if todo.source == .github { return true }
             return todo.dueDate == nil
         })
     }
@@ -330,18 +332,19 @@ final class AppStore: ObservableObject {
         refreshCompactState()
     }
 
-    /// Jira 同步：按 jiraKey 合并，新 ticket 触发 Touchdown（integrations spec）。
+    /// 外部 ticket 源同步（Jira / GitHub PR 共用）：按 jiraKey 合并 + 按来源镜像清理。
     /// - Parameters:
+    ///   - source: 本批数据的来源，清理只作用于该来源（github 不会清 jira）
     ///   - notify: true 且 island 处于 compact 态时，新分配弹通知卡
     ///     （jira-landed-card spec）；启动后首轮同步传 false 避免初始全量误报。
-    ///   - prune: 镜像清理（jira-sync-prune spec）——本地未完成的 Jira todo
-    ///     若 key 不在本次结果中则移除（被转走/关闭）。要求 fetched 是完整
-    ///     拉取结果；Debug 的 Mock 注入传 false，避免清掉真实 ticket。
-    func mergeJiraTodos(_ fetched: [Todo], notify: Bool = true, prune: Bool = true) {
+    ///   - prune: 镜像清理（jira-sync-prune spec）——本地未完成的同来源 todo
+    ///     若 key 不在本次结果中则移除（被转走/关闭/合并）。要求 fetched 是
+    ///     完整拉取结果；Debug 的 Mock 注入传 false，避免清掉真实数据。
+    func mergeExternalTodos(_ fetched: [Todo], source: TodoSource, notify: Bool = true, prune: Bool = true) {
         if prune {
             let fetchedKeys = Set(fetched.compactMap(\.jiraKey))
             todos.removeAll { todo in
-                guard todo.source == .jira, !todo.isCompleted, let key = todo.jiraKey else { return false }
+                guard todo.source == source, !todo.isCompleted, let key = todo.jiraKey else { return false }
                 return !fetchedKeys.contains(key)
             }
         }
@@ -349,7 +352,7 @@ final class AppStore: ObservableObject {
         var landed: [Todo] = []
         for ticket in fetched where ticket.jiraKey != nil {
             if let i = todos.firstIndex(where: { $0.jiraKey == ticket.jiraKey }) {
-                // Jira 只读集成，服务器是唯一真相：所有 Jira 派生字段以本次拉取为准
+                // 外部源只读集成，服务器是唯一真相：派生字段以本次拉取为准
                 todos[i].jiraStatus = ticket.jiraStatus
                 todos[i].title = ticket.title
                 todos[i].priority = ticket.priority
@@ -365,6 +368,11 @@ final class AppStore: ObservableObject {
         if notify, let first = landed.first, islandState.isCompact {
             present(.jiraLanded(todo: first, moreCount: landed.count - 1))
         }
+    }
+
+    /// 兼容包装：既有调用方（轮询/刷新/Debug）继续可用
+    func mergeJiraTodos(_ fetched: [Todo], notify: Bool = true, prune: Bool = true) {
+        mergeExternalTodos(fetched, source: .jira, notify: notify, prune: prune)
     }
 
     // MARK: - 持久化

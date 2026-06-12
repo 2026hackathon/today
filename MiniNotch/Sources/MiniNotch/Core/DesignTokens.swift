@@ -46,6 +46,7 @@ enum DS {
         case .manual: Color(red: 0x34 / 255, green: 0xC7 / 255, blue: 0x59 / 255)      // 绿
         case .calendar: Color(red: 0xFF / 255, green: 0x95 / 255, blue: 0x00 / 255)    // 橙
         case .wechat: Color(red: 0x07 / 255, green: 0xC1 / 255, blue: 0x60 / 255)      // 微信绿
+        case .github: Color(red: 0x82 / 255, green: 0x50 / 255, blue: 0xDF / 255)      // GitHub PR 紫
         }
     }
 

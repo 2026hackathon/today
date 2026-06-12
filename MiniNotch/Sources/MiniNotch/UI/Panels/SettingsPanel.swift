@@ -84,6 +84,15 @@ struct SettingsPanel: View {
 
             SettingsCardDivider()
 
+            SettingsRow(label: "GitHub") {
+                SettingsStatusText(configured: !store.settings.githubToken.isEmpty)
+            }
+            SettingsRow(label: "Token") {
+                SettingsInputField(placeholder: "PAT / gh auth token", text: $store.settings.githubToken, secure: true)
+            }
+
+            SettingsCardDivider()
+
             SettingsRow(label: "飞书 Webhook") {
                 SettingsStatusText(configured: !store.settings.feishuWebhook.isEmpty)
             }

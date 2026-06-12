@@ -77,6 +77,7 @@ struct NewTaskCard: View {
         case .manual: "square.and.pencil"
         case .calendar: "calendar"
         case .wechat: "message"
+        case .github: "arrow.triangle.pull"
         }
     }
 

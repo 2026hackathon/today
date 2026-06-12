@@ -30,7 +30,7 @@ enum Priority: String, Codable, CaseIterable, Sendable {
 
 /// 任务来源 —— 决定 Touchdown 动效的涟漪颜色（见 DesignTokens.sourceColor）
 enum TodoSource: String, Codable, CaseIterable, Sendable {
-    case screenshot, jira, manual, calendar, wechat
+    case screenshot, jira, manual, calendar, wechat, github
 
     var label: String {
         switch self {
@@ -39,6 +39,7 @@ enum TodoSource: String, Codable, CaseIterable, Sendable {
         case .manual: "手动"
         case .calendar: "日历"
         case .wechat: "微信"
+        case .github: "GitHub"
         }
     }
 }
@@ -182,8 +183,10 @@ struct AppSettings: Codable, Equatable, Sendable {
     var jiraBaseURL = ""
     var jiraEmail = ""
     var jiraAPIToken = ""
-    /// Jira 轮询间隔（秒），设置面板可调，下个轮询周期生效
+    /// Jira 轮询间隔（秒），设置面板可调，下个轮询周期生效（GitHub 共用）
     var jiraPollSeconds = 60
+    /// GitHub Personal Access Token（拉取待我 review / 指派给我的 PR；空走 Mock）
+    var githubToken = ""
     /// 飞书 webhook / Bark 推送
     var feishuWebhook = ""
     var barkToken = ""
@@ -205,6 +208,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         jiraEmail = try c.decodeIfPresent(String.self, forKey: .jiraEmail) ?? ""
         jiraAPIToken = try c.decodeIfPresent(String.self, forKey: .jiraAPIToken) ?? ""
         jiraPollSeconds = try c.decodeIfPresent(Int.self, forKey: .jiraPollSeconds) ?? 60
+        githubToken = try c.decodeIfPresent(String.self, forKey: .githubToken) ?? ""
         feishuWebhook = try c.decodeIfPresent(String.self, forKey: .feishuWebhook) ?? ""
         barkToken = try c.decodeIfPresent(String.self, forKey: .barkToken) ?? ""
     }

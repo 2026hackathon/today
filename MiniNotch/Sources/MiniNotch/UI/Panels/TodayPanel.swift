@@ -148,8 +148,8 @@ struct TaskRow: View {
     @EnvironmentObject var store: AppStore
 
     var body: some View {
-        if todo.source == .jira {
-            JiraTodoRow(todo: todo)
+        if todo.source == .jira || todo.source == .github {
+            JiraTodoRow(todo: todo) // 外部只读 ticket 行（Jira/GitHub 共用）
         } else {
             PersonalTodoRow(todo: todo) { store.complete(todo) }
         }
@@ -204,7 +204,7 @@ struct PersonalTodoRow: View {
         case .screenshot: "camera.fill"
         case .calendar: "calendar"
         case .wechat: "message.fill"
-        case .manual, .jira: nil
+        case .manual, .jira, .github: nil
         }
     }
 }
@@ -220,7 +220,7 @@ struct JiraTodoRow: View {
         HStack(alignment: .center, spacing: 10) {
             // Jira 是只读集成（PRD Out of Scope：不改 Jira 状态），
             // 不提供完成操作，用静态图标占住完成圈的位置保持对齐
-            Image(systemName: "briefcase.fill")
+            Image(systemName: todo.source == .github ? "arrow.triangle.pull" : "briefcase.fill")
                 .font(.system(size: 10))
                 .foregroundStyle(DS.Colors.text3)
                 .frame(width: 16, height: 16)

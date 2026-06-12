@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var captureService: CaptureService = HotkeyCaptureService() // owner C
     /// Mock 常驻：配置不全时兜底 + Debug「模拟 Jira 新分配」演示
     private let mockJiraService = MockJiraService()
+    /// Mock 常驻：配置不全时兜底 + Debug「模拟 PR 新分配」演示
+    private let mockGitHubService = MockGitHubService()
     private lazy var calendarService: CalendarService = MockCalendarService() // owner C: 换 EventKitCalendarService()
     private lazy var reminderScheduler: ReminderScheduler = TimerReminderScheduler()
     private lazy var pushService: PushService = NoopPushService()     // owner C: 按 settings 换 Feishu/Bark
@@ -209,6 +211,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let tickets = try? await currentJiraService().fetchAssignedTickets() {
             store.mergeJiraTodos(tickets, notify: notifyJira)
         }
+        if let prs = try? await currentGitHubService().fetchMyPullRequests() {
+            store.mergeExternalTodos(prs, source: .github, notify: notifyJira)
+        }
         if let meetings = try? await calendarService.fetchTodayMeetings() {
             store.replaceMeetings(meetings)
         }
@@ -235,7 +240,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return mockJiraService
     }
 
-    /// Jira（间隔可在设置中调）/ 日历 60min 轮询（integrations spec）
+    /// GitHub 服务选择：Token 非空 → Real，否则 → Mock（与 Jira 同规则）
+    private func currentGitHubService() -> GitHubService {
+        let token = store.settings.githubToken
+        return token.isEmpty ? mockGitHubService : RealGitHubService(token: token)
+    }
+
+    /// Jira + GitHub（间隔共用，设置中调）/ 日历 60min 轮询（integrations spec）
     private func startPolling() {
         pollingTasks.append(Task { @MainActor [weak self] in
             // 首轮同步静默：初始全量不算「新分配」，之后的新 key 才弹通知卡
@@ -246,6 +257,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     didInitialSync = true
                 }
                 // 每轮重读设置，改完下个周期生效；下限 5s（演示「现场分配」用，常规建议 ≥30s）
+                let interval = max(5, self?.store.settings.jiraPollSeconds ?? 60)
+                try? await Task.sleep(for: .seconds(interval))
+            }
+        })
+        pollingTasks.append(Task { @MainActor [weak self] in
+            // GitHub PR 轮询：与 Jira 同款（首轮静默 + 间隔共用）
+            var didInitialSync = false
+            while !Task.isCancelled {
+                if let self, let prs = try? await self.currentGitHubService().fetchMyPullRequests() {
+                    self.store.mergeExternalTodos(prs, source: .github, notify: didInitialSync)
+                    didInitialSync = true
+                }
                 let interval = max(5, self?.store.settings.jiraPollSeconds ?? 60)
                 try? await Task.sleep(for: .seconds(interval))
             }
@@ -358,6 +381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("完成一条（撒花）", #selector(debugCompleteOne)),
             ("全屏庆祝", #selector(debugCelebrate)),
             ("模拟 Jira 新分配", #selector(debugJiraAssign)),
+            ("模拟 PR 新分配", #selector(debugPRAssign)),
             ("回到收缩态", #selector(debugDismiss)),
             ("重置演示数据", #selector(debugReset)),
         ]
@@ -476,6 +500,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let tickets = try? await mockJiraService.fetchAssignedTickets() {
                 // prune: false —— Mock 注入不能把真实 ticket 清掉（jira-sync-prune spec）
                 store.mergeJiraTodos(tickets, prune: false)
+            }
+        }
+    }
+
+    /// 走 Mock 演示「现场请求 review」，不依赖真实 GitHub 配置
+    @objc private func debugPRAssign() {
+        mockGitHubService.extraPRArmed = true
+        Task { @MainActor in
+            if let prs = try? await mockGitHubService.fetchMyPullRequests() {
+                // prune: false —— Mock 注入不能把真实 PR 清掉
+                store.mergeExternalTodos(prs, source: .github, notify: true, prune: false)
             }
         }
     }

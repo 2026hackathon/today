@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 // ============================================================
-// JiraLandedCard —— 新 Jira 分配通知卡（jira-landed-card spec）。
+// JiraLandedCard —— 外部 ticket 新分配通知卡（jira-landed-card spec）。
+// Jira ticket 与 GitHub PR 共用，文案/图标/颜色按 todo.source 区分。
 // 与 NewTaskCard 的区别：纯通知，ticket 已自动入库，无需任何操作。
 //   - 底部倒计时进度条（5s），走完播放「收入灵动岛」动效后回落
 //   - 悬停暂停倒计时
@@ -46,10 +47,10 @@ struct JiraLandedCard: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "scope")
+            Image(systemName: todo.source == .github ? "arrow.triangle.pull" : "scope")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(jiraBlue)
-            Text("新 Jira 分配")
+                .foregroundStyle(sourceColor)
+            Text(todo.source == .github ? "新 PR 待处理" : "新 Jira 分配")
                 .font(DS.Fonts.meta.weight(.medium))
                 .foregroundStyle(DS.Colors.text2)
             Spacer(minLength: 0)
@@ -88,7 +89,7 @@ struct JiraLandedCard: View {
             if let assigner = todo.jiraAssigner {
                 HStack(spacing: 3) {
                     Image(systemName: "person.fill").font(.system(size: 8))
-                    Text("\(assigner) 指派")
+                    Text(todo.source == .github ? "\(assigner) 发起" : "\(assigner) 指派")
                 }
                 .font(DS.Fonts.meta)
                 .foregroundStyle(DS.Colors.text2)
@@ -99,7 +100,7 @@ struct JiraLandedCard: View {
                     .foregroundStyle(DS.Colors.text3)
             }
             if moreCount > 0 {
-                Text("等 \(moreCount + 1) 条新分配")
+                Text(todo.source == .github ? "等 \(moreCount + 1) 个新 PR" : "等 \(moreCount + 1) 条新分配")
                     .dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
             }
             Spacer(minLength: 0)
@@ -115,7 +116,7 @@ struct JiraLandedCard: View {
     private var countdownBar: some View {
         GeometryReader { geo in
             Rectangle()
-                .fill(jiraBlue.opacity(0.8))
+                .fill(sourceColor.opacity(0.8))
                 .frame(width: geo.size.width * remaining / Self.duration, height: 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -123,8 +124,8 @@ struct JiraLandedCard: View {
         .allowsHitTesting(false)
     }
 
-    /// Jira 来源蓝（与 Touchdown 涟漪同色）
-    private var jiraBlue: Color { DS.sourceColor(.jira) }
+    /// 来源色（Jira 蓝 / GitHub 紫，与 Touchdown 涟漪同色）
+    private var sourceColor: Color { DS.sourceColor(todo.source) }
 
     // MARK: - 倒计时与收回
 
