@@ -374,7 +374,8 @@ final class OpenAIChatAIService: AIService {
         let reply = try await chat(
             system: """
             你是用户的个人工作助理。根据上下文给出一句话行动建议：30 字以内、\
-            以「建议: 」开头、具体可执行（点名最该先做的事、如何利用会议间隙），不要换行。
+            以「建议: 」开头、具体可执行（点名最该先做的事、如何利用会议间隙），不要换行。\
+            只能引用上下文里明确列出的任务和会议，禁止臆造或引入列表之外的事项。
             """,
             userContent: [["type": "text", "text": Self.contextText(ctx)]],
             jsonMode: false

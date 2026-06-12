@@ -204,14 +204,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshAISuggestion(afterSeconds: 3)
     }
 
-    /// 生成 Today 面板底部的 AI 一句话建议（失败保持现有/兜底文案）
+    /// 生成 Today 面板顶部的 AI 一句话建议（失败保持现有/兜底文案）
     private func refreshAISuggestion(afterSeconds delay: Double = 0) {
         Task { @MainActor in
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
-            if let text = try? await currentAIService().generateDailySuggestion(store.reportContext) {
+            if let text = try? await currentAIService().generateDailySuggestion(todaySuggestionContext()) {
                 store.updateAISuggestion(text)
             }
         }
+    }
+
+    /// 建议条挂在 Today 面板上，只喂今日焦点数据（超期 + 今日任务 + 今日会议）。
+    /// 喂全部 pendingTodos 会让 AI 建议 Inbox 里明天的事，和面板列表对不上
+    private func todaySuggestionContext() -> ReportContext {
+        ReportContext(
+            pendingTodos: store.overdueTodos + store.todayTimedTodos + store.todayUntimedTodos,
+            completedToday: store.completedToday,
+            meetings: store.todayMeetings
+        )
     }
 
     /// 立即同步外部数据源（刷新按钮 / 轮询共用）
