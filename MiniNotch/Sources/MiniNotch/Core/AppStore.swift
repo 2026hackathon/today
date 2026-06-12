@@ -111,13 +111,67 @@ final class AppStore: ObservableObject {
         }
     }
 
-    /// 三大分组
+    /// 三大分组（Inbox / 旧视图仍在用）
     var personalTodos: [Todo] { sorted(pendingTodos.filter { $0.source != .jira }) }
     var jiraTodos: [Todo] { sorted(pendingTodos.filter { $0.source == .jira }) }
     var todayMeetings: [Meeting] {
         meetings
             .filter { Calendar.current.isDateInToday($0.start) }
             .sorted { $0.start < $1.start }
+    }
+
+    // MARK: - 今日焦点派生（today-focus-redesign spec）
+    // Today 只回答「我今天要关注什么」：按时间相关性筛选，来源只是行内标识。
+
+    /// Jira 活跃状态 = 非 To Do / Done / Cancelled（用户正在做的才算今天的事）
+    private static let jiraInactiveStatuses: Set<String> = [
+        "to do", "todo", "open", "backlog", "done", "cancelled", "canceled", "closed",
+    ]
+
+    private func isActiveJira(_ todo: Todo) -> Bool {
+        guard todo.source == .jira else { return false }
+        let status = (todo.jiraStatus ?? "").lowercased()
+        return !Self.jiraInactiveStatuses.contains(status)
+    }
+
+    /// 已超期：个人来源全部计入；Jira 仅活跃状态计入（陈年 To Do 的过期 duedate 是噪音）
+    var overdueTodos: [Todo] {
+        sorted(pendingTodos.filter { $0.isOverdue && ($0.source != .jira || isActiveJira($0)) })
+    }
+
+    /// 今日任务·有时间：今天截止未超期（含 Snooze 今天到点），按时间排
+    var todayTimedTodos: [Todo] {
+        pendingTodos
+            .filter { todo in
+                guard !todo.isOverdue else { return false }
+                if todo.source == .jira, !isActiveJira(todo) { return false }
+                let anchor = todo.snoozedUntil ?? todo.dueDate
+                guard let anchor else { return false }
+                return Calendar.current.isDateInToday(anchor)
+            }
+            .sorted { ($0.snoozedUntil ?? $0.dueDate!) < ($1.snoozedUntil ?? $1.dueDate!) }
+    }
+
+    /// 今日任务·无固定时间：活跃 Jira（无今日截止的）+ 无截止的个人任务，按优先级排
+    var todayUntimedTodos: [Todo] {
+        let timedIDs = Set(todayTimedTodos.map(\.id))
+        let overdueIDs = Set(overdueTodos.map(\.id))
+        return sorted(pendingTodos.filter { todo in
+            guard !timedIDs.contains(todo.id), !overdueIDs.contains(todo.id) else { return false }
+            if todo.source == .jira { return isActiveJira(todo) }
+            return todo.dueDate == nil
+        })
+    }
+
+    /// Inbox（全部任务视图）：未来截止 + To Do 状态 Jira —— 今日焦点之外的所有未完成项
+    var inboxTodos: [Todo] {
+        let focusIDs = Set((overdueTodos + todayTimedTodos + todayUntimedTodos).map(\.id))
+        return sorted(pendingTodos.filter { !focusIDs.contains($0.id) })
+    }
+
+    /// 今日焦点数（compact 计数 / 问候语用，与 Today 面板一致）
+    var todayFocusCount: Int {
+        overdueTodos.count + todayTimedTodos.count + todayUntimedTodos.count
     }
     var completedToday: [Todo] {
         todos.filter {

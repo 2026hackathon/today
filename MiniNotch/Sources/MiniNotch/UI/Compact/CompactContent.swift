@@ -33,10 +33,10 @@ struct CompactContent: View {
                 countText("0", color: DS.Colors.text3)
             case .near:
                 compactIcon("clock", color: DS.Colors.text2)
-                countText("\(store.pendingCount)", color: DS.Colors.text1)
+                countText("\(store.todayFocusCount)", color: DS.Colors.text1)
             case .urgent:
                 BlinkingIcon(systemName: "exclamationmark.triangle", color: DS.Colors.alert)
-                countText("\(store.pendingCount)", color: DS.Colors.alert)
+                countText("\(store.todayFocusCount)", color: DS.Colors.alert)
             case .aiWorking:
                 PulsingSparkleIcon()
                 Text("AI")
@@ -44,13 +44,13 @@ struct CompactContent: View {
                     .foregroundStyle(DS.Colors.accent)
             case .justCompleted:
                 compactIcon("checkmark", color: DS.Colors.success)
-                countText("\(store.pendingCount)", color: DS.Colors.text1)
+                countText("\(store.todayFocusCount)", color: DS.Colors.text1)
             case .celebrate:
                 compactIcon("crown.fill", color: DS.Colors.gold)
                 countText("0", color: DS.Colors.text1)
             default: // .normal 及兜底
                 compactIcon("tray", color: DS.Colors.text2)
-                countText("\(store.pendingCount)", color: DS.Colors.text1)
+                countText("\(store.todayFocusCount)", color: DS.Colors.text1)
             }
         }
     }

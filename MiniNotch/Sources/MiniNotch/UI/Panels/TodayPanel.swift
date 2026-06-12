@@ -2,10 +2,13 @@ import AppKit
 import SwiftUI
 
 // ============================================================
-// TodayPanel —— 展开态主面板（prototype `today` 状态，460×540）。
-// Today / Inbox / 收藏 三个 tab；Inbox 与收藏先显示「等待接入」占位。
+// TodayPanel —— 展开态主面板（today-focus-redesign）。
+// Today 只回答「我今天要关注什么」，按时间相关性组织：
+//   今日日程 → 已超期 → 今日任务（有时间 → 无固定时间）→ 已完成
+// 来源（截图/Jira/日历/提醒事项…）退化为行内小图标，不再作为分组依据。
+// 非今日内容在 Inbox tab（InboxPanel.swift）。
 // 本文件同时提供 Panels 模块的公共小组件（PanelTabBar / PanelSectionTitle /
-// PanelDivider / PanelAISuggestion / PanelPriorityTag / PanelFormat）。
+// PanelDivider / PanelAISuggestion / PanelPriorityTag / PanelFormat / 行组件）。
 // ============================================================
 
 struct TodayPanel: View {
@@ -21,9 +24,12 @@ struct TodayPanel: View {
         VStack(spacing: 0) {
             PanelTabBar(current: currentTab)
             ScrollView {
-                if currentTab == .inbox || currentTab == .favorites {
+                switch currentTab {
+                case .inbox:
+                    InboxPanel()
+                case .favorites:
                     PanelPlaceholder(tab: currentTab)
-                } else {
+                default:
                     todayBody
                 }
             }
@@ -35,36 +41,63 @@ struct TodayPanel: View {
 
     // MARK: - Today 内容
 
+    private var greeting: String {
+        var parts = ["今天 \(store.todayFocusCount) 个任务"]
+        if !store.todayMeetings.isEmpty { parts.append("\(store.todayMeetings.count) 场会议") }
+        if !store.overdueTodos.isEmpty { parts.append("\(store.overdueTodos.count) 项超期") }
+        return parts.joined(separator: "、")
+    }
+
     private var todayBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 问候行
-            Text("今天有 \(store.pendingCount) 个待办、\(store.todayMeetings.count) 场会议")
+            Text(greeting)
                 .font(DS.Fonts.button)
                 .foregroundStyle(DS.Colors.text2)
                 .padding(.horizontal, 2)
                 .padding(.top, 4)
                 .padding(.bottom, 12)
 
-            // 分组 1：个人 TODO
-            PanelSectionTitle(title: "个人 TODO", count: store.personalTodos.count)
-            ForEach(store.personalTodos) { todo in
-                PersonalTodoRow(todo: todo) { store.complete(todo) }
+            // 1. 今日日程（空则整段隐藏）
+            if !store.todayMeetings.isEmpty {
+                PanelSectionTitle(title: "今日日程", count: store.todayMeetings.count)
+                ForEach(store.todayMeetings) { meeting in
+                    MeetingRow(meeting: meeting)
+                }
+                PanelDivider()
             }
 
-            PanelDivider()
-
-            // 分组 2：JIRA TICKETS
-            PanelSectionTitle(title: "JIRA TICKETS", count: store.jiraTodos.count)
-            ForEach(store.jiraTodos) { todo in
-                JiraTodoRow(todo: todo)
+            // 2. 已超期（红色高亮，空则隐藏）
+            if !store.overdueTodos.isEmpty {
+                PanelSectionTitle(title: "已超期", count: store.overdueTodos.count, color: DS.Colors.alert)
+                ForEach(store.overdueTodos) { todo in
+                    TaskRow(todo: todo)
+                }
+                PanelDivider()
             }
 
-            PanelDivider()
-
-            // 分组 3：今日会议
-            PanelSectionTitle(title: "今日会议", count: store.todayMeetings.count)
-            ForEach(store.todayMeetings) { meeting in
-                MeetingRow(meeting: meeting)
+            // 3. 今日任务：有时间按时间排 → 细分隔线 → 无固定时间按优先级排
+            PanelSectionTitle(
+                title: "今日任务",
+                count: store.todayTimedTodos.count + store.todayUntimedTodos.count
+            )
+            if store.todayTimedTodos.isEmpty && store.todayUntimedTodos.isEmpty {
+                Text("今天没有要处理的任务")
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.text3)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+            }
+            ForEach(store.todayTimedTodos) { todo in
+                TaskRow(todo: todo)
+            }
+            if !store.todayUntimedTodos.isEmpty {
+                if !store.todayTimedTodos.isEmpty {
+                    PanelMiniDividerLabel(text: "无固定时间")
+                }
+                ForEach(store.todayUntimedTodos) { todo in
+                    TaskRow(todo: todo)
+                }
             }
 
             PanelDivider()
@@ -73,7 +106,7 @@ struct TodayPanel: View {
 
             // 底部 AI 建议条
             // TODO: B 接 AIService 后替换为真实建议
-            PanelAISuggestion(text: "建议: 上午先处理高优先级任务，14:00 后处理其余 Jira tickets。")
+            PanelAISuggestion(text: "建议: 上午先清超期项，会议间隙处理今日任务。")
                 .padding(.top, 6)
         }
         .padding(.horizontal, 16)
@@ -109,9 +142,24 @@ struct TodayPanel: View {
     }
 }
 
+// MARK: - 统一任务行（按来源分发：Jira 只读跳转，其余可完成）
+
+struct TaskRow: View {
+    let todo: Todo
+    @EnvironmentObject var store: AppStore
+
+    var body: some View {
+        if todo.source == .jira {
+            JiraTodoRow(todo: todo)
+        } else {
+            PersonalTodoRow(todo: todo) { store.complete(todo) }
+        }
+    }
+}
+
 // MARK: - 个人 Todo 行
 
-private struct PersonalTodoRow: View {
+struct PersonalTodoRow: View {
     let todo: Todo
     let onComplete: () -> Void
     @State private var hovering = false
@@ -164,7 +212,7 @@ private struct PersonalTodoRow: View {
 
 // MARK: - Jira 行
 
-private struct JiraTodoRow: View {
+struct JiraTodoRow: View {
     let todo: Todo
     @State private var hovering = false
 
@@ -296,9 +344,9 @@ private struct CompletedRow: View {
     }
 }
 
-// MARK: - 完成圈（个人/Jira 行共用）
+// MARK: - 完成圈
 
-private struct PanelCheckCircle: View {
+struct PanelCheckCircle: View {
     let action: () -> Void
     @State private var hovering = false
 
@@ -390,6 +438,8 @@ struct PanelIconButton: View {
 struct PanelSectionTitle: View {
     let title: String
     var count: Int?
+    /// 标题色（已超期等强调段传 alert）
+    var color: Color = DS.Colors.text3
 
     var body: some View {
         HStack {
@@ -402,10 +452,29 @@ struct PanelSectionTitle: View {
             }
         }
         .font(DS.Fonts.sectionTitle)
-        .foregroundStyle(DS.Colors.text3)
+        .foregroundStyle(color)
         .padding(.horizontal, 2)
         .padding(.top, 4)
         .padding(.bottom, 8)
+    }
+}
+
+// MARK: - 段内细分隔（「无固定时间」）
+
+struct PanelMiniDividerLabel: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Rectangle().fill(DS.Colors.border).frame(height: 1)
+            Text(text)
+                .font(DS.Fonts.tag)
+                .foregroundStyle(DS.Colors.text3)
+                .fixedSize()
+            Rectangle().fill(DS.Colors.border).frame(height: 1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
     }
 }
 
