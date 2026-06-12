@@ -9,11 +9,22 @@
 
 ```bash
 cd MiniNotch
-swift run            # 刘海出现黑岛 + 菜单栏图标
-# 或用 Xcode：open Package.swift
+./certs/setup-cert.sh   # 首次一次性：导入团队签名证书（见下）
+./run.sh                # debug 编译 → 组装 .app → 启动
 ```
 
 跑起来后：**菜单栏图标 → Debug 状态**，把 15 个状态逐个点一遍即可理解整个产品。
+
+> ⚠️ 不要直接 `swift run`：裸二进制没有绑定 Info.plist，拿不到日历/提醒权限，
+> EventKit 同步永远 accessDenied。Xcode 调试 UI 没问题，但验证日历功能必须走 `./run.sh`。
+
+### 团队签名证书（certs/）
+
+`certs/FocusIslandDev.p12` 是团队共用的自签名代码签名证书（含私钥，仅限本仓库开发用）。
+每人每台机器跑一次 `./certs/setup-cert.sh` 导入并信任后，`run.sh` / `build.sh` 会自动用它签名。
+
+为什么需要：ad-hoc 签名的身份是二进制 cdhash，每次重编译都变 → macOS 把它当新应用，
+日历(TCC)授权随之失效。用固定证书签名后身份 = bundle id + 证书，重编译、换人构建都不掉权限。
 
 ## 环境要求
 
@@ -53,7 +64,7 @@ Sources/MiniNotch/
 ## 打包发布
 
 ```bash
-./build.sh   # 产出 dist/MiniNotch.app + .zip（ad-hoc 签名）
+./build.sh   # 产出 dist/MiniNotch.app + .zip（优先 FocusIsland Dev 证书，无则 ad-hoc）
 ```
 
 ## 已知坑

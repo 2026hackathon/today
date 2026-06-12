@@ -25,10 +25,15 @@ cp "${BUILD_DIR}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 cp Info.plist "${APP_BUNDLE}/Contents/Info.plist"
 echo -n "APPL????" > "${APP_BUNDLE}/Contents/PkgInfo"
 
-echo "==> [4/5] Ad-hoc 签名..."
-# ad-hoc 签名：不需要 Apple Developer 账号
-# 收到的人第一次打开需要：右键 → 打开 → 打开（绕过 Gatekeeper）
-codesign --force --deep --sign - "${APP_BUNDLE}"
+echo "==> [4/5] 签名..."
+# 优先自签名证书（FocusIsland Dev）：本机 TCC 日历授权不随重编译失效；
+# 无证书退回 ad-hoc。两种签名对接收方一样：第一次打开需右键 → 打开（绕过 Gatekeeper）
+SIGN_ID="-"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "FocusIsland Dev"; then
+    SIGN_ID="FocusIsland Dev"
+fi
+echo "    签名身份: ${SIGN_ID}"
+codesign --force --deep --sign "${SIGN_ID}" "${APP_BUNDLE}"
 
 echo "==> [5/5] 压缩为 zip..."
 cd dist
