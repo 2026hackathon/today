@@ -22,11 +22,15 @@ island 窗口 SHALL 不抢焦点、不占 Dock、覆盖全屏应用、在所有 
 - **THEN** island 仍然吸附刘海位置可见、可交互
 
 ### Requirement: 悬停与锁定展开
-island SHALL 支持 hover 弹出预览，点击 SHALL 锁定展开态（鼠标移出不收起），再次点击或按 esc 收起。
+island SHALL 支持 hover 弹出预览，点击 SHALL 锁定展开态（鼠标移出不收起），再次点击或按 esc 收起。失去焦点（点击其他应用 / ⌘Tab 切走）SHALL 收起所有非 compact 态。
 
 #### Scenario: 悬停预览
 - **WHEN** 鼠标悬停 compact 态 ≥ 0.8s
 - **THEN** 显示最多 3 条待办的 hoverPreview，移出 0.3s 后收回
+
+#### Scenario: 失焦收起
+- **WHEN** island 处于展开/卡片态，用户点击其他应用窗口或通过 ⌘Tab 等方式激活其他应用
+- **THEN** island 回落到 compact 态
 
 ### Requirement: Debug 状态菜单
 菜单栏 SHALL 提供 Debug 子菜单，可手动触发全部 island 状态（联调与 Demo 兜底用）。

@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var cancellables = Set<AnyCancellable>()
     private var pollingTasks: [Task<Void, Never>] = []
+    private var clickOutsideMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // accessory 模式：不占 Dock、不出现在 ⌘Tab 切换里
@@ -33,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupStatusBar()
         showPanel()
+        setupDismissOnFocusLoss()
         wireServices()
         startPolling()
         maybeShowMorningReport()
@@ -40,6 +42,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         pollingTasks.forEach { $0.cancel() }
+        if let monitor = clickOutsideMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
+    // MARK: - 失焦收起（island-shell spec：展开/卡片态点击外部回落 compact）
+
+    private func setupDismissOnFocusLoss() {
+        // 全局监听只收到「本应用之外」的鼠标按下 —— 即点到了其他软件/桌面。
+        // 点击 island 自身走的是本地事件，不会触发这里
+        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            Task { @MainActor in self?.dismissOnFocusLoss() }
+        }
+
+        // ⌘Tab / Spotlight 等不经鼠标点击切走焦点的情况
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let activated = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard activated?.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+            Task { @MainActor in self?.dismissOnFocusLoss() }
+        }
+    }
+
+    private func dismissOnFocusLoss() {
+        guard store.islandState.isDismissable else { return }
+        store.dismiss()
     }
 
     // MARK: - 服务装配
