@@ -86,6 +86,9 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
     var jiraKey: String?
     var jiraURL: URL?
     var jiraStatus: String?
+    /// Jira statusCategory.key（"new" / "indeterminate" / "done"），
+    /// 机器值不随站点语言变化 —— 活跃判断用它，status.name 仅展示
+    var jiraStatusCategory: String?
     /// 最近一次把 ticket 指派给我的人（来自 changelog，可能是自己）
     var jiraAssigner: String?
     /// Story Points（Jira custom field，wonder 站点为 customfield_10025）

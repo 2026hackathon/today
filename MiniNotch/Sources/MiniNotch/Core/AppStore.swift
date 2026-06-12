@@ -186,13 +186,19 @@ final class AppStore: ObservableObject {
     // MARK: - 今日焦点派生（today-focus-redesign spec）
     // Today 只回答「我今天要关注什么」：按时间相关性筛选，来源只是行内标识。
 
-    /// Jira 活跃状态 = 非 To Do / Done / Cancelled（用户正在做的才算今天的事）
+    /// Jira 活跃状态兜底名单（仅 jiraStatusCategory 缺失的旧数据走这里）。
+    /// status.name 随站点语言本地化（中文站是「待办」），不能作为主判断。
     private static let jiraInactiveStatuses: Set<String> = [
         "to do", "todo", "open", "backlog", "done", "cancelled", "canceled", "closed",
     ]
 
+    /// Jira 活跃 = statusCategory 为 In Progress 类（用户正在做的才算今天的事）。
+    /// statusCategory.key 是机器值（new / indeterminate / done），不随站点语言变化。
     private func isActiveJira(_ todo: Todo) -> Bool {
         guard todo.source == .jira else { return false }
+        if let category = todo.jiraStatusCategory {
+            return category == "indeterminate"
+        }
         let status = (todo.jiraStatus ?? "").lowercased()
         return !Self.jiraInactiveStatuses.contains(status)
     }
@@ -409,6 +415,7 @@ final class AppStore: ObservableObject {
             if let i = todos.firstIndex(where: { $0.jiraKey == ticket.jiraKey }) {
                 // 外部源只读集成，服务器是唯一真相：派生字段以本次拉取为准
                 todos[i].jiraStatus = ticket.jiraStatus
+                todos[i].jiraStatusCategory = ticket.jiraStatusCategory
                 todos[i].title = ticket.title
                 todos[i].priority = ticket.priority
                 todos[i].dueDate = ticket.dueDate

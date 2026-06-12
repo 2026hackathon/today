@@ -66,6 +66,7 @@ final class MockJiraService: JiraService {
             jiraKey: key,
             jiraURL: URL(string: "https://example.atlassian.net/browse/\(key)"),
             jiraStatus: status,
+            jiraStatusCategory: status == "In Progress" ? "indeterminate" : "new",
             jiraAssigner: assigner,
             storyPoints: points
         )
@@ -116,6 +117,7 @@ final class RealJiraService: JiraService {
                 jiraKey: issue.key,
                 jiraURL: URL(string: "\(baseURL)/browse/\(issue.key)"),
                 jiraStatus: issue.fields.status.name,
+                jiraStatusCategory: issue.fields.status.statusCategory?.key,
                 jiraAssigner: Self.extractAssigner(from: issue.changelog),
                 storyPoints: issue.fields.storyPoints
             )
@@ -198,7 +200,7 @@ final class RealJiraService: JiraService {
     }
     private struct Fields: Decodable {
         let summary: String
-        let status: NamedField
+        let status: StatusField
         let priority: NamedField?
         let duedate: String?
         let storyPoints: Double?
@@ -210,6 +212,13 @@ final class RealJiraService: JiraService {
     }
     private struct NamedField: Decodable {
         let name: String
+    }
+    private struct StatusField: Decodable {
+        let name: String
+        let statusCategory: StatusCategory?
+    }
+    private struct StatusCategory: Decodable {
+        let key: String
     }
     private struct Changelog: Decodable {
         let histories: [ChangeHistory]
