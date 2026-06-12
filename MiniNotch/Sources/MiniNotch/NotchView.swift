@@ -33,6 +33,11 @@ struct NotchView: View {
         // 收起时只有刘海那一小块（水平居中、贴顶），展开后才是整个面板。
         .frame(width: currentSize.width, height: currentSize.height, alignment: .top)
         .contentShape(Rectangle())
+        .contextMenu {
+            Button("退出 MiniNotch") {
+                NSApp.terminate(nil)
+            }
+        }
         .onHover { hovering in
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                 isExpanded = hovering
