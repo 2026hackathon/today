@@ -59,6 +59,12 @@ struct IslandRootView: View {
             .goldFlash(trigger: store.completionFlash, cornerRadius: geo.cornerRadius)
             .shadow(color: .black.opacity(store.islandState.isCompact ? 0 : 0.35), radius: 14, y: 6)
             .contentShape(NotchShape(cornerRadius: geo.cornerRadius))
+            // 右键退出（重写壳子时从旧 NotchView 丢失过，勿删）
+            .contextMenu {
+                Button("退出 TodoIsland") {
+                    NSApp.terminate(nil)
+                }
+            }
             .onTapGesture { handleTap() }
             .onHover { handleHover($0) }
             // 卡片态自动收回：newTask 悬浮 4s 后回落，悬停暂停（F-07）
