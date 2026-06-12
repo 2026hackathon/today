@@ -29,9 +29,10 @@ struct CompactContent: View {
         HStack(spacing: 6) {
             switch state {
             case .idle:
-                // 今日无事 → 打钩；明天的任务不挂数字（右翼提示下一个时间）
-                compactIcon("checkmark", color: DS.Colors.success)
-                countText("0", color: DS.Colors.text3)
+                // 左翼维持「托盘 + 今日总数」（含只读 ticket，与面板口径一致）；
+                // "做完了"的打钩放右翼（用户指定布局）
+                compactIcon("tray", color: DS.Colors.text3)
+                countText("\(store.todayFocusCount)", color: DS.Colors.text3)
             case .near:
                 compactIcon("clock", color: DS.Colors.text2)
                 countText("\(store.todayFocusCount)", color: DS.Colors.text1)
@@ -62,12 +63,8 @@ struct CompactContent: View {
     private var rightContent: some View {
         switch state {
         case .idle:
-            // 今天清空但未来有任务 → 提示下一个什么时候（如「明天 08:30」）
-            if let due = store.nextDue {
-                sideText(Self.upcomingLabel(due), color: DS.Colors.text3)
-            } else {
-                sideText("清空", color: DS.Colors.text3)
-            }
+            // 今日可动手的事清零 → 右翼绿色打钩（用户指定放这一侧）
+            compactIcon("checkmark", color: DS.Colors.success)
         case .celebrate:
             sideText("清空", color: DS.Colors.text3)
         case .near:

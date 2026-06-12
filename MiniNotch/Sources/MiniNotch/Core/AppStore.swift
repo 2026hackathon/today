@@ -115,9 +115,9 @@ final class AppStore: ObservableObject {
     private func derivedCompactState() -> IslandState {
         if isAIWorking { return .aiWorking }
         if crownedToday && pendingTodos.allSatisfy({ $0.source == .jira }) { return .celebrate }
-        // compact 以「今日焦点」为准：今天没事 → 打钩清空态，
-        // 明天的任务不在刘海上挂数字（用户实测：只剩明早任务时不该显示待办）
-        guard todayFocusCount > 0 else { return .idle }
+        // compact 以「今日可动手的事」为准：个人的事做完 → 打钩清空态。
+        // 明天的任务、只读的 Jira/GitHub ticket 都不在刘海上挂数字
+        guard todayActionableCount > 0 else { return .idle }
         guard let nearest = todayNextDue else { return .normal }
         let interval = nearest.timeIntervalSinceNow
         if interval < 30 * 60 { return .urgent }   // 30min 内 / 已过期
@@ -224,9 +224,20 @@ final class AppStore: ObservableObject {
         return sorted(pendingTodos.filter { !focusIDs.contains($0.id) })
     }
 
-    /// 今日焦点数（compact 计数 / 问候语用，与 Today 面板一致）
+    /// 今日焦点数（Today 面板问候语用，与面板列表一致，含只读 ticket）
     var todayFocusCount: Int {
         overdueTodos.count + todayTimedTodos.count + todayUntimedTodos.count
+    }
+
+    /// 只读外部源：app 内不可完成，不应阻塞刘海打钩/庆祝
+    private static let readOnlySources: Set<TodoSource> = [.jira, .github]
+
+    /// 今日「可动手」数（compact 计数与打钩判定用）：排除只读 ticket——
+    /// In Progress 的 Jira 会挂很多天，个人的事做完了刘海就该打钩
+    var todayActionableCount: Int {
+        (overdueTodos + todayTimedTodos + todayUntimedTodos)
+            .filter { !Self.readOnlySources.contains($0.source) }
+            .count
     }
     var completedToday: [Todo] {
         todos.filter {
