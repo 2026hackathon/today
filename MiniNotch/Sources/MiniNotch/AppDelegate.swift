@@ -23,7 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let mockJiraService = MockJiraService()
     /// Mock 常驻：配置不全时兜底 + Debug「模拟 PR 新分配」演示
     private let mockGitHubService = MockGitHubService()
-    private lazy var calendarService: CalendarService = MockCalendarService() // owner C: 换 EventKitCalendarService()
+    /// 真实日历服务（EventKit 实现完成前 fetch 抛错 → 上层按空列表处理，不再用 Mock 会议填充）
+    private lazy var calendarService: CalendarService = EventKitCalendarService()
     private lazy var reminderScheduler: ReminderScheduler = TimerReminderScheduler()
     private lazy var pushService: PushService = NoopPushService()     // owner C: 按 settings 换 Feishu/Bark
 
@@ -226,15 +227,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 立即同步外部数据源（刷新按钮 / 轮询共用）
     private func syncExternalSources(notifyJira: Bool) async {
-        if let tickets = try? await currentJiraService().fetchAssignedTickets() {
-            store.mergeJiraTodos(tickets, notify: notifyJira)
-        }
-        if let prs = try? await currentGitHubService().fetchMyPullRequests() {
-            store.mergeExternalTodos(prs, source: .github, notify: notifyJira)
-        }
-        if let meetings = try? await calendarService.fetchTodayMeetings() {
-            store.replaceMeetings(meetings)
-        }
+        await syncJira(notify: notifyJira)
+        await syncGitHub(notify: notifyJira)
+        // 日历拉取失败/未实现 → 空列表（顺带清掉历史演示会议）
+        store.replaceMeetings((try? await calendarService.fetchTodayMeetings()) ?? [])
     }
 
     /// 按配置动态选择 Jira 服务：三项齐全 → Real，否则 → Mock。
@@ -250,18 +246,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func currentJiraService() -> JiraService {
+    /// 未配置 → nil（列表不再用 Mock 填充；Mock 仅供 Debug 菜单显式触发）
+    private func currentJiraService() -> JiraService? {
         let s = store.settings
-        if !s.jiraBaseURL.isEmpty, !s.jiraEmail.isEmpty, !s.jiraAPIToken.isEmpty {
-            return RealJiraService(baseURL: s.jiraBaseURL, email: s.jiraEmail, apiToken: s.jiraAPIToken)
-        }
-        return mockJiraService
+        guard !s.jiraBaseURL.isEmpty, !s.jiraEmail.isEmpty, !s.jiraAPIToken.isEmpty else { return nil }
+        return RealJiraService(baseURL: s.jiraBaseURL, email: s.jiraEmail, apiToken: s.jiraAPIToken)
     }
 
-    /// GitHub 服务选择：Token 非空 → Real，否则 → Mock（与 Jira 同规则）
-    private func currentGitHubService() -> GitHubService {
+    /// GitHub：Token 非空 → Real，否则 nil（同 Jira 规则）
+    private func currentGitHubService() -> GitHubService? {
         let token = store.settings.githubToken
-        return token.isEmpty ? mockGitHubService : RealGitHubService(token: token)
+        return token.isEmpty ? nil : RealGitHubService(token: token)
+    }
+
+    /// 拉取一轮 Jira：未配置时合并空列表（prune 清掉历史 Mock/失效残留）
+    private func syncJira(notify: Bool) async {
+        guard let service = currentJiraService() else {
+            store.mergeJiraTodos([], notify: false)
+            return
+        }
+        if let tickets = try? await service.fetchAssignedTickets() {
+            store.mergeJiraTodos(tickets, notify: notify)
+        }
+    }
+
+    /// 拉取一轮 GitHub PR：未配置时合并空列表（prune 清残留）
+    private func syncGitHub(notify: Bool) async {
+        guard let service = currentGitHubService() else {
+            store.mergeExternalTodos([], source: .github, notify: false)
+            return
+        }
+        if let prs = try? await service.fetchMyPullRequests() {
+            store.mergeExternalTodos(prs, source: .github, notify: notify)
+        }
     }
 
     /// Jira + GitHub（间隔共用，设置中调）/ 日历 60min 轮询（integrations spec）
@@ -270,10 +287,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 首轮同步静默：初始全量不算「新分配」，之后的新 key 才弹通知卡
             var didInitialSync = false
             while !Task.isCancelled {
-                if let self, let tickets = try? await self.currentJiraService().fetchAssignedTickets() {
-                    self.store.mergeJiraTodos(tickets, notify: didInitialSync)
-                    didInitialSync = true
-                }
+                await self?.syncJira(notify: didInitialSync)
+                didInitialSync = true
                 // 每轮重读设置，改完下个周期生效；下限 5s（演示「现场分配」用，常规建议 ≥30s）
                 let interval = max(5, self?.store.settings.jiraPollSeconds ?? 60)
                 try? await Task.sleep(for: .seconds(interval))
@@ -283,18 +298,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // GitHub PR 轮询：与 Jira 同款（首轮静默 + 间隔共用）
             var didInitialSync = false
             while !Task.isCancelled {
-                if let self, let prs = try? await self.currentGitHubService().fetchMyPullRequests() {
-                    self.store.mergeExternalTodos(prs, source: .github, notify: didInitialSync)
-                    didInitialSync = true
-                }
+                await self?.syncGitHub(notify: didInitialSync)
+                didInitialSync = true
                 let interval = max(5, self?.store.settings.jiraPollSeconds ?? 60)
                 try? await Task.sleep(for: .seconds(interval))
             }
         })
         pollingTasks.append(Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                if let self, let meetings = try? await self.calendarService.fetchTodayMeetings() {
-                    self.store.replaceMeetings(meetings)
+                if let self {
+                    // 失败/未实现 → 空列表（顺带清掉历史演示会议）
+                    self.store.replaceMeetings((try? await self.calendarService.fetchTodayMeetings()) ?? [])
                 }
                 try? await Task.sleep(for: .seconds(60 * 60))
             }

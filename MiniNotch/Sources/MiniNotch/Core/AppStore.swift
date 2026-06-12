@@ -63,16 +63,10 @@ final class AppStore: ObservableObject {
     private var completedFlashTask: Task<Void, Never>?
 
     init() {
-        if let saved = Persistence.load([Todo].self, from: "todos.json") {
-            todos = saved
-        } else {
-            todos = Self.demoTodos()
-        }
-        if let saved = Persistence.load([Meeting].self, from: "meetings.json") {
-            meetings = saved
-        } else {
-            meetings = Self.demoMeetings()
-        }
+        // 首次启动从空开始，不种演示数据；演示数据只通过
+        // Debug 菜单「重置演示数据」显式载入（Demo 兜底）
+        todos = Persistence.load([Todo].self, from: "todos.json") ?? []
+        meetings = Persistence.load([Meeting].self, from: "meetings.json") ?? []
         if let saved = Persistence.load(AppSettings.self, from: "settings.json") {
             settings = saved
         }
