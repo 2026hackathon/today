@@ -3,9 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: 三大分组
-（被「今日焦点派生」取代：分组依据从来源改为时间相关性，来源仅作行内标识。）
-
-AppStore SHALL 提供以下派生集合，Today 面板按 日程 → 已超期 → 今日任务 顺序展示：
+分组依据 SHALL 从「来源」改为「时间相关性」（本 requirement 被今日焦点派生取代，来源仅作行内标识）。AppStore SHALL 提供以下派生集合，Today 面板按 日程 → 已超期 → 今日任务 顺序展示：
 
 - **今日日程**：今天的全部会议，按开始时间排序
 - **已超期**：截止时间已过的未完成任务；个人来源全部计入，Jira 仅活跃状态（非 To Do/Done/Cancelled）计入

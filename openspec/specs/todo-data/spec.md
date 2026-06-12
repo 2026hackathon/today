@@ -11,11 +11,24 @@ TBD - created by archiving change todoisland-framework. Update Purpose after arc
 - **THEN** todo.completedAt 置为当前时间、列表计数即时更新、触发持久化、若今日全部完成则切换 celebrate 状态
 
 ### Requirement: 三大分组
-展开态数据 SHALL 按 个人 Todo / Jira Tickets / 今日会议 三组提供，组内按 紧急度 × 临近度 排序。
+分组依据 SHALL 从「来源」改为「时间相关性」（本 requirement 被今日焦点派生取代，来源仅作行内标识）。AppStore SHALL 提供以下派生集合，Today 面板按 日程 → 已超期 → 今日任务 顺序展示：
 
-#### Scenario: Jira todo 归组
-- **WHEN** todo.source == .jira
-- **THEN** 它出现在 Jira Tickets 组且展示 jiraKey 与状态标签
+- **今日日程**：今天的全部会议，按开始时间排序
+- **已超期**：截止时间已过的未完成任务；个人来源全部计入，Jira 仅活跃状态（非 To Do/Done/Cancelled）计入
+- **今日任务**：① 今天截止（含 snoozedUntil 今天到点）的任务按时间排序；② 活跃状态 Jira；③ 无截止时间的非 Jira 任务按优先级排序，置于「无固定时间」细分隔线下
+- **Inbox（全部任务）**：其余未完成任务（未来截止 + To Do 状态 Jira），按 个人/Jira 分组、截止时间排序
+
+#### Scenario: 活跃 Jira 进入今日任务
+- **WHEN** Jira ticket 状态为 In Progress / In Review 等活跃状态
+- **THEN** 它出现在「今日任务」，To Do 状态的 ticket 只出现在 Inbox
+
+#### Scenario: 无截止时间的提醒事项
+- **WHEN** 个人任务（含提醒事项同步）无截止时间
+- **THEN** 显示在「今日任务」的「无固定时间」分隔线下，按优先级排序，不触发提醒、不进已超期
+
+#### Scenario: 收缩态计数一致
+- **WHEN** Today 面板显示 N 项焦点（已超期 + 今日任务）
+- **THEN** compact 态数字与 N 一致
 
 ### Requirement: JSON 本地持久化
 数据 SHALL 持久化到 `~/Library/Application Support/MiniNotch/`（todos.json / meetings.json / settings.json），应用启动时恢复，写入失败不崩溃。
