@@ -124,8 +124,8 @@ final class AppStore: ObservableObject {
         guard todayActionableCount > 0 else { return .idle }
         guard let nearest = todayNextDue else { return .normal }
         let interval = nearest.timeIntervalSinceNow
-        if interval < 30 * 60 { return .urgent }   // 30min 内 / 已过期
-        if interval < 60 * 60 { return .near }     // 1h 内
+        if interval < 15 * 60 { return .urgent }   // 15min 内（橙）/ 已过期（红），对齐 F-04 分级
+        if interval < 60 * 60 { return .near }     // 1h 内（弱脉冲）
         return .normal
     }
 

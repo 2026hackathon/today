@@ -55,7 +55,16 @@ struct IslandRootView: View {
                 }
             }
             .aiParsingGlow(active: store.islandState == .aiWorking, cornerRadius: geo.cornerRadius)
-            .urgentGlow(active: store.islandState == .urgent, cornerRadius: geo.cornerRadius)
+            // F-04 三档递进 glow：1h 微弱橙呼吸 → 15min 橙色脉冲 → 过期红色强脉冲
+            .nearGlow(active: store.islandState == .near, cornerRadius: geo.cornerRadius)
+            .warningGlow(
+                active: store.islandState == .urgent && store.overdueTodos.isEmpty,
+                cornerRadius: geo.cornerRadius
+            )
+            .urgentGlow(
+                active: store.islandState == .urgent && !store.overdueTodos.isEmpty,
+                cornerRadius: geo.cornerRadius
+            )
             .goldFlash(trigger: store.completionFlash, cornerRadius: geo.cornerRadius)
             .shadow(color: .black.opacity(store.islandState.isCompact ? 0 : 0.35), radius: 14, y: 6)
             .contentShape(NotchShape(cornerRadius: geo.cornerRadius))

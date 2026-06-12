@@ -90,6 +90,46 @@ extension View {
     /// - `active == false`：原样返回视图，零开销。
     /// - 减弱动态效果开启：退化为静态红色细边框。
     ///
+    /// 提前 1h 弱档：微弱橙光慢呼吸（F-04「弱（脉冲）」——有 glow 但强度最低）。
+    /// 身份稳定要求同 `aiParsingGlow`，条件只能在 background 内部。
+    func nearGlow(active: Bool, cornerRadius: CGFloat) -> some View {
+        self.background {
+            if active && !MotionPreference.reduceMotion {
+                islandBorderShape(cornerRadius: cornerRadius)
+                    .fill(DS.Colors.islandBG)
+                    .animatedGlow(
+                        states: IslandGlowStates.near(cornerRadius: cornerRadius),
+                        status: .default
+                    )
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// 提前 15min 中档：橙色脉冲（强度介于 near 与 urgent 之间）。
+    /// 身份稳定要求同上。
+    func warningGlow(active: Bool, cornerRadius: CGFloat) -> some View {
+        self
+            .overlay {
+                if active && MotionPreference.reduceMotion {
+                    islandBorderShape(cornerRadius: cornerRadius)
+                        .strokeBorder(DS.Colors.warning.opacity(0.9), lineWidth: 1.5)
+                        .allowsHitTesting(false)
+                }
+            }
+            .background {
+                if active && !MotionPreference.reduceMotion {
+                    islandBorderShape(cornerRadius: cornerRadius)
+                        .fill(DS.Colors.islandBG)
+                        .animatedGlow(
+                            states: IslandGlowStates.warning(cornerRadius: cornerRadius),
+                            status: .default
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
     /// 用法：`shape.urgentGlow(active: state == .urgent, cornerRadius: geo.cornerRadius)`
     ///
     /// ⚠️ 身份稳定要求同 `aiParsingGlow`，条件只能在 overlay/background 内部。
@@ -204,6 +244,56 @@ enum IslandGlowStates {
                             cssColors: ["rgba(255, 255, 255, 1)"],
                             opacity: 0.22, glowSize: [0, 3, 0], speedMultiplier: 2,
                             glowPlacement: .behind, coverage: 0.4
+                        )
+                    ]
+                )
+            )
+        ]
+    }
+
+    /// 提前 1h 弱档：微弱橙光慢呼吸 —— rgba(255,158,74) = DS.Colors.warning
+    /// 三档递进（F-04）：near 弱 < warning 中 < urgent 强（对比 opacity/glowSize/speed）
+    static func near(cornerRadius: CGFloat) -> [GlowState] {
+        [
+            GlowState(
+                name: .default,
+                preset: .css(
+                    cornerRadius: Float(cornerRadius),
+                    outlineWidth: 0,
+                    animationSpeed: 0.8,
+                    glowLayers: [
+                        // 岛贴屏幕顶边，glow 只剩下沿和两侧可见，参数要比直觉值更亮才看得到
+                        GlowLayerConfig(
+                            cssColors: ["rgba(255, 158, 74, 1)", "rgba(255, 190, 120, 1)"],
+                            opacity: 0.4, glowSize: [4, 10, 4], speedMultiplier: 1,
+                            glowPlacement: .behind, coverage: 1
+                        )
+                    ]
+                )
+            )
+        ]
+    }
+
+    /// 提前 15min 中档：橙色脉冲 —— DS.Colors.warning
+    static func warning(cornerRadius: CGFloat) -> [GlowState] {
+        [
+            GlowState(
+                name: .default,
+                preset: .css(
+                    cornerRadius: Float(cornerRadius),
+                    outlineWidth: 0,
+                    animationSpeed: 2,
+                    glowLayers: [
+                        GlowLayerConfig(
+                            cssColors: ["rgba(255, 158, 74, 1)", "rgba(255, 130, 40, 1)", "rgba(255, 158, 74, 1)"],
+                            opacity: 0.6, glowSize: [5, 14, 5], speedMultiplier: 1,
+                            glowPlacement: .behind, coverage: 1
+                        ),
+                        // 内层贴边亮橙，保证中档在亮背景前也可辨
+                        GlowLayerConfig(
+                            cssColors: ["rgba(255, 170, 90, 1)"],
+                            opacity: 0.7, glowSize: [2, 5, 2], speedMultiplier: 1,
+                            glowPlacement: .behind, coverage: 1
                         )
                     ]
                 )

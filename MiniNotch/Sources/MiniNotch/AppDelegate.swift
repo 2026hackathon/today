@@ -202,9 +202,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .quickInput, .newTask, .batch: break
                 default: self.store.present(.reminder(todo: todo))
                 }
+                // 声音只在到期时刻播一次（F-04：到期=声音；过期级 5min 重复一次，
+                // 循环响铃太吵故不播）。勿扰时段 scheduler 不触发，无需再判
+                if level == .due {
+                    NSSound(named: "Glass")?.play()
+                }
                 Task { await self.pushService.push(title: "⏰ 任务到期", body: todo.title) }
             case .oneHour, .fifteenMin:
                 self.store.refreshCompactState()
+                // 提前 15min 档「震动」：触控板触觉反馈一次
+                // （F-04：中=橙色脉冲+震动；无 Force Touch 设备自动无感）
+                if level == .fifteenMin {
+                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                }
             }
         }
         // 数据一变就重排提醒

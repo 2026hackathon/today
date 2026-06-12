@@ -30,11 +30,16 @@ enum DS {
         static let alert = Color(red: 0xFF / 255, green: 0x6B / 255, blue: 0x61 / 255)
         static let alertSoft = alert.opacity(0.13)
 
+        /// 到期前 15min 档预警橙（reminders spec：中强度，与过期红区分）
+        static let warning = Color(red: 1.0, green: 0.62, blue: 0.29)
+
         /// 仅用于完成确认
         static let success = Color(red: 0x4C / 255, green: 0xD2 / 255, blue: 0x7D / 255)
 
         /// 完成时的金色高光
         static let gold = Color(red: 1.0, green: 0.84, blue: 0.0)
+        /// Snooze 后再次提醒的黄色系底色（reminders spec：与首次红色提醒视觉区分）
+        static let goldSoft = gold.opacity(0.13)
     }
 
     // MARK: - 来源色（Touchdown 涟漪 / 来源标识）

@@ -34,11 +34,13 @@ struct CompactContent: View {
                 compactIcon("tray", color: DS.Colors.text3)
                 countText("\(store.todayFocusCount)", color: DS.Colors.text3)
             case .near:
-                compactIcon("clock", color: DS.Colors.text2)
+                // 提前 1h 档：弱脉冲（F-04 动效分级）
+                SoftPulseIcon(systemName: "clock", color: DS.Colors.text2)
                 countText("\(store.todayFocusCount)", color: DS.Colors.text1)
             case .urgent:
-                BlinkingIcon(systemName: "exclamationmark.triangle", color: DS.Colors.alert)
-                countText("\(store.todayFocusCount)", color: DS.Colors.alert)
+                // 15min 内 = 预警橙；已过期才转红（F-04：中=橙色脉冲，极强=红持续闪烁）
+                BlinkingIcon(systemName: "exclamationmark.triangle", color: urgentColor)
+                countText("\(store.todayFocusCount)", color: urgentColor)
             case .aiWorking:
                 PulsingSparkleIcon()
                 Text("AI")
@@ -70,7 +72,7 @@ struct CompactContent: View {
         case .near:
             sideText("\(minutesToNextDue) 分钟", color: DS.Colors.text2)
         case .urgent:
-            sideText(isOverdue ? "已超时" : "\(minutesToNextDue) 分钟", color: DS.Colors.alert)
+            sideText(isOverdue ? "已超时" : "\(minutesToNextDue) 分钟", color: urgentColor)
         case .aiWorking:
             BouncingDots()
         case .justCompleted:
@@ -98,6 +100,11 @@ struct CompactContent: View {
     private var isOverdue: Bool {
         guard let due = store.todayNextDue else { return false }
         return due.timeIntervalSinceNow <= 0
+    }
+
+    /// urgent 态配色：到期前 15min 预警橙，已过期红（F-04 分级）
+    private var urgentColor: Color {
+        isOverdue ? DS.Colors.alert : DS.Colors.warning
     }
 
     /// 未来任务的提示文案：明天带时间（「明天 08:30」），更远用 dsShortLabel（周X / M/d）
@@ -128,6 +135,25 @@ struct CompactContent: View {
 }
 
 // MARK: - 动画小组件（prototype: anim-blink / anim-sparkle / anim-walk）
+
+/// near 态弱脉冲：透明度 0.55–1 缓慢呼吸（F-04「提前 1h：弱（脉冲）」）
+private struct SoftPulseIcon: View {
+    let systemName: String
+    let color: Color
+    @State private var dimmed = false
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(color)
+            .opacity(dimmed ? 0.55 : 1)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    dimmed = true
+                }
+            }
+    }
+}
 
 /// urgent 态 0.9s 闪烁（prototype urgentPulse 0.9s）
 private struct BlinkingIcon: View {

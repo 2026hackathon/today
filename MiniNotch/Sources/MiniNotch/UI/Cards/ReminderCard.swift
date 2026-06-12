@@ -10,6 +10,14 @@ struct ReminderCard: View {
     @EnvironmentObject var store: AppStore
 
     @State private var bellDimmed = false
+    /// 自定义 Snooze 输入行展开
+    @State private var showCustom = false
+    @State private var customMinutes = 30
+
+    /// Snooze 后再次提醒 → 黄色系；首次提醒 → 红色系（reminders spec 验收项）
+    private var snoozed: Bool { todo.snoozeCount > 0 }
+    private var tone: Color { snoozed ? DS.Colors.gold : DS.Colors.alert }
+    private var toneSoft: Color { snoozed ? DS.Colors.goldSoft : DS.Colors.alertSoft }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -17,7 +25,7 @@ struct ReminderCard: View {
 
             Text(todo.title)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(DS.Colors.alert)
+                .foregroundStyle(tone)
                 .lineLimit(2)
                 .padding(.bottom, 6)
 
@@ -44,23 +52,23 @@ struct ReminderCard: View {
             HStack(spacing: 8) {
                 Image(systemName: "bell.fill")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DS.Colors.alert)
+                    .foregroundStyle(tone)
                     .opacity(bellDimmed ? 0.4 : 1)
                     .onAppear {
                         withAnimation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true)) {
                             bellDimmed = true
                         }
                     }
-                Text("任务到期")
+                Text(snoozed ? "再次提醒 · 已延期 \(todo.snoozeCount) 次" : "任务到期")
                     .font(DS.Fonts.meta.weight(.medium))
-                    .foregroundStyle(DS.Colors.alert)
+                    .foregroundStyle(tone)
                 Spacer()
                 Text(todo.dueDate?.dsHHmm ?? "现在")
                     .font(DS.Fonts.tag)
-                    .foregroundStyle(DS.Colors.alert)
+                    .foregroundStyle(tone)
                     .padding(.horizontal, 7)
                     .frame(height: 18)
-                    .background(DS.Colors.alertSoft, in: RoundedRectangle(cornerRadius: 4))
+                    .background(toneSoft, in: RoundedRectangle(cornerRadius: 4))
             }
             Rectangle()
                 .fill(DS.Colors.border)
@@ -74,10 +82,10 @@ struct ReminderCard: View {
     private var overdueBadge: some View {
         Text(overdueText)
             .font(.system(size: 11, weight: .medium, design: .monospaced))
-            .foregroundStyle(DS.Colors.alert)
+            .foregroundStyle(tone)
             .padding(.horizontal, 8)
             .frame(height: 22)
-            .background(DS.Colors.alertSoft, in: RoundedRectangle(cornerRadius: 4))
+            .background(toneSoft, in: RoundedRectangle(cornerRadius: 4))
     }
 
     private var overdueText: String {
@@ -104,9 +112,49 @@ struct ReminderCard: View {
                 snoozeButton("15 分钟") { snooze(minutes: 15) }
                 snoozeButton("1 小时") { snooze(minutes: 60) }
                 snoozeButton("明天") { store.snooze(todo, until: Self.tomorrowMorning()) }
-                snoozeButton("自定义") { snooze(minutes: 30) }
+                snoozeButton(showCustom ? "收起" : "自定义") {
+                    withAnimation(IslandAnimation.spring) { showCustom.toggle() }
+                }
+            }
+
+            // 自定义分钟数：步进器纯鼠标操作，不依赖键盘焦点（卡片态不激活应用）
+            if showCustom {
+                HStack(spacing: 8) {
+                    stepButton("minus") { customMinutes = max(5, customMinutes - 15) }
+                    Text("\(customMinutes) 分钟")
+                        .font(DS.Fonts.meta)
+                        .foregroundStyle(DS.Colors.text1)
+                        .frame(minWidth: 56)
+                    stepButton("plus") { customMinutes = min(8 * 60, customMinutes + 15) }
+                    Button {
+                        snooze(minutes: customMinutes)
+                    } label: {
+                        Text("确定")
+                            .font(DS.Fonts.meta)
+                            .foregroundStyle(DS.Colors.accent)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(DS.Colors.accentSoft, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
+    }
+
+    private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(DS.Colors.text2)
+                .frame(width: 24, height: 24)
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.s)
+                        .stroke(DS.Colors.border, lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: DS.Radius.s))
+        }
+        .buttonStyle(.plain)
     }
 
     private func snooze(minutes: Int) {
