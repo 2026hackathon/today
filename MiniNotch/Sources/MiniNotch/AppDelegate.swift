@@ -209,9 +209,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Jira 60s / 日历 60min 轮询（integrations spec）
     private func startPolling() {
         pollingTasks.append(Task { @MainActor [weak self] in
+            // 首轮同步静默：初始全量不算「新分配」，之后的新 key 才弹通知卡
+            var didInitialSync = false
             while !Task.isCancelled {
                 if let self, let tickets = try? await self.currentJiraService().fetchAssignedTickets() {
-                    self.store.mergeJiraTodos(tickets)
+                    self.store.mergeJiraTodos(tickets, notify: didInitialSync)
+                    didInitialSync = true
                 }
                 try? await Task.sleep(for: .seconds(60))
             }

@@ -102,6 +102,9 @@ struct IslandRootView: View {
         case .quickInput:
             QuickInputCard(onParse: onParse)
 
+        case .jiraLanded(let todo, let moreCount):
+            JiraLandedCard(todo: todo, moreCount: moreCount)
+
         case .expanded(let tab):
             if tab == .settings {
                 SettingsPanel()

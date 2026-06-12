@@ -264,16 +264,24 @@ final class AppStore: ObservableObject {
         refreshCompactState()
     }
 
-    /// Jira 同步：按 jiraKey 合并，新 ticket 触发 Touchdown（integrations spec）
-    func mergeJiraTodos(_ fetched: [Todo]) {
+    /// Jira 同步：按 jiraKey 合并，新 ticket 触发 Touchdown（integrations spec）。
+    /// - Parameter notify: true 且 island 处于 compact 态时，新分配弹通知卡
+    ///   （jira-landed-card spec）；启动后首轮同步传 false 避免初始全量误报。
+    func mergeJiraTodos(_ fetched: [Todo], notify: Bool = true) {
         let knownKeys = Set(todos.compactMap(\.jiraKey))
+        var landed: [Todo] = []
         for ticket in fetched where ticket.jiraKey != nil {
             if let i = todos.firstIndex(where: { $0.jiraKey == ticket.jiraKey }) {
                 todos[i].jiraStatus = ticket.jiraStatus
                 todos[i].title = ticket.title
             } else if !knownKeys.contains(ticket.jiraKey!) {
                 add(ticket)
+                landed.append(ticket)
             }
+        }
+        // 新分配通知卡：不打断展开态/其他卡片态（静默入库，涟漪仍播放）
+        if notify, let first = landed.first, islandState.isCompact {
+            present(.jiraLanded(todo: first, moreCount: landed.count - 1))
         }
     }
 
