@@ -110,12 +110,14 @@ struct TodoDraft: Identifiable, Codable, Equatable, Sendable {
     var screenshotPath: String?
     /// 批量识别卡片中是否勾选
     var isSelected = true
+    /// 周期标签（如「每天」「每周一」），AI 解析或手动添加；完成时据此自动排下一次
+    var tags: [String] = []
 
     func toTodo() -> Todo {
         Todo(
             title: title, note: note, source: source, priority: priority,
             dueDate: dueDate, screenshotPath: screenshotPath,
-            aiExplanation: aiExplanation
+            aiExplanation: aiExplanation, tags: tags
         )
     }
 }

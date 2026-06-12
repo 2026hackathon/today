@@ -244,6 +244,12 @@ final class AppStore: ObservableObject {
         completionFlash += 1
         onTodoCompleted?(todos[i])
 
+        // 周期任务（每天/每周X）：完成本次后自动排下一次
+        // （在庆祝判断之前 append，周期任务不算"清零"）
+        if let next = Self.nextOccurrence(of: todos[i]) {
+            todos.append(next)
+        }
+
         // Jira 是只读集成不可完成，庆祝以「个人 Todo 清零」为准
         if pendingTodos.allSatisfy({ $0.source == .jira }) {
             // 完成今日全部 → 全屏庆祝 + 皇冠（effects spec）
@@ -259,9 +265,44 @@ final class AppStore: ObservableObject {
 
     func uncomplete(_ todo: Todo) {
         guard let i = todos.firstIndex(where: { $0.id == todo.id }) else { return }
+        let completedAt = todos[i].completedAt
         todos[i].completedAt = nil
         crownedToday = false
+
+        // 周期任务撤销完成：回收完成时自动生成的下一次，避免重复
+        if !todo.tags.filter({ $0.hasPrefix("每") }).isEmpty, let completedAt {
+            if let spawned = todos.firstIndex(where: {
+                $0.id != todo.id && !$0.isCompleted
+                    && $0.title == todo.title && $0.tags == todo.tags
+                    && $0.createdAt >= completedAt
+            }) {
+                todos.remove(at: spawned)
+            }
+        }
         refreshCompactState()
+    }
+
+    /// 周期任务的下一次发生：dueDate 顺延（每天+1 / 每周X+7），
+    /// 跳过仍然过期的占位；无固定时间的周期任务暂不自动续（避免完成后立刻重现）
+    private static func nextOccurrence(of todo: Todo) -> Todo? {
+        guard todo.tags.contains(where: { $0.hasPrefix("每") }),
+              let due = todo.dueDate else { return nil }
+        let days = todo.tags.contains(where: { $0.hasPrefix("每周") }) ? 7 : 1
+        let cal = Calendar.current
+
+        var nextDue = cal.date(byAdding: .day, value: days, to: due) ?? due
+        while nextDue < Date(), let bumped = cal.date(byAdding: .day, value: days, to: nextDue) {
+            nextDue = bumped
+        }
+
+        var next = todo
+        next.id = UUID()
+        next.dueDate = nextDue
+        next.createdAt = Date()
+        next.completedAt = nil
+        next.snoozedUntil = nil
+        next.snoozeCount = 0
+        return next
     }
 
     func snooze(_ todo: Todo, until date: Date) {

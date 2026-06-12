@@ -137,12 +137,20 @@ final class MockAIService: AIService {
             explanations.append("24 小时内截止 → 高优先级")
         }
 
+        // 周期任务：「每天/每日」→ 每天标签（完成后 AppStore 自动排下一次）
+        var tags: [String] = []
+        if trimmed.contains("每天") || trimmed.contains("每日") {
+            tags = ["每天"]
+            explanations.append("检测到周期任务「每天」")
+        }
+
         return TodoDraft(
             title: trimmed.isEmpty ? "新任务" : trimmed,
             source: .manual,
             priority: priority,
             dueDate: dueDate,
-            aiExplanation: explanations.isEmpty ? nil : explanations.joined(separator: "；")
+            aiExplanation: explanations.isEmpty ? nil : explanations.joined(separator: "；"),
+            tags: tags
         )
     }
 
@@ -310,8 +318,10 @@ final class OpenAIChatAIService: AIService {
         let system = """
         你是任务提取助手。从用户的截图（聊天记录/会议纪要/邮件等）中提取待办事项。
         只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
-        "dueDate": "yyyy-MM-dd HH:mm" 或 null, "aiExplanation": "一句话中文说明判断依据"}]}。
-        当前时间：\(Self.now())。相对时间（明天/周五/下班前）换算成具体时间；没有任务返回 {"todos": []}。
+        "dueDate": "yyyy-MM-dd HH:mm" 或 null, "recurrence": "每天"/"每周一"等周期描述（非周期为 null）, \
+        "aiExplanation": "一句话中文说明判断依据"}]}。
+        当前时间：\(Self.now())。相对时间（明天/周五/下班前）换算成具体时间；\
+        周期任务的 dueDate 给下一次发生时间（今天该时间已过则为明天/下个周期）；没有任务返回 {"todos": []}。
         """
         let content: [[String: Any]] = [
             ["type": "text", "text": "提取这张截图里的待办事项"],
@@ -325,8 +335,11 @@ final class OpenAIChatAIService: AIService {
         let system = """
         你是任务解析助手。把用户的一句话解析成一个待办事项。
         只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
-        "dueDate": "yyyy-MM-dd HH:mm" 或 null, "aiExplanation": "一句话中文说明判断依据"}]}。
-        当前时间：\(Self.now())。title 保留原意但去掉时间词；含紧急/ASAP 或 24h 内截止 → high。
+        "dueDate": "yyyy-MM-dd HH:mm" 或 null, "recurrence": "每天"/"每周一"等周期描述（非周期为 null）, \
+        "aiExplanation": "一句话中文说明判断依据"}]}。
+        当前时间：\(Self.now())。title 保留原意但去掉时间词和周期词；含紧急/ASAP 或 24h 内截止 → high；\
+        周期任务（每天/每周X…）的 dueDate 给下一次发生时间（今天该时间已过则为明天/下个周期），\
+        且不适用 24h 提升规则——日常习惯类按重要性给 low/medium。
         """
         let reply = try await chat(system: system, userContent: [["type": "text", "text": text]], jsonMode: true)
         guard let draft = try Self.decodeDrafts(reply, source: .manual).first else {
@@ -434,6 +447,7 @@ final class OpenAIChatAIService: AIService {
         let title: String
         let priority: String?
         let dueDate: String?
+        let recurrence: String?
         let aiExplanation: String?
     }
 
@@ -456,7 +470,8 @@ final class OpenAIChatAIService: AIService {
                 source: source,
                 priority: Priority(rawValue: dto.priority ?? "") ?? .medium,
                 dueDate: dto.dueDate.flatMap(Self.parseDate),
-                aiExplanation: dto.aiExplanation
+                aiExplanation: dto.aiExplanation,
+                tags: dto.recurrence.map { [$0] } ?? []
             )
         }
     }
