@@ -82,6 +82,17 @@ struct JiraLandedCard: View {
     private var metaRow: some View {
         HStack(spacing: 6) {
             PanelPriorityTag(priority: todo.priority)
+            if let sp = todo.storyPointsLabel {
+                Text(sp).dsTag()
+            }
+            if let assigner = todo.jiraAssigner {
+                HStack(spacing: 3) {
+                    Image(systemName: "person.fill").font(.system(size: 8))
+                    Text("\(assigner) 指派")
+                }
+                .font(DS.Fonts.meta)
+                .foregroundStyle(DS.Colors.text2)
+            }
             if let due = todo.dueDate {
                 Text(PanelFormat.due(due))
                     .font(DS.Fonts.meta)

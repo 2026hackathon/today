@@ -349,8 +349,13 @@ final class AppStore: ObservableObject {
         var landed: [Todo] = []
         for ticket in fetched where ticket.jiraKey != nil {
             if let i = todos.firstIndex(where: { $0.jiraKey == ticket.jiraKey }) {
+                // Jira 只读集成，服务器是唯一真相：所有 Jira 派生字段以本次拉取为准
                 todos[i].jiraStatus = ticket.jiraStatus
                 todos[i].title = ticket.title
+                todos[i].priority = ticket.priority
+                todos[i].dueDate = ticket.dueDate
+                todos[i].jiraAssigner = ticket.jiraAssigner
+                todos[i].storyPoints = ticket.storyPoints
             } else if !knownKeys.contains(ticket.jiraKey!) {
                 add(ticket)
                 landed.append(ticket)

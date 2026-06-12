@@ -45,24 +45,29 @@ final class MockJiraService: JiraService {
             extraTicketReleased = true
         }
         var tickets = [
-            Self.ticket(key: "MD-1024", title: "修复登录 bug", status: "In Progress", priority: .high),
-            Self.ticket(key: "MD-1031", title: "优化首页加载", status: "To Do", priority: .medium),
-            Self.ticket(key: "MD-1042", title: "用户反馈调研", status: "To Do", priority: .low),
+            Self.ticket(key: "MD-1024", title: "修复登录 bug", status: "In Progress", priority: .high, assigner: "陈昊", points: 3),
+            Self.ticket(key: "MD-1031", title: "优化首页加载", status: "To Do", priority: .medium, assigner: "林嘉", points: 5),
+            Self.ticket(key: "MD-1042", title: "用户反馈调研", status: "To Do", priority: .low, assigner: "陈昊", points: 2),
         ]
         if extraTicketReleased {
-            tickets.append(Self.ticket(key: "MD-1077", title: "支付回调超时排查", status: "To Do", priority: .high))
+            tickets.append(Self.ticket(key: "MD-1077", title: "支付回调超时排查", status: "To Do", priority: .high, assigner: "周彦", points: 3))
         }
         return tickets
     }
 
-    private static func ticket(key: String, title: String, status: String, priority: Priority) -> Todo {
+    private static func ticket(
+        key: String, title: String, status: String, priority: Priority,
+        assigner: String? = nil, points: Double? = nil
+    ) -> Todo {
         Todo(
             title: title,
             source: .jira,
             priority: priority,
             jiraKey: key,
             jiraURL: URL(string: "https://example.atlassian.net/browse/\(key)"),
-            jiraStatus: status
+            jiraStatus: status,
+            jiraAssigner: assigner,
+            storyPoints: points
         )
     }
 }
@@ -110,16 +115,25 @@ final class RealJiraService: JiraService {
                 dueDate: issue.fields.duedate.flatMap(Self.parseDueDate),
                 jiraKey: issue.key,
                 jiraURL: URL(string: "\(baseURL)/browse/\(issue.key)"),
-                jiraStatus: issue.fields.status.name
+                jiraStatus: issue.fields.status.name,
+                jiraAssigner: Self.extractAssigner(from: issue.changelog),
+                storyPoints: issue.fields.storyPoints
             )
         }
     }
+
+    /// Story Points 字段 ID —— wonder.atlassian.net 实测为 customfield_10025
+    /// （Jira 每个站点不同，换站点用 GET /rest/api/3/field 搜 "Story Points"，
+    /// 同时改这里和 Fields.CodingKeys）
+    private static let storyPointsFieldID = "customfield_10025"
 
     private func fetchPage(nextPageToken: String?) async throws -> SearchResponse {
         var components = URLComponents(string: "\(baseURL)/rest/api/3/search/jql")
         var items = [
             URLQueryItem(name: "jql", value: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"),
-            URLQueryItem(name: "fields", value: "summary,status,priority,duedate"),
+            URLQueryItem(name: "fields", value: "summary,status,priority,duedate,\(Self.storyPointsFieldID)"),
+            // changelog 用于提取「谁指派给我的」（最近一次 assignee 变更的操作人）
+            URLQueryItem(name: "expand", value: "changelog"),
             URLQueryItem(name: "maxResults", value: "50"),
         ]
         if let nextPageToken {
@@ -161,6 +175,15 @@ final class RealJiraService: JiraService {
         return Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: day)
     }
 
+    /// 「谁指派给我的」= changelog 里最近一次 assignee 变更的操作人。
+    /// histories 顺序不保证，按 created（ISO 字符串可比较）取最新。
+    nonisolated private static func extractAssigner(from changelog: Changelog?) -> String? {
+        changelog?.histories
+            .filter { history in history.items.contains { $0.field == "assignee" } }
+            .max { $0.created < $1.created }?
+            .author?.displayName
+    }
+
     // MARK: 响应模型（只取要用的字段）
 
     private struct SearchResponse: Decodable {
@@ -171,14 +194,35 @@ final class RealJiraService: JiraService {
     private struct Issue: Decodable {
         let key: String
         let fields: Fields
+        let changelog: Changelog?
     }
     private struct Fields: Decodable {
         let summary: String
         let status: NamedField
         let priority: NamedField?
         let duedate: String?
+        let storyPoints: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case summary, status, priority, duedate
+            case storyPoints = "customfield_10025" // 与 storyPointsFieldID 保持一致
+        }
     }
     private struct NamedField: Decodable {
         let name: String
+    }
+    private struct Changelog: Decodable {
+        let histories: [ChangeHistory]
+    }
+    private struct ChangeHistory: Decodable {
+        let created: String
+        let author: ChangeAuthor?
+        let items: [ChangeItem]
+    }
+    private struct ChangeAuthor: Decodable {
+        let displayName: String?
+    }
+    private struct ChangeItem: Decodable {
+        let field: String?
     }
 }

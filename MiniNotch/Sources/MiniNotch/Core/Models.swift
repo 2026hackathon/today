@@ -85,6 +85,10 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
     var jiraKey: String?
     var jiraURL: URL?
     var jiraStatus: String?
+    /// 最近一次把 ticket 指派给我的人（来自 changelog，可能是自己）
+    var jiraAssigner: String?
+    /// Story Points（Jira custom field，wonder 站点为 customfield_10025）
+    var storyPoints: Double?
     /// AI 紧急度判断依据，如「检测到『今晚之前』关键词」
     var aiExplanation: String?
     var tags: [String] = []
@@ -94,6 +98,12 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
     var isOverdue: Bool {
         guard let due = dueDate, !isCompleted else { return false }
         return due < Date()
+    }
+
+    /// "3 SP" / "0.5 SP"（整数去掉小数点）
+    var storyPointsLabel: String? {
+        guard let sp = storyPoints else { return nil }
+        return sp == sp.rounded() ? "\(Int(sp)) SP" : "\(sp) SP"
     }
 }
 

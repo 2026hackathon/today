@@ -245,6 +245,17 @@ struct JiraTodoRow: View {
                             Text(status).dsTag()
                         }
                     }
+                    if let sp = todo.storyPointsLabel {
+                        Text(sp).dsTag()
+                    }
+                    if let assigner = todo.jiraAssigner {
+                        HStack(spacing: 3) {
+                            Image(systemName: "person.fill").font(.system(size: 8))
+                            Text(assigner)
+                        }
+                        .font(DS.Fonts.meta)
+                        .foregroundStyle(DS.Colors.text3)
+                    }
                 }
             }
             Spacer(minLength: 0)
