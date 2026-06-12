@@ -180,6 +180,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        // 任务/会议变化后重新生成 AI 建议（防抖 2s：连续完成/新建只打一次 LLM；
+        // dropFirst 跳过启动时的初始赋值，首条建议由 launch 的延迟调用负责）
+        Publishers.CombineLatest(store.$todos, store.$meetings)
+            .dropFirst()
+            .debounce(for: .seconds(2), scheduler: RunLoop.main)
+            .sink { [weak self] _, _ in self?.refreshAISuggestion() }
+            .store(in: &cancellables)
+
         // 完成今日全部 → 全屏庆祝（effects spec）
         store.onCompletedAll = { [weak self] in
             guard let self, self.store.settings.effectsEnabled else { return }

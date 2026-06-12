@@ -56,6 +56,10 @@ struct TodayPanel: View {
                 .foregroundStyle(DS.Colors.text2)
                 .padding(.horizontal, 2)
                 .padding(.top, 4)
+                .padding(.bottom, 10)
+
+            // AI 建议条置顶：先看建议再看清单（任务/会议变化后自动重新生成）
+            PanelAISuggestion(text: store.aiSuggestion)
                 .padding(.bottom, 12)
 
             // 1. 已超期（红色高亮，空则隐藏）
@@ -103,10 +107,6 @@ struct TodayPanel: View {
             }
 
             completedFold
-
-            // 底部 AI 建议条（AIService 生成，失败/未配置 Key 时是兜底文案）
-            PanelAISuggestion(text: store.aiSuggestion)
-                .padding(.top, 6)
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
