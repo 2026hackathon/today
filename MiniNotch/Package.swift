@@ -14,7 +14,11 @@ let package = Package(
             dependencies: [
                 .product(name: "SwiftGlow", package: "SwiftGlow")
             ],
-            path: "Sources/MiniNotch"
+            path: "Sources/MiniNotch",
+            resources: [
+                // 品牌图标（simple-icons 单色 SVG，模板渲染着色）
+                .process("Resources")
+            ]
         )
     ]
 )

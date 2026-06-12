@@ -47,9 +47,7 @@ struct JiraLandedCard: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: todo.source == .github ? "arrow.triangle.pull" : "scope")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(sourceColor)
+            BrandIcon(brand: todo.source == .github ? .github : .jira, size: 13, color: sourceColor)
             Text(todo.source == .github ? "新 PR 待处理" : "新 Jira 分配")
                 .font(DS.Fonts.meta.weight(.medium))
                 .foregroundStyle(DS.Colors.text2)

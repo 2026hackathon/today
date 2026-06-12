@@ -220,9 +220,7 @@ struct JiraTodoRow: View {
         HStack(alignment: .center, spacing: 10) {
             // Jira 是只读集成（PRD Out of Scope：不改 Jira 状态），
             // 不提供完成操作，用静态图标占住完成圈的位置保持对齐
-            Image(systemName: todo.source == .github ? "arrow.triangle.pull" : "briefcase.fill")
-                .font(.system(size: 10))
-                .foregroundStyle(DS.Colors.text3)
+            BrandIcon(brand: todo.source == .github ? .github : .jira, size: 11)
                 .frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
