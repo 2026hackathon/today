@@ -106,7 +106,9 @@ final class MockCalendarService: CalendarService {
 @MainActor
 final class EventKitCalendarService: CalendarService {
 
-    private let eventStore = EKEventStore()
+    // nonisolated(unsafe)：requestFullAccess* 是 nonisolated async，Swift 6 region
+    // 检查不允许把 MainActor 隔离的实例发过去；EKEventStore 本身线程安全（Apple 文档）
+    nonisolated(unsafe) private let eventStore = EKEventStore()
 
     /// Layer 1: 日历数据变化回调（AppDelegate 挂接，触发即时刷新）。
     /// 仅在权限已授予后才会触发（避免无权限时的死循环）。

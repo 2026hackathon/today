@@ -118,6 +118,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         dueDate: Date? = nil, createdAt: Date = Date(), completedAt: Date? = nil,
         snoozedUntil: Date? = nil, snoozeCount: Int = 0, screenshotPath: String? = nil,
         jiraKey: String? = nil, jiraURL: URL? = nil, jiraStatus: String? = nil,
+        jiraStatusCategory: String? = nil,
         jiraAssigner: String? = nil, storyPoints: Double? = nil,
         aiExplanation: String? = nil, tags: [String] = []
     ) {
@@ -127,6 +128,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         self.snoozedUntil = snoozedUntil; self.snoozeCount = snoozeCount
         self.screenshotPath = screenshotPath
         self.jiraKey = jiraKey; self.jiraURL = jiraURL; self.jiraStatus = jiraStatus
+        self.jiraStatusCategory = jiraStatusCategory
         self.jiraAssigner = jiraAssigner; self.storyPoints = storyPoints
         self.aiExplanation = aiExplanation; self.tags = tags
     }
@@ -150,6 +152,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         jiraKey = try? c.decodeIfPresent(String.self, forKey: .jiraKey)
         jiraURL = try? c.decodeIfPresent(URL.self, forKey: .jiraURL)
         jiraStatus = try? c.decodeIfPresent(String.self, forKey: .jiraStatus)
+        jiraStatusCategory = try? c.decodeIfPresent(String.self, forKey: .jiraStatusCategory)
         jiraAssigner = try? c.decodeIfPresent(String.self, forKey: .jiraAssigner)
         storyPoints = try? c.decodeIfPresent(Double.self, forKey: .storyPoints)
         aiExplanation = try? c.decodeIfPresent(String.self, forKey: .aiExplanation)
