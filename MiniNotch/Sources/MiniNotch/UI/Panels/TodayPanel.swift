@@ -1,0 +1,497 @@
+import AppKit
+import SwiftUI
+
+// ============================================================
+// TodayPanel —— 展开态主面板（prototype `today` 状态，460×540）。
+// Today / Inbox / 收藏 三个 tab；Inbox 与收藏先显示「等待接入」占位。
+// 本文件同时提供 Panels 模块的公共小组件（PanelTabBar / PanelSectionTitle /
+// PanelDivider / PanelAISuggestion / PanelPriorityTag / PanelFormat）。
+// ============================================================
+
+struct TodayPanel: View {
+    @EnvironmentObject var store: AppStore
+    @State private var showCompleted = false
+
+    private var currentTab: PanelTab {
+        if case .expanded(let tab) = store.islandState { return tab }
+        return .today
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PanelTabBar(current: currentTab)
+            ScrollView {
+                if currentTab == .inbox || currentTab == .favorites {
+                    PanelPlaceholder(tab: currentTab)
+                } else {
+                    todayBody
+                }
+            }
+            .scrollIndicators(.hidden)
+        }
+        .padding(.top, 36) // 摄像头区留位（prototype .island-body）
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    // MARK: - Today 内容
+
+    private var todayBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 问候行
+            Text("今天有 \(store.pendingCount) 个待办、\(store.todayMeetings.count) 场会议")
+                .font(DS.Fonts.button)
+                .foregroundStyle(DS.Colors.text2)
+                .padding(.horizontal, 2)
+                .padding(.top, 4)
+                .padding(.bottom, 12)
+
+            // 分组 1：个人 TODO
+            PanelSectionTitle(title: "个人 TODO", count: store.personalTodos.count)
+            ForEach(store.personalTodos) { todo in
+                PersonalTodoRow(todo: todo) { store.complete(todo) }
+            }
+
+            PanelDivider()
+
+            // 分组 2：JIRA TICKETS
+            PanelSectionTitle(title: "JIRA TICKETS", count: store.jiraTodos.count)
+            ForEach(store.jiraTodos) { todo in
+                JiraTodoRow(todo: todo) { store.complete(todo) }
+            }
+
+            PanelDivider()
+
+            // 分组 3：今日会议
+            PanelSectionTitle(title: "今日会议", count: store.todayMeetings.count)
+            ForEach(store.todayMeetings) { meeting in
+                MeetingRow(meeting: meeting)
+            }
+
+            PanelDivider()
+
+            completedFold
+
+            // 底部 AI 建议条
+            // TODO: B 接 AIService 后替换为真实建议
+            PanelAISuggestion(text: "建议: 上午先处理高优先级任务，14:00 后处理其余 Jira tickets。")
+                .padding(.top, 6)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - 已完成折叠
+
+    private var completedFold: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(IslandAnimation.spring) { showCompleted.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(showCompleted ? "▾" : "▸")
+                    Text("已完成 (\(store.completedToday.count))")
+                }
+                .font(DS.Fonts.meta)
+                .foregroundStyle(DS.Colors.text3)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 2)
+            .padding(.vertical, 6)
+
+            if showCompleted {
+                ForEach(store.completedToday) { todo in
+                    CompletedRow(todo: todo) { store.uncomplete(todo) }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 个人 Todo 行
+
+private struct PersonalTodoRow: View {
+    let todo: Todo
+    let onComplete: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            PanelCheckCircle(action: onComplete)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(todo.title)
+                    .font(DS.Fonts.todoTitle)
+                    .foregroundStyle(DS.Colors.text1)
+                HStack(spacing: 6) {
+                    PanelPriorityTag(priority: todo.priority)
+                    if let due = todo.dueDate {
+                        Text(PanelFormat.due(due))
+                            .font(DS.Fonts.meta)
+                            .foregroundStyle(todo.isOverdue ? DS.Colors.alert : DS.Colors.text3)
+                    }
+                    ForEach(todo.tags, id: \.self) { tag in
+                        HStack(spacing: 3) {
+                            Image(systemName: "repeat").font(.system(size: 8))
+                            Text(tag)
+                        }
+                        .dsTag()
+                    }
+                    if let symbol = Self.sourceSymbol(todo.source) {
+                        Image(systemName: symbol)
+                            .font(.system(size: 9))
+                            .dsTag()
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(8)
+        .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+        .onHover { hovering = $0 }
+    }
+
+    /// 来源小图标（manual 不显示，对齐 prototype；jira 走独立分组）
+    private static func sourceSymbol(_ source: TodoSource) -> String? {
+        switch source {
+        case .screenshot: "camera.fill"
+        case .calendar: "calendar"
+        case .wechat: "message.fill"
+        case .manual, .jira: nil
+        }
+    }
+}
+
+// MARK: - Jira 行
+
+private struct JiraTodoRow: View {
+    let todo: Todo
+    let onComplete: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            PanelCheckCircle(action: onComplete)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    if let key = todo.jiraKey {
+                        Text(key)
+                            .font(DS.Fonts.compactSide.weight(.semibold))
+                            .foregroundStyle(DS.Colors.accent)
+                            .onTapGesture { openJira() }
+                    }
+                    Text(todo.title)
+                        .font(DS.Fonts.todoTitle)
+                        .foregroundStyle(DS.Colors.text1)
+                }
+                HStack(spacing: 6) {
+                    PanelPriorityTag(priority: todo.priority)
+                    if let status = todo.jiraStatus {
+                        if status == "In Progress" {
+                            Text(status).dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
+                        } else {
+                            Text(status).dsTag()
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+            // 行尾跳转箭头（hover 才显示）
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(DS.Colors.text3)
+                .opacity(hovering ? 1 : 0)
+                .padding(.top, 2)
+                .onTapGesture { openJira() }
+        }
+        .padding(8)
+        .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+        .onHover { hovering = $0 }
+    }
+
+    private func openJira() {
+        guard let url = todo.jiraURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
+// MARK: - 会议行
+
+private struct MeetingRow: View {
+    let meeting: Meeting
+    @State private var hovering = false
+
+    private var dotColor: Color {
+        switch meeting.status {
+        case .ongoing: DS.Colors.success
+        case .upcoming: DS.Colors.text2
+        case .ended: DS.Colors.text3
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle().fill(dotColor).frame(width: 6, height: 6)
+            Text("\(PanelFormat.hm(meeting.start))-\(PanelFormat.hm(meeting.end))")
+                .font(DS.Fonts.compactSide)
+                .foregroundStyle(DS.Colors.text2)
+            Text(meeting.title)
+                .font(DS.Fonts.todoTitle)
+                .foregroundStyle(DS.Colors.text1)
+                .lineLimit(1)
+            if let platform = meeting.platform {
+                Text(platform.label).dsTag()
+            }
+            Spacer(minLength: 0)
+            if let link = meeting.link {
+                Button {
+                    NSWorkspace.shared.open(link)
+                } label: {
+                    Text("加入会议")
+                        .font(DS.Fonts.tag)
+                        .foregroundStyle(DS.Colors.accent)
+                        .padding(.horizontal, 7)
+                        .frame(height: 18)
+                        .background(DS.Colors.accentSoft, in: RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(8)
+        .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+        .onHover { hovering = $0 }
+        .opacity(meeting.status == .ended ? 0.4 : 1)
+    }
+}
+
+// MARK: - 已完成行
+
+private struct CompletedRow: View {
+    let todo: Todo
+    let onUncomplete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: onUncomplete) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(DS.Colors.text3)
+            }
+            .buttonStyle(.plain)
+            Text(todo.title)
+                .font(DS.Fonts.todoTitle)
+                .foregroundStyle(DS.Colors.text3)
+                .strikethrough(true, color: DS.Colors.text3)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+    }
+}
+
+// MARK: - 完成圈（个人/Jira 行共用）
+
+private struct PanelCheckCircle: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .strokeBorder(hovering ? DS.Colors.text1 : DS.Colors.text3, lineWidth: 1.5)
+                .frame(width: 16, height: 16)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .padding(.top, 1)
+    }
+}
+
+// ============================================================
+// 以下为 Panels 模块共享小组件
+// ============================================================
+
+// MARK: - Tab 行（Today/Settings 共用）
+
+struct PanelTabBar: View {
+    @EnvironmentObject var store: AppStore
+    let current: PanelTab
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(visibleTabs, id: \.self) { tab in
+                PanelTabButton(title: tab.rawValue, isActive: tab == current) {
+                    guard tab != current else { return }
+                    store.present(.expanded(tab: tab))
+                }
+            }
+            Spacer(minLength: 0)
+            if current != .settings {
+                PanelIconButton(symbol: "plus") { store.present(.quickInput) }
+                PanelIconButton(symbol: "gearshape.fill") { store.present(.expanded(tab: .settings)) }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
+    }
+
+    private var visibleTabs: [PanelTab] {
+        current == .settings ? PanelTab.allCases : [.today, .inbox, .favorites]
+    }
+}
+
+struct PanelTabButton: View {
+    let title: String
+    let isActive: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(DS.Fonts.button)
+                .foregroundStyle(isActive ? DS.Colors.text1 : (hovering ? DS.Colors.text2 : DS.Colors.text3))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(isActive ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+struct PanelIconButton: View {
+    let symbol: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(hovering ? DS.Colors.text1 : DS.Colors.text3)
+                .frame(width: 26, height: 26)
+                .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+// MARK: - Section 标题（10pt semibold 大写 + 右侧计数 mono）
+
+struct PanelSectionTitle: View {
+    let title: String
+    var count: Int?
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .textCase(.uppercase)
+                .tracking(0.8)
+            Spacer()
+            if let count {
+                Text("\(count)").font(DS.Fonts.tag)
+            }
+        }
+        .font(DS.Fonts.sectionTitle)
+        .foregroundStyle(DS.Colors.text3)
+        .padding(.horizontal, 2)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+    }
+}
+
+// MARK: - 分隔线
+
+struct PanelDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(DS.Colors.border)
+            .frame(height: 1)
+            .padding(.top, 6)
+            .padding(.bottom, 10)
+    }
+}
+
+// MARK: - AI 建议条
+
+struct PanelAISuggestion: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(DS.Fonts.meta)
+            .foregroundStyle(DS.Colors.accent)
+            .lineSpacing(4)
+            .padding(.vertical, 9)
+            .padding(.horizontal, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DS.Colors.accentSoft, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+    }
+}
+
+// MARK: - 优先级 tag
+
+struct PanelPriorityTag: View {
+    let priority: Priority
+
+    var body: some View {
+        if priority == .high {
+            Text(priority.label).dsTag(DS.Colors.alert, bg: DS.Colors.alertSoft)
+        } else {
+            Text(priority.label).dsTag()
+        }
+    }
+}
+
+// MARK: - Inbox/收藏 占位
+
+struct PanelPlaceholder: View {
+    let tab: PanelTab
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: tab == .inbox ? "tray" : "star")
+                .font(.system(size: 24))
+                .foregroundStyle(DS.Colors.text3)
+            Text("\(tab.rawValue) 等待接入")
+                .font(DS.Fonts.button)
+                .foregroundStyle(DS.Colors.text3)
+        }
+        .frame(maxWidth: .infinity, minHeight: 380)
+    }
+}
+
+// MARK: - 日期/时间格式化
+
+enum PanelFormat {
+    /// "HH:mm"
+    static func hm(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
+
+    /// 截止时间展示："今晚 18:00" / "今天 09:00" / "明天 12:00" / "6/15 周一"
+    static func due(_ date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) {
+            let prefix = cal.component(.hour, from: date) >= 17 ? "今晚" : "今天"
+            return "\(prefix) \(hm(date))"
+        }
+        if cal.isDateInTomorrow(date) { return "明天 \(hm(date))" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M/d EEE"
+        return f.string(from: date)
+    }
+
+    /// "2026/06/12 星期五"
+    static func fullDate(_ date: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy/MM/dd EEEE"
+        return f.string(from: date)
+    }
+}

@@ -1,0 +1,5 @@
+.DS_Store
+MiniNotch/.build/
+MiniNotch/dist/
+.swiftpm/
+xcuserdata/

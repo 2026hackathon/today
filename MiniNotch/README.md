@@ -1,53 +1,63 @@
-# MiniNotch
+# TodoIsland (MiniNotch)
 
-macOS 刘海（Notch）应用的最小壳子。目前只有：
+住在 Mac 刘海里的 AI Todo 助手 —— hackathon 项目。
 
-- 一个贴在刘海位置的黑色面板，鼠标悬停展开 / 移开收起
-- 一个菜单栏图标（显示/隐藏面板、退出）
-- 不占 Dock、不抢焦点、覆盖全屏应用
-
-业务功能尚未接入，展开态是占位内容。
-
-## 环境要求
-
-- macOS 14+ (Sonoma)
-- Xcode 16+（自带 Swift 6 工具链即可，无需安装其他工具）
+**框架已就绪**：状态机、数据层、服务协议、SwiftGlow 动效、全部 UI 均可运行（外部能力为 Mock）。
+每人在框架上替换自己模块的实现即可，分工见 [docs/MODULES.md](../docs/MODULES.md)。
 
 ## 跑起来
 
 ```bash
-# 命令行直接跑
-swift run
-
-# 或者用 Xcode 开发（直接打开包，没有 .xcodeproj）
-open Package.swift
+cd MiniNotch
+swift run            # 刘海出现黑岛 + 菜单栏图标
+# 或用 Xcode：open Package.swift
 ```
 
-> 没有刘海的屏幕（外接显示器 / Intel 机型）会在屏幕顶部中央画一个 200×32 的"伪刘海"，方便调试。
+跑起来后：**菜单栏图标 → Debug 状态**，把 15 个状态逐个点一遍即可理解整个产品。
 
-## 打包发布
+## 环境要求
 
-```bash
-./build.sh
-# 产出 dist/MiniNotch.app 和 dist/MiniNotch.zip（ad-hoc 签名，无需开发者账号）
-```
+- macOS 14+ (Sonoma)，Xcode 16+（Swift 6 工具链）
+- 依赖：[SwiftGlow](https://github.com/margox/SwiftGlow) 0.1.3（SPM 自动拉取）
 
-收到 zip 的人首次打开：右键 .app → 打开 → 再点「打开」（绕过 Gatekeeper）。
+## 必读文档
 
-## 工程约定
-
-- **纯 SwiftPM，不用 XcodeGen，不提交任何 .xcodeproj**。Xcode 通过 `open Package.swift` 直接开发，避免多人协作时 project 文件冲突。
-- 新模块放在 `Sources/MiniNotch/` 下新建文件即可，SwiftPM 自动纳入编译。
+| 文档 | 内容 |
+|------|------|
+| [docs/MODULES.md](../docs/MODULES.md) | **分工指南**：每人的文件边界、已就绪能力、待办清单 |
+| [CODING_GUIDELINES.md](../CODING_GUIDELINES.md) | 硬规则（文件边界 / 单一数据源 / DS tokens） |
+| `openspec/changes/archive/2026-06-12-todoisland-framework/design.md` | 架构契约（必读） |
+| `openspec/specs/` | 7 个 capability 的需求基线 |
+| `prototype.html`（仓库根） | 视觉蓝本，浏览器打开逐状态对照 |
 
 ## 代码结构
 
 ```
 Sources/MiniNotch/
-├── main.swift           # 入口，启动 NSApplication
-├── AppDelegate.swift    # 菜单栏 + 创建刘海面板
-├── NotchPanel.swift     # 不抢焦点的悬浮 NSPanel（核心窗口行为）
-├── NotchGeometry.swift  # 刘海尺寸/面板位置计算
-└── NotchView.swift      # SwiftUI 视图：假刘海 + hover 展开（含 NotchShape）
+├── main.swift / AppDelegate.swift   # 装配点：服务注入、Debug 菜单、轮询
+├── NotchPanel.swift                 # 不抢焦点的悬浮窗（稳定，别动）
+├── NotchGeometry.swift              # 刘海尺寸计算（稳定，别动）
+├── Core/                            # 契约：模型 / AppStore / 持久化 / 设计 tokens
+├── Island/                          # 状态机 + 状态→视图路由
+├── UI/Compact|Cards|Panels/         # 收缩态 / 5 种卡片 / 4 种面板
+├── Services/                        # 6 个协议 + Mock（AI/截图/Jira/日历/提醒/推送）
+└── Effects/                         # SwiftGlow 流光 / Touchdown / 撒花 / 全屏庆祝
 ```
 
-各人开发新功能时，主要改动点是把自己的视图挂进 `NotchView.contentView`，把数据层文件加到 `Sources/MiniNotch/` 即可。
+## 工程约定
+
+- 纯 SwiftPM，不提交 .xcodeproj；`open Package.swift` 开发
+- 新功能走 openspec：`openspec new change "<name>"` → 实现 → `openspec archive <name>`
+- 推 main 前必须 `swift build` 通过 + Debug 菜单冒烟
+
+## 打包发布
+
+```bash
+./build.sh   # 产出 dist/MiniNotch.app + .zip（ad-hoc 签名）
+```
+
+## 已知坑
+
+- F2/F3 热键需要 Fn 配合，或系统设置→键盘→「将 F1、F2 等键用作标准功能键」
+- 首次截图弹屏幕录制权限，授权后重启 app
+- 本地数据在 `~/Library/Application Support/MiniNotch/`，乱了用 Debug 菜单「重置演示数据」

@@ -1,0 +1,1885 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notch — Mac 灵动岛 Todo 原型</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  /* Neutrals */
+  --canvas: #0a0a0a;
+  --desktop-bg: #15192a;
+  --island-bg: #000;   /* The island IS pure black, like real Dynamic Island */
+
+  /* Surfaces (inside the island) */
+  --surface-1: rgba(255, 255, 255, 0.06);
+  --surface-2: rgba(255, 255, 255, 0.10);
+  --border:    rgba(255, 255, 255, 0.08);
+
+  /* Text */
+  --text-1: #f5f5f5;
+  --text-2: rgba(255, 255, 255, 0.62);
+  --text-3: rgba(255, 255, 255, 0.36);
+
+  /* Accent — AI / interactive hints. Desaturated from raw iOS blue so it
+     doesn't scream inside the pure-black island. Used as TINT, never as a
+     full-saturation button fill. */
+  --accent: #6AA8F5;
+  --accent-soft: rgba(106, 168, 245, 0.12);
+  --accent-strong: #8FC0FF;  /* for text on accent-soft bg, ensures contrast */
+
+  /* Alert — used ONLY for overdue / blocking. */
+  --alert: #FF6B61;
+  --alert-soft: rgba(255, 107, 97, 0.13);
+
+  /* Success — rare, used for completion confirmations only */
+  --success: #4CD27D;
+
+  /* Radius (locked scale) */
+  --r-s: 6px;
+  --r-m: 10px;
+  --r-l: 14px;
+
+  /* Island geometry — the ONE source of truth */
+  --hw-notch-w: 180px;          /* real hardware notch width */
+  --hw-notch-h: 28px;           /* real hardware notch height */
+  --island-corner: 24px;        /* bottom corner radius when expanded */
+  --island-corner-compact: 18px;
+  --camera-y: 9px;              /* camera position from top */
+  --camera-size: 9px;
+}
+
+html, body { background: var(--canvas); }
+body {
+  font-family: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+  color: var(--text-1);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ====== Page header ====== */
+.page-header { text-align: center; padding: 36px 0 14px; }
+.page-header h1 {
+  font-size: 20px; font-weight: 600; letter-spacing: -0.01em;
+}
+.page-header p {
+  font-size: 12px; color: var(--text-3); margin-top: 6px;
+}
+
+/* ====== Controls (flat, single row) ====== */
+.controls {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  justify-content: center; max-width: 880px;
+  padding: 0 16px 24px;
+}
+.ctrl-btn {
+  padding: 6px 12px; background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--r-s);
+  color: var(--text-2); font-size: 12px;
+  cursor: pointer; font-family: inherit;
+  white-space: nowrap; transition: all 0.12s;
+}
+.ctrl-btn:hover { color: var(--text-1); background: var(--surface-1); }
+.ctrl-btn.active {
+  color: var(--text-1);
+  background: var(--surface-2);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* ====== Screen ====== */
+.screen {
+  position: relative; width: 960px; height: 640px;
+  border-radius: 14px; overflow: hidden;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04),
+              0 24px 60px rgba(0, 0, 0, 0.6);
+}
+.desktop {
+  position: absolute; inset: 0;
+  background: var(--desktop-bg);
+}
+.desktop::after {
+  content: ''; position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 30% 30%, rgba(80, 120, 200, 0.06), transparent 55%),
+    radial-gradient(ellipse at 70% 70%, rgba(60, 80, 120, 0.05), transparent 55%);
+}
+
+/* ====== Menu bar ====== */
+.menubar {
+  position: absolute; top: 0; left: 0; right: 0; height: 26px;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; font-size: 12px; z-index: 5;
+  color: var(--text-2);
+}
+.menubar-left, .menubar-right {
+  display: flex; gap: 16px; align-items: center;
+}
+.menubar-left .brand { color: var(--text-1); font-weight: 600; }
+.menubar-right { font-size: 11px; gap: 12px; }
+/* Menu bar items hide behind the island */
+.menubar-spacer { width: var(--hw-notch-w); flex-shrink: 0; }
+
+/* ============================================================
+   ISLAND — ONE continuous black shape, hardware notch INSIDE
+   ============================================================ */
+.island {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--island-bg);              /* PURE black */
+  border-radius: 0 0 var(--island-corner-compact) var(--island-corner-compact);
+  z-index: 20;
+  overflow: hidden;
+  /* Geometry transitions — spring-like for the iOS feel */
+  transition:
+    width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+    height 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-radius 0.35s ease;
+  /* Default = compact */
+  width: 200px;
+  height: 32px;
+}
+
+/* The camera dot — ALWAYS inside the black shape, top center */
+.island::before {
+  content: '';
+  position: absolute;
+  top: var(--camera-y);
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--camera-size);
+  height: var(--camera-size);
+  border-radius: 50%;
+  background: #1a1a25;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  z-index: 30;
+  pointer-events: none;
+}
+
+/* Size variants — the only thing that changes is geometry */
+.island.compact-narrow { width: 220px; height: 32px; }
+.island.compact-wide   { width: 340px; height: 32px; }
+.island.card           { width: 380px; height: auto; min-height: 200px;
+                          border-radius: 0 0 var(--island-corner) var(--island-corner); }
+.island.card-tall      { width: 380px; height: auto; min-height: 280px;
+                          border-radius: 0 0 var(--island-corner) var(--island-corner); }
+.island.input          { width: 480px; height: auto; min-height: 180px;
+                          border-radius: 0 0 var(--island-corner) var(--island-corner); }
+.island.expanded       { width: 460px; height: 540px;
+                          border-radius: 0 0 var(--island-corner) var(--island-corner); }
+.island.hover          { width: 280px; height: auto; min-height: 160px;
+                          border-radius: 0 0 var(--island-corner) var(--island-corner); }
+
+/* ============================================================
+   COMPACT CONTENT — fits in the 32px hardware-notch-height zone
+   Layout: left of camera | camera (center) | right of camera
+   ============================================================ */
+.compact-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  /* Reserve center for camera — items naturally split left/right */
+  pointer-events: none;
+}
+.compact-left, .compact-right {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500;
+  color: var(--text-1);
+  pointer-events: auto;
+}
+.compact-left {
+  /* offset away from camera */
+  margin-right: calc(var(--camera-size) + 16px);
+}
+.compact-right {
+  margin-left: calc(var(--camera-size) + 16px);
+  color: var(--text-2);
+  font-size: 11px;
+}
+/* Compact icon slot — replaces the old colored dot.
+   Default monochrome; .alert tints it red for overdue/urgent. */
+.compact-icon {
+  width: 13px; height: 13px;
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-2);
+}
+.compact-icon.alert { color: var(--alert); }
+.compact-icon.muted { color: var(--text-3); }
+.compact-count {
+  font-size: 12px; font-weight: 700;
+  /* Mono first — Game Boy/8-bit feel — fall back to SF Display */
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.compact-right {
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* State affordances */
+.island.breathing { animation: breathe 2.2s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 159, 10, 0); }
+  50%      { box-shadow: 0 0 0 2px rgba(255, 159, 10, 0.28); }
+}
+.island.urgent .compact-icon { animation: urgentPulse 0.9s ease-in-out infinite; }
+@keyframes urgentPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+.island.celebrate { animation: ringFade 0.9s ease-out; }
+@keyframes ringFade {
+  0%   { box-shadow: 0 0 0 0 var(--accent-soft); }
+  100% { box-shadow: 0 0 0 16px transparent; }
+}
+
+/* ============================================================
+   ISLAND BODY — for expanded/card/input states
+   ALL content lives BELOW the camera (which sits at top 9-18px)
+   Top padding reserves the hardware notch zone (32px+)
+   ============================================================ */
+.island-body {
+  position: relative;
+  padding-top: 36px;            /* reserve camera zone */
+  color: var(--text-1);
+}
+
+/* ====== Expanded panel (Today / Settings / Morning) ====== */
+.panel-tabs {
+  display: flex; align-items: center;
+  padding: 6px 14px 0; gap: 2px;
+}
+.panel-tab {
+  font-size: 12px; padding: 6px 10px;
+  border-radius: var(--r-s);
+  cursor: pointer; color: var(--text-3);
+  border: none; background: none; font-family: inherit;
+  transition: all 0.12s;
+}
+.panel-tab:hover { color: var(--text-2); }
+.panel-tab.active {
+  color: var(--text-1);
+  background: var(--surface-1);
+}
+.panel-tab-spacer { flex: 1; }
+.panel-action {
+  width: 26px; height: 26px;
+  border-radius: var(--r-s);
+  border: none; background: none;
+  color: var(--text-3); cursor: pointer;
+  font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+}
+.panel-action:hover { color: var(--text-1); background: var(--surface-1); }
+
+.panel-body {
+  padding: 8px 16px 18px;
+  overflow-y: auto;
+  max-height: 460px;
+  scrollbar-width: none;
+}
+.panel-body::-webkit-scrollbar { display: none; }
+
+.greeting {
+  font-size: 12px; color: var(--text-2);
+  padding: 4px 2px 12px;
+}
+
+.section-group { margin-bottom: 14px; }
+.section-title {
+  display: flex; align-items: center;
+  font-size: 10px; font-weight: 600;
+  color: var(--text-3);
+  padding: 4px 2px 8px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.section-count {
+  font-size: 10px; color: var(--text-3);
+  font-family: "SF Mono", monospace;
+  margin-left: auto;
+}
+
+.todo-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 8px;
+  border-radius: var(--r-m);
+  transition: background 0.12s;
+}
+.todo-row:hover { background: var(--surface-1); }
+.todo-check {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-3);
+  flex-shrink: 0; margin-top: 1px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.todo-check:hover { border-color: var(--text-1); }
+.todo-body { flex: 1; min-width: 0; }
+.todo-title {
+  font-size: 13px; font-weight: 500;
+  line-height: 1.4;
+}
+.todo-meta {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 4px;
+  font-size: 11px; color: var(--text-3);
+}
+/* Tiny badge for in-row priority/status — smaller than .meta-badge */
+.tag {
+  display: inline-flex; align-items: center;
+  height: 16px; padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10px; font-weight: 500;
+  background: var(--surface-1);
+  color: var(--text-3);
+  font-family: "SF Mono", "Menlo", monospace;
+  letter-spacing: 0.02em;
+}
+.tag.alert  { background: var(--alert-soft); color: var(--alert); }
+.tag.accent { background: var(--accent-soft); color: var(--accent); }
+.tag.muted  { color: var(--text-3); }
+/* ====== Pixel-art icon system (Game Boy / 8-bit vibe) ======
+   <svg class="ico"><use href="#ico-name"/></svg>
+   - Every icon is drawn on an 8x8 pixel grid using <rect width="1" height="1">.
+   - shape-rendering: crispEdges keeps the pixel boundaries hard at any scale.
+   - currentColor inheritance keeps tinting trivial.
+   - Animated icons swap multi-frame sprites via CSS steps() — see below. */
+.ico {
+  width: 14px; height: 14px;
+  flex-shrink: 0;
+  fill: currentColor;
+  stroke: none;
+  color: var(--text-1);
+  /* Hard pixel edges — DO NOT add drop-shadow here, it dissolves the pixels. */
+  shape-rendering: crispEdges;
+  image-rendering: pixelated;
+}
+.ico.sm  { width: 10px; height: 10px; }
+.ico.md  { width: 14px; height: 14px; }
+.ico.lg  { width: 18px; height: 18px; }
+.ico.xl  { width: 32px; height: 32px; }
+.ico.muted  { color: var(--text-3); }
+.ico.alert  { color: var(--alert); }
+.ico.accent { color: var(--accent); }
+.ico.success { color: var(--success); }
+
+/* ---- Animated icons ----
+   Wrapped in prefers-reduced-motion: no-preference so users who opt out
+   of motion see static icons (a11y requirement). */
+@media (prefers-reduced-motion: no-preference) {
+  /* Pulsing bell — opacity step, gives the "bonk bonk" feel */
+  .ico.anim-pulse { animation: pxPulse 0.9s steps(2) infinite; }
+  @keyframes pxPulse {
+    0%, 49%   { transform: translateY(0)   scale(1); }
+    50%, 100% { transform: translateY(-1px) scale(1.06); }
+  }
+
+  /* Blinking alert — hard on/off, like an arcade warning */
+  .ico.anim-blink { animation: pxBlink 0.8s steps(2) infinite; }
+  @keyframes pxBlink {
+    0%, 49%   { opacity: 1; }
+    50%, 100% { opacity: 0.25; }
+  }
+
+  /* Sparkle twinkle — 3-frame rotation */
+  .ico.anim-sparkle { animation: pxSparkle 1.2s steps(3) infinite; }
+  @keyframes pxSparkle {
+    0%   { transform: scale(0.7) rotate(0deg);   opacity: 0.6; }
+    33%  { transform: scale(1.0) rotate(45deg);  opacity: 1;   }
+    66%  { transform: scale(1.1) rotate(90deg);  opacity: 1;   }
+    100% { transform: scale(0.7) rotate(135deg); opacity: 0.6; }
+  }
+
+  /* Clock tick — hands rotate in 4 discrete steps */
+  .ico.anim-tick { animation: pxTick 1s steps(4) infinite; }
+  @keyframes pxTick {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Loading bar — 4-frame width step */
+  .ico.anim-load > .loadbar {
+    animation: pxLoad 1s steps(4) infinite;
+    transform-origin: left center;
+  }
+  @keyframes pxLoad {
+    0%   { transform: scaleX(0.1); }
+    25%  { transform: scaleX(0.4); }
+    50%  { transform: scaleX(0.7); }
+    75%  { transform: scaleX(1.0); }
+    100% { transform: scaleX(0.1); }
+  }
+
+  /* Walking dots (waiting / parsing) — 3-frame translation */
+  .ico.anim-walk { animation: pxWalk 0.6s steps(3) infinite; }
+  @keyframes pxWalk {
+    0%   { transform: translateX(0); }
+    33%  { transform: translateX(2px); }
+    66%  { transform: translateX(-2px); }
+    100% { transform: translateX(0); }
+  }
+
+  /* Floating idle bob (used on idle/empty states) */
+  .ico.anim-bob { animation: pxBob 1.4s steps(2) infinite; }
+  @keyframes pxBob {
+    0%, 49%   { transform: translateY(0); }
+    50%, 100% { transform: translateY(-1px); }
+  }
+}
+.todo-due { color: var(--text-3); }
+.todo-due.overdue { color: var(--alert); }
+.todo-source {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--r-s);
+  background: var(--surface-1);
+  color: var(--text-3);
+}
+
+.jira-key {
+  font-family: "SF Mono", monospace;
+  font-size: 11px; font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+.jira-key:hover { text-decoration: underline; }
+.jira-status {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--r-s);
+  color: var(--text-3);
+  background: var(--surface-1);
+}
+.jira-status.progress { color: var(--accent); background: var(--accent-soft); }
+.jira-link {
+  color: var(--text-3); text-decoration: none;
+  font-size: 13px;
+  margin-left: auto; flex-shrink: 0;
+  opacity: 0; transition: opacity 0.12s;
+}
+.todo-row:hover .jira-link { opacity: 1; }
+
+.section-divider {
+  height: 1px; background: var(--border);
+  margin: 6px 0 10px;
+}
+
+.ai-suggestion {
+  font-size: 11px; color: var(--accent);
+  padding: 9px 11px;
+  background: var(--accent-soft);
+  border-radius: var(--r-m);
+  line-height: 1.55;
+}
+
+.completed-fold {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-3);
+  padding: 6px 2px; cursor: pointer;
+}
+.completed-fold:hover { color: var(--text-2); }
+
+/* ====== Card bodies (new task / reminder / batch) ======
+   Vertical rhythm: 8px between elements that belong together,
+   12px between groups. All children share the same left edge. */
+.card-body { padding: 2px 18px 16px; }
+
+/* Eyebrow row — pixel icon + short label, with source tag right-aligned.
+   The icon here IS the visual hierarchy; the label sits next to it. */
+.card-header {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 500;
+  color: var(--text-2);
+  margin-bottom: 10px;
+  /* hairline separator from content below */
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.card-header .header-label { letter-spacing: 0.02em; }
+.card-header .header-spacer { flex: 1; }
+/* Source tag — pill with monospaced label, secondary visual weight */
+.source-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 18px; padding: 0 7px;
+  border-radius: 4px;
+  background: var(--surface-1);
+  color: var(--text-3);
+  font-size: 10px;
+  font-family: "SF Mono", "Menlo", monospace;
+  letter-spacing: 0.02em;
+}
+
+.card-title {
+  font-size: 15px; font-weight: 600;
+  margin-bottom: 10px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+/* Inline-editable title — looks like text, behaves like an input.
+   No "edit mode" — focus IS the edit affordance. */
+.card-title-edit {
+  display: block;
+  width: 100%;
+  margin: 0 -4px 10px;
+  padding: 2px 4px;
+  font-size: 15px; font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  outline: none;
+  font-family: inherit;
+  /* invisible until focus or hover — so it doesn't look "form-y" by default */
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: box-shadow 0.12s, background 0.12s;
+  cursor: text;
+}
+.card-title-edit:hover {
+  background: var(--surface-1);
+}
+.card-title-edit:focus {
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+.card-title-edit::placeholder { color: var(--text-3); }
+
+/* Meta row — uses TEXT BADGES for priority/time, not raw icons.
+   Pixel icons at 12px are illegible next to body text; text badges
+   carry the semantic weight better at this scale. */
+.card-meta {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-2);
+  margin-bottom: 12px;
+  line-height: 1;
+}
+.meta-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 22px; padding: 0 8px;
+  border-radius: 4px;
+  font-size: 11px; font-weight: 500;
+  background: var(--surface-1);
+  color: var(--text-2);
+  font-family: "SF Mono", "Menlo", monospace;
+  letter-spacing: 0.01em;
+  border: none;
+}
+.meta-badge.alert {
+  background: var(--alert-soft);
+  color: var(--alert);
+}
+.meta-badge.accent {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+/* Editable badge — looks like a tag, behaves like a clickable affordance.
+   Caret on hover/focus signals "you can change this". */
+.meta-badge.editable {
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, transform 0.08s;
+}
+.meta-badge.editable:hover {
+  background: var(--surface-2);
+}
+.meta-badge.editable.alert:hover {
+  background: rgba(255, 107, 97, 0.22);
+}
+.meta-badge.editable:active {
+  transform: translateY(0.5px);
+}
+.meta-sep {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.card-ai {
+  font-size: 11px;
+  color: var(--text-2);     /* body text neutral; only the [AI] chip is accent */
+  padding: 8px 10px;
+  background: var(--surface-1);
+  border-radius: var(--r-s);
+  margin-bottom: 14px;
+  line-height: 1.5;
+  display: flex; align-items: flex-start; gap: 7px;
+}
+.card-ai .ai-prefix {
+  flex-shrink: 0;
+  font-size: 9px; font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 3px;
+  /* Outlined chip instead of solid blue — quieter, more refined */
+  background: transparent;
+  border: 1px solid currentColor;
+  color: var(--accent);
+  font-family: "SF Mono", monospace;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.card-actions { display: flex; gap: 6px; }
+
+.btn {
+  flex: 1; height: 32px;
+  border-radius: var(--r-s);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-1);
+  font-size: 12px; font-weight: 500;
+  cursor: pointer; font-family: inherit;
+  transition: all 0.12s;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:active { transform: translateY(0.5px); }
+/* Primary: white fill on the black island. The system Apple itself uses
+   in Dynamic Island / CarPlay / tvOS — maximum readable, brand-neutral,
+   nothing fights the accent. */
+.btn.primary {
+  background: #fff;
+  border-color: #fff;
+  color: #000;
+  font-weight: 600;
+}
+.btn.primary:hover { background: rgba(255, 255, 255, 0.88); }
+.btn.ghost {
+  background: transparent; color: var(--text-2);
+  border-color: transparent;
+}
+.btn.ghost:hover { background: var(--surface-1); color: var(--text-1); }
+
+/* Batch list */
+.batch-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0; font-size: 12px;
+}
+.batch-check {
+  width: 16px; height: 16px;
+  border-radius: var(--r-s);
+  border: 1.5px solid var(--text-3);
+  flex-shrink: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: transparent;
+  transition: all 0.12s;
+}
+.batch-check.checked {
+  border-color: #fff;
+  background: #fff;
+  color: #000;
+}
+.batch-due {
+  color: var(--text-3); margin-left: auto;
+  font-size: 11px;
+}
+.batch-actions {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.batch-link {
+  font-size: 12px; color: var(--text-2);
+  cursor: pointer; border: none; background: none;
+  font-family: inherit; padding: 0;
+  text-decoration: underline;
+  text-decoration-color: var(--text-3);
+  text-underline-offset: 3px;
+}
+.batch-link:hover { color: var(--text-1); text-decoration-color: var(--text-1); }
+
+/* Quick input */
+.qi-input-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 18px 14px;
+}
+.qi-prefix {
+  font-size: 14px; color: var(--text-3);
+  font-family: "SF Mono", monospace;
+  flex-shrink: 0;
+}
+.qi-input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text-1); font-size: 14px;
+  font-family: inherit;
+  caret-color: var(--accent);
+}
+.qi-input::placeholder { color: var(--text-3); }
+.qi-hint {
+  font-size: 10px; color: var(--text-3);
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-s);
+  font-family: "SF Mono", monospace;
+  flex-shrink: 0;
+}
+.qi-ai-status {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 18px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--accent);
+}
+.ai-spinner {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 1.5px solid rgba(10, 132, 255, 0.25);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.qi-preview {
+  border-top: 1px solid var(--border);
+  padding: 12px 18px;
+}
+.qi-preview-label {
+  font-size: 10px; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.qi-preview-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; font-size: 12px;
+}
+.qi-preview-row .key { color: var(--text-3); width: 50px; }
+.qi-preview-row .val { color: var(--text-1); flex: 1; }
+.ai-mark {
+  font-size: 9px; color: var(--accent);
+  padding: 1px 5px;
+  background: var(--accent-soft);
+  border-radius: var(--r-s);
+}
+.qi-actions {
+  display: flex; gap: 6px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+.qi-actions .spacer { flex: 1; }
+
+/* Reminder */
+.reminder-title {
+  font-size: 14px; font-weight: 600;
+  color: var(--high);
+  margin-bottom: 4px;
+}
+.snooze-options {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 10px;
+}
+.snooze-btn {
+  padding: 5px 10px;
+  border-radius: var(--r-s);
+  border: 1px solid var(--border);
+  background: none; color: var(--text-2);
+  font-size: 11px;
+  cursor: pointer; font-family: inherit;
+  transition: all 0.12s;
+}
+.snooze-btn:hover {
+  background: var(--surface-1);
+  color: var(--text-1);
+}
+
+/* Hover preview */
+.hover-body {
+  padding: 4px 14px 14px;
+}
+.hover-title {
+  font-size: 10px; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.hover-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; padding: 5px 0;
+}
+.hover-text {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hover-due {
+  font-size: 11px; color: var(--text-3);
+  font-family: "SF Mono", "Menlo", monospace;
+  flex-shrink: 0;
+}
+.hover-hint {
+  font-size: 10px; color: var(--text-3);
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-family: "SF Mono", monospace;
+}
+
+/* Settings */
+.settings-section { margin-bottom: 14px; }
+.settings-label {
+  font-size: 10px; font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 0 2px 8px;
+}
+.settings-card {
+  background: var(--surface-1);
+  border-radius: var(--r-m);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px;
+}
+.settings-row .label { color: var(--text-2); }
+.settings-row .value {
+  color: var(--text-3);
+  font-family: "SF Mono", monospace;
+  font-size: 11px;
+}
+.settings-row .status { font-size: 11px; }
+.settings-row .status.connected { color: var(--low); }
+.settings-row .status.disconnected { color: var(--text-3); }
+.settings-input {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-s);
+  padding: 5px 9px;
+  color: var(--text-1); font-size: 11px;
+  font-family: "SF Mono", monospace;
+  outline: none; width: 180px;
+  transition: border-color 0.12s;
+}
+.settings-input:focus { border-color: var(--accent); }
+
+/* Morning */
+.morning-greeting {
+  font-size: 15px; font-weight: 600;
+  margin-bottom: 4px;
+}
+.morning-date {
+  font-size: 11px; color: var(--text-3);
+  margin-bottom: 14px;
+}
+.morning-section { margin-bottom: 12px; }
+.morning-section-title {
+  font-size: 10px; font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.morning-section-title.priority { color: var(--high); }
+.morning-item {
+  font-size: 12px; color: var(--text-1);
+  padding: 3px 0;
+  line-height: 1.55;
+  display: flex; align-items: center; gap: 8px;
+}
+.morning-actions {
+  display: flex; gap: 6px;
+  margin-top: 14px;
+}
+
+/* ====== Celebration ====== */
+.celebration {
+  position: absolute; inset: 0; z-index: 50;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(10, 10, 10, 0.85);
+  backdrop-filter: blur(8px);
+}
+.celebration.visible { display: flex; }
+.celebration-content { text-align: center; }
+.celebration-mark {
+  margin: 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--alert);
+  /* Pixel pop-in: 2-frame step gives a "spawn" feel, not a smooth grow */
+  animation: pxPop 0.4s steps(3);
+}
+@keyframes pxPop {
+  0%   { transform: scale(0.2); opacity: 0; }
+  50%  { transform: scale(1.4); opacity: 1; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+.celebration-mark .ico {
+  width: 48px; height: 48px;
+  animation: pxPulse 0.7s steps(2) infinite;
+}
+.celebration-text {
+  font-size: 18px; font-weight: 600;
+  margin-top: 16px;
+  letter-spacing: -0.01em;
+}
+.celebration-sub {
+  font-size: 12px; color: var(--text-2);
+  margin-top: 6px;
+}
+
+/* Content swap transition */
+.island-body, .compact-content {
+  animation: contentFade 0.25s ease-out;
+}
+@keyframes contentFade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ====== A11y: reduced-motion override ======
+   Cancel every infinite animation + entrance for users who request it.
+   The structural transitions (island width/height) keep their CSS
+   transition because they communicate state change, not decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .island,
+  .island.breathing,
+  .island.urgent .compact-icon,
+  .island.celebrate,
+  .island-body,
+  .compact-content,
+  .celebration-mark,
+  .celebration-mark .ico,
+  .ico {
+    animation: none !important;
+  }
+  /* Geometry transitions become instant — no spring overshoot */
+  .island {
+    transition: none !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     PIXEL ART SPRITE — 8x8 grid, every <rect> is one pixel.
+     Reference vibe: Game Boy / Atari / NES status indicators.
+     All icons use fill="currentColor" so tinting is automatic.
+     ============================================================ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- INBOX — a tray with one stacked item peeking out (8x8) -->
+    <symbol id="ico-inbox" viewBox="0 0 8 8">
+      <!-- side walls -->
+      <rect x="0" y="3" width="1" height="4"/>
+      <rect x="7" y="3" width="1" height="4"/>
+      <!-- bottom + opening -->
+      <rect x="1" y="6" width="6" height="1"/>
+      <!-- tray lip -->
+      <rect x="1" y="5" width="2" height="1"/>
+      <rect x="5" y="5" width="2" height="1"/>
+      <!-- stacked papers above the tray -->
+      <rect x="2" y="1" width="4" height="1"/>
+      <rect x="2" y="3" width="4" height="1"/>
+    </symbol>
+
+    <!-- CLOCK — round face with two hands, classic alarm style -->
+    <symbol id="ico-clock" viewBox="0 0 8 8">
+      <!-- bezel -->
+      <rect x="2" y="0" width="4" height="1"/>
+      <rect x="2" y="7" width="4" height="1"/>
+      <rect x="0" y="2" width="1" height="4"/>
+      <rect x="7" y="2" width="1" height="4"/>
+      <rect x="1" y="1" width="1" height="1"/>
+      <rect x="6" y="1" width="1" height="1"/>
+      <rect x="1" y="6" width="1" height="1"/>
+      <rect x="6" y="6" width="1" height="1"/>
+      <!-- hands meeting at center -->
+      <rect x="3" y="2" width="1" height="2"/>
+      <rect x="4" y="4" width="2" height="1"/>
+    </symbol>
+
+    <!-- ALERT — chunky triangle with bang -->
+    <symbol id="ico-alert" viewBox="0 0 8 8">
+      <rect x="3" y="0" width="2" height="1"/>
+      <rect x="2" y="1" width="4" height="1"/>
+      <rect x="2" y="2" width="1" height="1"/>
+      <rect x="5" y="2" width="1" height="1"/>
+      <rect x="1" y="3" width="1" height="1"/>
+      <rect x="6" y="3" width="1" height="1"/>
+      <rect x="1" y="4" width="1" height="1"/>
+      <rect x="6" y="4" width="1" height="1"/>
+      <rect x="0" y="5" width="1" height="1"/>
+      <rect x="7" y="5" width="1" height="1"/>
+      <rect x="0" y="6" width="8" height="1"/>
+      <!-- bang glyph (negative space carved out via background blocks) -->
+      <rect x="3" y="2" width="2" height="2" fill="var(--island-bg)"/>
+      <rect x="3" y="5" width="2" height="1" fill="var(--island-bg)"/>
+    </symbol>
+
+    <!-- BELL — Zelda-style with clapper -->
+    <symbol id="ico-bell" viewBox="0 0 8 8">
+      <rect x="3" y="0" width="2" height="1"/>
+      <rect x="2" y="1" width="4" height="1"/>
+      <rect x="1" y="2" width="6" height="1"/>
+      <rect x="1" y="3" width="6" height="1"/>
+      <rect x="1" y="4" width="6" height="1"/>
+      <rect x="0" y="5" width="8" height="1"/>
+      <!-- clapper -->
+      <rect x="3" y="6" width="2" height="1"/>
+      <rect x="3" y="7" width="2" height="1"/>
+    </symbol>
+
+    <!-- SPARKLE — 4-point star, the AI accent -->
+    <symbol id="ico-sparkle" viewBox="0 0 8 8">
+      <rect x="3" y="0" width="2" height="1"/>
+      <rect x="3" y="1" width="2" height="1"/>
+      <rect x="0" y="3" width="8" height="2"/>
+      <rect x="3" y="5" width="2" height="1"/>
+      <rect x="3" y="6" width="2" height="1"/>
+      <!-- corner glints -->
+      <rect x="1" y="1" width="1" height="1"/>
+      <rect x="6" y="1" width="1" height="1"/>
+      <rect x="1" y="6" width="1" height="1"/>
+      <rect x="6" y="6" width="1" height="1"/>
+    </symbol>
+
+    <!-- CHECK — checkmark on chunky pixels -->
+    <symbol id="ico-check" viewBox="0 0 8 8">
+      <rect x="6" y="1" width="1" height="1"/>
+      <rect x="5" y="2" width="1" height="1"/>
+      <rect x="4" y="3" width="1" height="1"/>
+      <rect x="3" y="4" width="1" height="1"/>
+      <rect x="2" y="5" width="1" height="1"/>
+      <rect x="1" y="4" width="1" height="1"/>
+      <rect x="0" y="3" width="1" height="1"/>
+      <!-- double-up the diagonal for chunky readability -->
+      <rect x="2" y="6" width="1" height="1"/>
+      <rect x="3" y="5" width="1" height="1"/>
+      <rect x="4" y="4" width="1" height="1"/>
+      <rect x="5" y="3" width="1" height="1"/>
+      <rect x="6" y="2" width="1" height="1"/>
+      <rect x="7" y="2" width="1" height="1"/>
+    </symbol>
+
+    <!-- FLAG — pixel pennant on a pole -->
+    <symbol id="ico-flag" viewBox="0 0 8 8">
+      <!-- pole -->
+      <rect x="1" y="0" width="1" height="8"/>
+      <!-- flag body -->
+      <rect x="2" y="1" width="5" height="1"/>
+      <rect x="2" y="2" width="5" height="1"/>
+      <rect x="2" y="3" width="4" height="1"/>
+      <rect x="2" y="4" width="3" height="1"/>
+    </symbol>
+
+    <!-- CIRCLE (open) — 8x8 ring -->
+    <symbol id="ico-circle" viewBox="0 0 8 8">
+      <rect x="3" y="1" width="2" height="1"/>
+      <rect x="3" y="6" width="2" height="1"/>
+      <rect x="1" y="3" width="1" height="2"/>
+      <rect x="6" y="3" width="1" height="2"/>
+      <rect x="2" y="2" width="1" height="1"/>
+      <rect x="5" y="2" width="1" height="1"/>
+      <rect x="2" y="5" width="1" height="1"/>
+      <rect x="5" y="5" width="1" height="1"/>
+    </symbol>
+
+    <!-- DOT — solid 4x4 square (medium priority) -->
+    <symbol id="ico-dot" viewBox="0 0 8 8">
+      <rect x="2" y="2" width="4" height="4"/>
+    </symbol>
+
+    <!-- CAMERA — chunky camera body with lens dot -->
+    <symbol id="ico-camera" viewBox="0 0 8 8">
+      <rect x="2" y="1" width="2" height="1"/>
+      <rect x="0" y="2" width="8" height="1"/>
+      <rect x="0" y="3" width="8" height="4"/>
+      <!-- lens negative -->
+      <rect x="3" y="4" width="2" height="2" fill="var(--island-bg)"/>
+      <rect x="3" y="4" width="1" height="1"/>
+      <!-- viewfinder dot -->
+      <rect x="6" y="4" width="1" height="1" fill="var(--island-bg)"/>
+    </symbol>
+
+    <!-- CHAT — speech bubble with tail -->
+    <symbol id="ico-chat" viewBox="0 0 8 8">
+      <rect x="0" y="0" width="8" height="5"/>
+      <rect x="1" y="5" width="3" height="1"/>
+      <rect x="2" y="6" width="2" height="1"/>
+      <rect x="3" y="7" width="1" height="1"/>
+      <!-- carved text dots -->
+      <rect x="2" y="2" width="1" height="1" fill="var(--island-bg)"/>
+      <rect x="4" y="2" width="1" height="1" fill="var(--island-bg)"/>
+      <rect x="6" y="2" width="1" height="0" fill="var(--island-bg)"/>
+      <rect x="5" y="2" width="1" height="1" fill="var(--island-bg)"/>
+    </symbol>
+
+    <!-- ARROW OUT — diagonal arrow to NE (external link) -->
+    <symbol id="ico-out" viewBox="0 0 8 8">
+      <rect x="3" y="1" width="4" height="1"/>
+      <rect x="6" y="2" width="1" height="3"/>
+      <rect x="5" y="2" width="1" height="1"/>
+      <rect x="4" y="3" width="1" height="1"/>
+      <rect x="3" y="4" width="1" height="1"/>
+      <rect x="2" y="5" width="1" height="1"/>
+      <rect x="1" y="6" width="1" height="1"/>
+    </symbol>
+
+    <!-- REPEAT — two arrows chasing each other -->
+    <symbol id="ico-repeat" viewBox="0 0 8 8">
+      <!-- top arrow -->
+      <rect x="1" y="1" width="5" height="1"/>
+      <rect x="6" y="0" width="1" height="1"/>
+      <rect x="6" y="2" width="1" height="1"/>
+      <!-- bottom arrow (reverse) -->
+      <rect x="2" y="6" width="5" height="1"/>
+      <rect x="1" y="5" width="1" height="1"/>
+      <rect x="1" y="7" width="1" height="1"/>
+      <!-- vertical pipes -->
+      <rect x="0" y="2" width="1" height="3"/>
+      <rect x="7" y="3" width="1" height="3"/>
+    </symbol>
+
+    <!-- LOADER — used by .ico.anim-load — single horizontal bar that scales -->
+    <symbol id="ico-loader" viewBox="0 0 8 8">
+      <rect x="0" y="2" width="8" height="1" opacity="0.3"/>
+      <rect x="0" y="5" width="8" height="1" opacity="0.3"/>
+      <rect x="0" y="3" width="8" height="2" class="loadbar"/>
+    </symbol>
+
+    <!-- WALKING DOTS — three dots, used in AI parsing -->
+    <symbol id="ico-walk" viewBox="0 0 8 8">
+      <rect x="0" y="3" width="2" height="2"/>
+      <rect x="3" y="3" width="2" height="2"/>
+      <rect x="6" y="3" width="2" height="2"/>
+    </symbol>
+
+    <!-- HEART — for "morning energy" / celebration -->
+    <symbol id="ico-heart" viewBox="0 0 8 8">
+      <rect x="1" y="1" width="2" height="1"/>
+      <rect x="5" y="1" width="2" height="1"/>
+      <rect x="0" y="2" width="8" height="2"/>
+      <rect x="1" y="4" width="6" height="1"/>
+      <rect x="2" y="5" width="4" height="1"/>
+      <rect x="3" y="6" width="2" height="1"/>
+    </symbol>
+
+    <!-- SUN — morning report icon -->
+    <symbol id="ico-sun" viewBox="0 0 8 8">
+      <!-- core -->
+      <rect x="3" y="3" width="2" height="2"/>
+      <rect x="2" y="2" width="1" height="1"/>
+      <rect x="5" y="2" width="1" height="1"/>
+      <rect x="2" y="5" width="1" height="1"/>
+      <rect x="5" y="5" width="1" height="1"/>
+      <!-- rays -->
+      <rect x="3" y="0" width="2" height="1"/>
+      <rect x="3" y="7" width="2" height="1"/>
+      <rect x="0" y="3" width="1" height="2"/>
+      <rect x="7" y="3" width="1" height="2"/>
+    </symbol>
+
+    <!-- GEAR — settings -->
+    <symbol id="ico-gear" viewBox="0 0 8 8">
+      <rect x="3" y="0" width="2" height="1"/>
+      <rect x="3" y="7" width="2" height="1"/>
+      <rect x="0" y="3" width="1" height="2"/>
+      <rect x="7" y="3" width="1" height="2"/>
+      <rect x="1" y="1" width="1" height="1"/>
+      <rect x="6" y="1" width="1" height="1"/>
+      <rect x="1" y="6" width="1" height="1"/>
+      <rect x="6" y="6" width="1" height="1"/>
+      <rect x="2" y="2" width="4" height="4"/>
+      <rect x="3" y="3" width="2" height="2" fill="var(--island-bg)"/>
+    </symbol>
+
+    <!-- PLUS — for "new task" buttons -->
+    <symbol id="ico-plus" viewBox="0 0 8 8">
+      <rect x="3" y="1" width="2" height="6"/>
+      <rect x="1" y="3" width="6" height="2"/>
+    </symbol>
+
+    <!-- CARET DOWN — small "this is editable" hint on badges/dropdowns -->
+    <symbol id="ico-edit-caret" viewBox="0 0 8 8">
+      <rect x="1" y="3" width="6" height="1"/>
+      <rect x="2" y="4" width="4" height="1"/>
+      <rect x="3" y="5" width="2" height="1"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="page-header">
+  <h1>Notch</h1>
+  <p>Mac 刘海里的 AI Todo 助手 — 灵动岛形态原型</p>
+</div>
+
+<div class="controls" id="controls">
+  <button class="ctrl-btn active" onclick="show('idle', event)">空闲</button>
+  <button class="ctrl-btn" onclick="show('normal', event)">正常</button>
+  <button class="ctrl-btn" onclick="show('near', event)">临近</button>
+  <button class="ctrl-btn" onclick="show('urgent', event)">紧急</button>
+  <button class="ctrl-btn" onclick="show('ai', event)">AI 解析中</button>
+  <button class="ctrl-btn" onclick="show('done1', event)">完成闪光</button>
+  <button class="ctrl-btn" onclick="show('hover', event)">悬停预览</button>
+  <button class="ctrl-btn" onclick="show('newtask', event)">新任务</button>
+  <button class="ctrl-btn" onclick="show('reminder', event)">到期提醒</button>
+  <button class="ctrl-btn" onclick="show('batch', event)">批量识别</button>
+  <button class="ctrl-btn" onclick="show('quickinput', event)">手动新建</button>
+  <button class="ctrl-btn" onclick="show('today', event)">Today 列表</button>
+  <button class="ctrl-btn" onclick="show('morning', event)">AI 晨报</button>
+  <button class="ctrl-btn" onclick="show('settings', event)">设置</button>
+  <button class="ctrl-btn" onclick="show('celebrate', event)">全部完成</button>
+</div>
+
+<div class="screen">
+  <div class="desktop"></div>
+  <div class="menubar">
+    <div class="menubar-left">
+      <span class="brand"></span>
+      <span>Finder</span><span>File</span><span>Edit</span><span>View</span>
+    </div>
+    <div class="menubar-spacer"></div>
+    <div class="menubar-right">
+      <span>Wi-Fi</span><span>100%</span><span id="clock"></span>
+    </div>
+  </div>
+
+  <!--
+    THE ISLAND — one continuous black shape.
+    Hardware notch / camera lives INSIDE this shape (top center, via ::before).
+    Content swaps based on state; the shape resizes around it.
+  -->
+  <div class="island compact-narrow" id="island">
+    <!-- Content gets injected here by JS based on state -->
+    <div class="compact-content" id="islandContent">
+      <div class="compact-left">
+        <span class="compact-icon"><svg class="ico"><use href="#ico-inbox"/></svg></span>
+        <span class="compact-count">5</span>
+      </div>
+      <div class="compact-right">下个 18:00</div>
+    </div>
+  </div>
+
+  <div class="celebration" id="celebration">
+    <div class="celebration-content">
+      <div class="celebration-mark">
+        <svg class="ico xl" style="filter:none;"><use href="#ico-heart"/></svg>
+      </div>
+      <div class="celebration-text">今日完美收官</div>
+      <div class="celebration-sub">连续 3 天清空</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const island = document.getElementById('island');
+const celebration = document.getElementById('celebration');
+
+// ============================================================
+// State definitions — each state owns:
+//   sizeClass: which geometry variant of the island
+//   modifierClass: behavior modifiers (urgent, breathing, etc)
+//   render: function that returns the HTML inside the island
+// ============================================================
+const STATES = {
+  // ── Compact states ──
+  // Layout: left = "what kind" (pixel icon + count), right = "context".
+  // Center is reserved for the hardware camera.
+
+  idle: {
+    size: 'compact-narrow',
+    render: () => `
+      <div class="compact-content">
+        <div class="compact-left">
+          <svg class="ico sm muted anim-bob"><use href="#ico-check"/></svg>
+          <span class="compact-count" style="color:var(--text-3)">0</span>
+        </div>
+        <div class="compact-right" style="color:var(--text-3)">清空</div>
+      </div>
+    `,
+  },
+
+  normal: {
+    size: 'compact-narrow',
+    render: () => `
+      <div class="compact-content">
+        <div class="compact-left">
+          <svg class="ico sm"><use href="#ico-inbox"/></svg>
+          <span class="compact-count">5</span>
+        </div>
+        <div class="compact-right">下个 18:00</div>
+      </div>
+    `,
+  },
+
+  near: {
+    size: 'compact-narrow',
+    render: () => `
+      <div class="compact-content">
+        <div class="compact-left">
+          <svg class="ico sm anim-tick"><use href="#ico-clock"/></svg>
+          <span class="compact-count">5</span>
+        </div>
+        <div class="compact-right">15 分钟</div>
+      </div>
+    `,
+  },
+
+  urgent: {
+    size: 'compact-narrow',
+    render: () => `
+      <div class="compact-content">
+        <div class="compact-left">
+          <svg class="ico sm alert anim-blink"><use href="#ico-alert"/></svg>
+          <span class="compact-count" style="color:var(--alert)">1</span>
+        </div>
+        <div class="compact-right" style="color:var(--alert)">已超时</div>
+      </div>
+    `,
+  },
+
+  ai: {
+    // Wider pill leaves the center fully clear for the camera.
+    size: 'compact-wide',
+    render: () => `
+      <div class="compact-content">
+        <div class="compact-left">
+          <svg class="ico sm accent anim-sparkle"><use href="#ico-sparkle"/></svg>
+          <span class="compact-count" style="color:var(--accent); font-size:11px;">AI</span>
+        </div>
+        <div class="compact-right">
+          <svg class="ico sm accent anim-walk"><use href="#ico-walk"/></svg>
+        </div>
+      </div>
+    `,
+  },
+
+  done1: {
+    size: 'compact-narrow',
+    modifier: 'celebrate',
+    render: () => `
+      <div class="compact-content">
+        <div class="compact-left">
+          <svg class="ico sm success"><use href="#ico-check"/></svg>
+          <span class="compact-count">4</span>
+        </div>
+        <div class="compact-right">−1 完成</div>
+      </div>
+    `,
+  },
+
+  hover: {
+    size: 'hover',
+    render: () => `
+      <div class="island-body hover-body">
+        <div class="hover-title">Next up</div>
+        <div class="hover-item">
+          <span class="tag alert">高</span>
+          <span class="hover-text">提交 PRD 草稿</span>
+          <span class="hover-due">18:00</span>
+        </div>
+        <div class="hover-item">
+          <span class="tag">中</span>
+          <span class="hover-text">MD-1024 修复登录 bug</span>
+          <span class="hover-due">明天</span>
+        </div>
+        <div class="hover-item">
+          <span class="tag muted">低</span>
+          <span class="hover-text">买生日礼物</span>
+          <span class="hover-due">周末</span>
+        </div>
+        <div class="hover-hint">⌘⇧L 展开全部</div>
+      </div>
+    `,
+  },
+
+  newtask: {
+    size: 'card',
+    render: () => `
+      <div class="island-body card-body">
+        <div class="card-header">
+          <svg class="ico accent anim-sparkle"><use href="#ico-sparkle"/></svg>
+          <span class="header-label">AI 识别到新任务</span>
+          <span class="header-spacer"></span>
+          <span class="source-tag">
+            <svg class="ico sm muted"><use href="#ico-chat"/></svg>
+            微信
+          </span>
+        </div>
+        <!-- Editable title — click anywhere on the line to type.
+             No separate "edit" mode. Draft IS edit. -->
+        <input class="card-title-edit" type="text"
+               value="完成首页性能优化"
+               placeholder="任务标题…"
+               aria-label="任务标题">
+        <!-- Meta badges are buttons — click to change priority / time inline -->
+        <div class="card-meta">
+          <button class="meta-badge alert editable" type="button"
+                  title="点击修改优先级">
+            高优先级
+            <svg class="ico sm" style="opacity:0.5;" aria-hidden="true">
+              <use href="#ico-edit-caret"/>
+            </svg>
+          </button>
+          <button class="meta-badge editable" type="button"
+                  title="点击修改时间">
+            今晚 18:00
+            <svg class="ico sm" style="opacity:0.5;" aria-hidden="true">
+              <use href="#ico-edit-caret"/>
+            </svg>
+          </button>
+        </div>
+        <div class="card-ai">
+          <span class="ai-prefix">AI</span>
+          <span>检测到「本周内」关键词，推断为今晚截止</span>
+        </div>
+        <!-- Only two actions: confirm what AI proposed, or dismiss. -->
+        <div class="card-actions">
+          <button class="btn primary">保存</button>
+          <button class="btn ghost">忽略</button>
+        </div>
+      </div>
+    `,
+  },
+
+  reminder: {
+    size: 'card',
+    modifier: 'urgent',
+    render: () => `
+      <div class="island-body card-body">
+        <div class="card-header">
+          <svg class="ico alert anim-pulse"><use href="#ico-bell"/></svg>
+          <span class="header-label" style="color:var(--alert);">任务到期</span>
+          <span class="header-spacer"></span>
+          <span class="source-tag" style="color:var(--alert); background:var(--alert-soft);">
+            18:00
+          </span>
+        </div>
+        <div class="reminder-title">提交 PRD 草稿</div>
+        <div class="card-meta">
+          <span class="meta-badge alert">已超时 12 分钟</span>
+        </div>
+        <div class="card-actions" style="margin-bottom:4px;">
+          <button class="btn primary" style="flex:1.2;">标记完成</button>
+        </div>
+        <div class="snooze-options">
+          <button class="snooze-btn">5 分钟</button>
+          <button class="snooze-btn">15 分钟</button>
+          <button class="snooze-btn">1 小时</button>
+          <button class="snooze-btn">明天</button>
+          <button class="snooze-btn">自定义</button>
+        </div>
+      </div>
+    `,
+  },
+
+  batch: {
+    size: 'card-tall',
+    render: () => `
+      <div class="island-body card-body">
+        <div class="card-header">
+          <svg class="ico accent anim-sparkle"><use href="#ico-sparkle"/></svg>
+          <span class="header-label">识别到 5 个任务</span>
+          <span class="header-spacer"></span>
+          <span class="source-tag">
+            <svg class="ico sm muted"><use href="#ico-camera"/></svg>
+            截图
+          </span>
+        </div>
+        <div class="batch-item">
+          <div class="batch-check checked">✓</div>
+          陈昊跟进 API 设计文档
+          <span class="batch-due">明天 18:00</span>
+        </div>
+        <div class="batch-item">
+          <div class="batch-check checked">✓</div>
+          林嘉完成前端原型
+          <span class="batch-due">周四</span>
+        </div>
+        <div class="batch-item">
+          <div class="batch-check checked">✓</div>
+          周彦约客户沟通
+          <span class="batch-due">本周内</span>
+        </div>
+        <div class="batch-item">
+          <div class="batch-check">✓</div>
+          全员评审 PRD
+          <span class="batch-due">周五 14:00</span>
+        </div>
+        <div class="batch-item">
+          <div class="batch-check">✓</div>
+          部署测试环境
+          <span class="batch-due">下周一</span>
+        </div>
+        <div class="batch-actions">
+          <button class="batch-link">全选</button>
+          <button class="btn primary" style="flex:none; width:108px;">添加 3 项</button>
+        </div>
+      </div>
+    `,
+  },
+
+  quickinput: {
+    size: 'input',
+    render: () => `
+      <div class="island-body">
+        <div class="qi-input-row">
+          <span class="qi-prefix">›</span>
+          <input class="qi-input" id="qiInputField" type="text"
+                 value="明天下午3点交PRD草稿"
+                 placeholder="输入任务，AI 自动解析时间和优先级">
+          <span class="qi-hint">return</span>
+        </div>
+        <div class="qi-ai-status" id="qiAiStatus">
+          <svg class="ico sm accent anim-sparkle"><use href="#ico-sparkle"/></svg>
+          AI 正在解析…
+        </div>
+        <div class="qi-preview" id="qiPreview" style="display:none;">
+          <div class="qi-preview-label">AI 解析结果</div>
+          <div class="qi-preview-row">
+            <span class="key">标题</span>
+            <span class="val">交 PRD 草稿</span>
+          </div>
+          <div class="qi-preview-row">
+            <span class="key">截止</span>
+            <span class="val">明天 15:00</span>
+            <span class="ai-mark">AI</span>
+          </div>
+          <div class="qi-preview-row">
+            <span class="key">优先级</span>
+            <span class="val" style="display:flex; align-items:center; gap:6px;">
+              <span class="tag alert">高</span>
+              <span style="color:var(--text-3); font-size:11px;">24h 内截止</span>
+            </span>
+            <span class="ai-mark">AI</span>
+          </div>
+        </div>
+        <div class="qi-actions">
+          <button class="btn ghost" style="flex:none;">跳过 AI</button>
+          <span class="spacer"></span>
+          <button class="btn" style="flex:none; padding:0 14px;">取消</button>
+          <button class="btn primary" style="flex:none; padding:0 16px;">创建</button>
+        </div>
+      </div>
+    `,
+    afterRender: () => {
+      simulateAiParse();
+      const field = document.getElementById('qiInputField');
+      if (field) {
+        field.addEventListener('input', simulateAiParse);
+        field.addEventListener('focus', () => field.select());
+      }
+    },
+  },
+
+  today: {
+    size: 'expanded',
+    render: () => `
+      <div class="island-body">
+        <div class="panel-tabs">
+          <button class="panel-tab active">Today</button>
+          <button class="panel-tab">Inbox</button>
+          <button class="panel-tab">收藏</button>
+          <span class="panel-tab-spacer"></span>
+          <button class="panel-action" onclick="show('quickinput')"><svg class="ico sm"><use href="#ico-plus"/></svg></button>
+          <button class="panel-action" onclick="show('settings')"><svg class="ico sm"><use href="#ico-gear"/></svg></button>
+        </div>
+        <div class="panel-body">
+          <div class="greeting">今天有 8 个待办</div>
+
+          <div class="section-group">
+            <div class="section-title">个人 Todo <span class="section-count">5</span></div>
+            <div class="todo-row">
+              <div class="todo-check"></div>
+              <div class="todo-body">
+                <div class="todo-title">提交 PRD 草稿</div>
+                <div class="todo-meta">
+                  <span class="tag alert">高</span>
+                  <span class="todo-due overdue">今晚 18:00</span>
+                  <span class="tag"><svg class="ico sm"><use href="#ico-camera"/></svg></span>
+                </div>
+              </div>
+            </div>
+            <div class="todo-row">
+              <div class="todo-check"></div>
+              <div class="todo-body">
+                <div class="todo-title">买生日礼物</div>
+                <div class="todo-meta">
+                  <span class="tag">中</span>
+                  <span class="todo-due">本周末</span>
+                </div>
+              </div>
+            </div>
+            <div class="todo-row">
+              <div class="todo-check"></div>
+              <div class="todo-body">
+                <div class="todo-title">健身打卡</div>
+                <div class="todo-meta">
+                  <span class="tag"><svg class="ico sm"><use href="#ico-repeat"/></svg>每天</span>
+                </div>
+              </div>
+            </div>
+            <div class="todo-row">
+              <div class="todo-check"></div>
+              <div class="todo-body">
+                <div class="todo-title">回复客户邮件</div>
+                <div class="todo-meta">
+                  <span class="tag">中</span>
+                  <span class="todo-due">今天</span>
+                </div>
+              </div>
+            </div>
+            <div class="todo-row">
+              <div class="todo-check"></div>
+              <div class="todo-body">
+                <div class="todo-title">整理本周会议纪要</div>
+                <div class="todo-meta">
+                  <span class="tag muted">低</span>
+                  <span class="todo-due">周五</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-divider"></div>
+
+          <div class="section-group">
+            <div class="section-title">Jira Tickets <span class="section-count">3</span></div>
+            <div class="todo-row">
+              <div class="todo-check"></div>
+              <div class="todo-body">
+                <div class="todo-title"><span class="jira-key">MD-1024</span> 修复登录 bug</div>
+                <div class="todo-meta">
+                  <span class="tag alert">高</span>
+                  <span class="tag accent">In Progress</span>
+                </div>
+              </div>
+              <a class="jira-link" href="#"><svg class="ico sm"><use href="#ico-out"/></svg></a>
+            </div>
+            <div class="todo-row">
+              <div class="todo-check"></div>
+              <div class="todo-body">
+                <div class="todo-title"><span class="jira-key">MD-1031</span> 优化首页加载</div>
+                <div class="todo-meta">
+                  <span class="tag">中</span>
+                  <span class="tag">To Do</span>
+                </div>
+              </div>
+              <a class="jira-link" href="#"><svg class="ico sm"><use href="#ico-out"/></svg></a>
+            </div>
+            <div class="todo-row">
+              <div class="todo-check"></div>
+              <div class="todo-body">
+                <div class="todo-title"><span class="jira-key">MD-1042</span> 用户反馈调研</div>
+                <div class="todo-meta">
+                  <span class="tag muted">低</span>
+                  <span class="tag">To Do</span>
+                </div>
+              </div>
+              <a class="jira-link" href="#"><svg class="ico sm"><use href="#ico-out"/></svg></a>
+            </div>
+          </div>
+
+          <div class="section-divider"></div>
+          <div class="completed-fold">▾ 已完成 (2)</div>
+
+          <div class="ai-suggestion">
+            建议: 上午先处理 PRD 草稿和登录 bug，14:00 后处理其余 Jira tickets。
+          </div>
+        </div>
+      </div>
+    `,
+  },
+
+  morning: {
+    size: 'expanded',
+    render: () => `
+      <div class="island-body">
+        <div class="panel-body" style="padding-top:14px;">
+          <div class="morning-greeting" style="display:flex; align-items:center; gap:8px;">
+            <svg class="ico md anim-bob"><use href="#ico-sun"/></svg>
+            早上好，今日待办梳理
+          </div>
+          <div class="morning-date">2026/06/09 周一</div>
+
+          <div class="morning-section">
+            <div class="morning-section-title priority">优先处理 · 2</div>
+            <div class="morning-item">
+              <span class="tag alert">高</span>
+              <span>MD-1024 修复支付 bug（阻塞他人）</span>
+            </div>
+            <div class="morning-item">
+              <span class="tag alert">高</span>
+              <span>提交 PRD 草稿（截止今晚 18:00）</span>
+            </div>
+          </div>
+
+          <div class="morning-section">
+            <div class="morning-section-title">个人 Todo · 3</div>
+            <div class="morning-item">买生日礼物</div>
+            <div class="morning-item">健身打卡</div>
+            <div class="morning-item">回复客户邮件</div>
+          </div>
+
+          <div class="morning-section">
+            <div class="morning-section-title">Jira Tickets · 3</div>
+            <div class="morning-item">MD-1024 优化首页加载 (In Progress)</div>
+            <div class="morning-item">MD-1031 修复登录 bug (To Do)</div>
+            <div class="morning-item">MD-1042 用户反馈调研 (To Do)</div>
+          </div>
+
+          <div class="ai-suggestion" style="margin-top:8px;">
+            建议: 上午专注处理优先项，14:00 后处理 Jira。预计 18:00 前可完成 6 项。
+          </div>
+
+          <div class="morning-actions">
+            <button class="btn">复制为文本</button>
+            <button class="btn">发送到飞书</button>
+            <button class="btn primary">开始工作</button>
+          </div>
+        </div>
+      </div>
+    `,
+  },
+
+  settings: {
+    size: 'expanded',
+    render: () => `
+      <div class="island-body">
+        <div class="panel-tabs">
+          <button class="panel-tab" onclick="show('today')">Today</button>
+          <button class="panel-tab">Inbox</button>
+          <button class="panel-tab">收藏</button>
+          <button class="panel-tab active">设置</button>
+        </div>
+        <div class="panel-body">
+          <div class="settings-section">
+            <div class="settings-label">API 配置</div>
+            <div class="settings-card">
+              <div class="settings-row">
+                <span class="label">OpenAI Key</span>
+                <input class="settings-input" type="password" value="sk-xxxxxxxxxxxxxxxx">
+              </div>
+              <div class="settings-row">
+                <span class="label">模型</span>
+                <span class="value">GPT-4 Vision</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-label">快捷键</div>
+            <div class="settings-card">
+              <div class="settings-row"><span class="label">截图 → Todo</span><span class="value">F2</span></div>
+              <div class="settings-row"><span class="label">截图收藏</span><span class="value">F3</span></div>
+              <div class="settings-row"><span class="label">快速新建</span><span class="value">⌘N</span></div>
+              <div class="settings-row"><span class="label">展开/收起</span><span class="value">⌘⇧L</span></div>
+              <div class="settings-row"><span class="label">Snooze</span><span class="value">⌘.</span></div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-label">第三方集成</div>
+            <div class="settings-card">
+              <div class="settings-row"><span class="label">Jira</span><span class="status connected">已连接</span></div>
+              <div class="settings-row"><span class="label">Apple 日历</span><span class="status connected">已授权</span></div>
+              <div class="settings-row"><span class="label">微信 ClawBot</span><span class="status disconnected">未连接</span></div>
+              <div class="settings-row"><span class="label">飞书</span><span class="status disconnected">未配置</span></div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-label">提醒</div>
+            <div class="settings-card">
+              <div class="settings-row"><span class="label">提前 1 小时</span><span class="value">ON</span></div>
+              <div class="settings-row"><span class="label">提前 15 分钟</span><span class="value">ON</span></div>
+              <div class="settings-row"><span class="label">勿扰时段</span><span class="value">22:00 — 08:00</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `,
+  },
+
+  celebrate: {
+    size: 'compact-narrow',
+    render: () => `
+      <div class="compact-content">
+        <div class="compact-left">
+          <span class="compact-icon"><svg class="ico"><use href="#ico-check"/></svg></span>
+          <span class="compact-count">0</span>
+        </div>
+        <div class="compact-right">清空</div>
+      </div>
+    `,
+    afterRender: () => {
+      celebration.classList.add('visible');
+    },
+  },
+};
+
+const ALL_SIZES = [
+  'compact-narrow', 'compact-wide', 'card', 'card-tall',
+  'input', 'expanded', 'hover'
+];
+const ALL_MODIFIERS = ['breathing', 'urgent', 'celebrate'];
+
+function show(stateName, evt) {
+  const state = STATES[stateName];
+  if (!state) return;
+
+  // Hide celebration overlay unless this state opens it
+  if (stateName !== 'celebrate') {
+    celebration.classList.remove('visible');
+  }
+
+  // Clear previous size + modifier classes
+  ALL_SIZES.forEach(c => island.classList.remove(c));
+  ALL_MODIFIERS.forEach(c => island.classList.remove(c));
+
+  // Apply new geometry + modifier
+  island.classList.add(state.size);
+  if (state.modifier) island.classList.add(state.modifier);
+
+  // Swap content
+  island.innerHTML = state.render();
+
+  // Run post-render hooks (e.g. wire up inputs)
+  if (state.afterRender) state.afterRender();
+
+  // Update active button
+  document.querySelectorAll('.ctrl-btn').forEach(b => b.classList.remove('active'));
+  if (evt?.target) evt.target.classList.add('active');
+}
+
+// AI parse simulation
+let aiParseTimer = null;
+function simulateAiParse() {
+  clearTimeout(aiParseTimer);
+  const status  = document.getElementById('qiAiStatus');
+  const preview = document.getElementById('qiPreview');
+  if (!status || !preview) return;
+  status.style.display  = 'flex';
+  preview.style.display = 'none';
+  aiParseTimer = setTimeout(() => {
+    status.style.display  = 'none';
+    preview.style.display = 'block';
+  }, 1100);
+}
+
+// Batch check toggle (event delegation)
+island.addEventListener('click', (e) => {
+  if (e.target.classList.contains('batch-check')) {
+    e.target.classList.toggle('checked');
+  }
+});
+
+// Clock
+function updateClock() {
+  const n = new Date();
+  document.getElementById('clock').textContent =
+    n.getHours().toString().padStart(2, '0') + ':' +
+    n.getMinutes().toString().padStart(2, '0');
+}
+updateClock();
+setInterval(updateClock, 30000);
+</script>
+</body>
+</html>

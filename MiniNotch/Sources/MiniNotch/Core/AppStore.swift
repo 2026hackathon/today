@@ -1,0 +1,282 @@
+import Foundation
+import SwiftUI
+
+// ============================================================
+// AppStore —— 单一数据源 + 状态机入口。
+// 所有 UI 读这里，所有变更走这里的方法（todo-data spec）。
+// ============================================================
+
+@MainActor
+final class AppStore: ObservableObject {
+
+    // MARK: - 数据
+
+    @Published private(set) var todos: [Todo] = [] { didSet { persistTodos() } }
+    @Published private(set) var meetings: [Meeting] = [] { didSet { Persistence.save(meetings, to: "meetings.json") } }
+    @Published var settings = AppSettings() { didSet { Persistence.save(settings, to: "settings.json") } }
+
+    // MARK: - Island 状态
+
+    @Published private(set) var islandState: IslandState = .normal
+    /// AI 是否工作中（驱动 aiWorking 态 + 流光）
+    @Published var isAIWorking = false { didSet { refreshCompactState() } }
+    /// 今日全部完成后 compact 显示皇冠
+    @Published private(set) var crownedToday = false
+
+    /// 状态变化的副作用回调（动效/庆祝窗口挂这里，由 AppDelegate 装配）
+    var onCompletedAll: (() -> Void)?
+    var onTodoCompleted: ((Todo) -> Void)?
+    var onTodoLanded: ((Todo) -> Void)?
+
+    // MARK: - 动效触发器（UI 绑定，effects 模块消费）
+
+    /// 新任务降落 → Touchdown 涟漪颜色来源（TouchdownModifier 播完自动清回 nil）
+    @Published var landedSource: TodoSource?
+    /// 完成计数器：递增一次 = 播一次金色高光 + 撒花
+    @Published private(set) var completionFlash = 0
+
+    private var completedFlashTask: Task<Void, Never>?
+
+    init() {
+        if let saved = Persistence.load([Todo].self, from: "todos.json") {
+            todos = saved
+        } else {
+            todos = Self.demoTodos()
+        }
+        if let saved = Persistence.load([Meeting].self, from: "meetings.json") {
+            meetings = saved
+        } else {
+            meetings = Self.demoMeetings()
+        }
+        if let saved = Persistence.load(AppSettings.self, from: "settings.json") {
+            settings = saved
+        }
+        refreshCompactState()
+    }
+
+    // MARK: - 状态机操作
+
+    /// 切换到事件态（卡片/展开/晨晚报）
+    func present(_ state: IslandState) {
+        withAnimation(IslandAnimation.spring) { islandState = state }
+    }
+
+    /// 回落到自动派生的 compact 态
+    func dismiss() {
+        withAnimation(IslandAnimation.spring) { islandState = derivedCompactState() }
+    }
+
+    /// 数据变化后刷新 compact 态（仅当前处于 compact 时生效，不打断卡片/展开态）
+    func refreshCompactState() {
+        guard islandState.isCompact else { return }
+        let derived = derivedCompactState()
+        if derived != islandState {
+            withAnimation(IslandAnimation.spring) { islandState = derived }
+        }
+    }
+
+    private func derivedCompactState() -> IslandState {
+        if isAIWorking { return .aiWorking }
+        if crownedToday && pendingTodos.isEmpty { return .celebrate }
+        guard let nearest = nextDue else {
+            return pendingTodos.isEmpty ? .idle : .normal
+        }
+        let interval = nearest.timeIntervalSinceNow
+        if interval < 30 * 60 { return .urgent }   // 30min 内 / 已过期
+        if interval < 60 * 60 { return .near }     // 1h 内
+        return .normal
+    }
+
+    // MARK: - 派生数据
+
+    var pendingTodos: [Todo] { todos.filter { !$0.isCompleted } }
+
+    var pendingCount: Int { pendingTodos.count }
+
+    /// 最近一个截止时间（未完成，未被 snooze 压住）
+    var nextDue: Date? {
+        pendingTodos.compactMap { todo -> Date? in
+            if let snooze = todo.snoozedUntil, snooze > Date() { return nil }
+            return todo.dueDate
+        }.min()
+    }
+
+    /// 紧急度 × 临近度 综合排序（todo-data spec）
+    private func sorted(_ list: [Todo]) -> [Todo] {
+        list.sorted {
+            if $0.priority.sortRank != $1.priority.sortRank {
+                return $0.priority.sortRank < $1.priority.sortRank
+            }
+            return ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture)
+        }
+    }
+
+    /// 三大分组
+    var personalTodos: [Todo] { sorted(pendingTodos.filter { $0.source != .jira }) }
+    var jiraTodos: [Todo] { sorted(pendingTodos.filter { $0.source == .jira }) }
+    var todayMeetings: [Meeting] {
+        meetings
+            .filter { Calendar.current.isDateInToday($0.start) }
+            .sorted { $0.start < $1.start }
+    }
+    var completedToday: [Todo] {
+        todos.filter {
+            guard let done = $0.completedAt else { return false }
+            return Calendar.current.isDateInToday(done)
+        }
+    }
+
+    var reportContext: ReportContext {
+        ReportContext(pendingTodos: pendingTodos, completedToday: completedToday, meetings: todayMeetings)
+    }
+
+    // MARK: - Todo CRUD
+
+    func add(_ todo: Todo) {
+        todos.append(todo)
+        onTodoLanded?(todo)
+        if settings.effectsEnabled {
+            landedSource = todo.source
+        }
+        refreshCompactState()
+    }
+
+    func add(drafts: [TodoDraft]) {
+        for draft in drafts where draft.isSelected {
+            todos.append(draft.toTodo())
+        }
+        refreshCompactState()
+    }
+
+    func update(_ todo: Todo) {
+        guard let i = todos.firstIndex(where: { $0.id == todo.id }) else { return }
+        todos[i] = todo
+        refreshCompactState()
+    }
+
+    func delete(_ todo: Todo) {
+        todos.removeAll { $0.id == todo.id }
+        refreshCompactState()
+    }
+
+    func complete(_ todo: Todo) {
+        guard let i = todos.firstIndex(where: { $0.id == todo.id }) else { return }
+        todos[i].completedAt = Date()
+        completionFlash += 1
+        onTodoCompleted?(todos[i])
+
+        if pendingTodos.isEmpty {
+            // 完成今日全部 → 全屏庆祝 + 皇冠（effects spec）
+            crownedToday = true
+            onCompletedAll?()
+            present(.celebrate)
+        } else {
+            flashJustCompleted()
+        }
+    }
+
+    func uncomplete(_ todo: Todo) {
+        guard let i = todos.firstIndex(where: { $0.id == todo.id }) else { return }
+        todos[i].completedAt = nil
+        crownedToday = false
+        refreshCompactState()
+    }
+
+    func snooze(_ todo: Todo, until date: Date) {
+        guard let i = todos.firstIndex(where: { $0.id == todo.id }) else { return }
+        todos[i].snoozedUntil = date
+        todos[i].snoozeCount += 1
+        dismiss()
+    }
+
+    /// 完成单个后的 1s 金色闪光，随后回落
+    private func flashJustCompleted() {
+        completedFlashTask?.cancel()
+        withAnimation(IslandAnimation.spring) { islandState = .justCompleted }
+        completedFlashTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            self?.dismiss()
+        }
+    }
+
+    // MARK: - Meeting 同步（CalendarService 调用）
+
+    func replaceMeetings(_ new: [Meeting]) {
+        meetings = new
+        refreshCompactState()
+    }
+
+    /// Jira 同步：按 jiraKey 合并，新 ticket 触发 Touchdown（integrations spec）
+    func mergeJiraTodos(_ fetched: [Todo]) {
+        let knownKeys = Set(todos.compactMap(\.jiraKey))
+        for ticket in fetched where ticket.jiraKey != nil {
+            if let i = todos.firstIndex(where: { $0.jiraKey == ticket.jiraKey }) {
+                todos[i].jiraStatus = ticket.jiraStatus
+                todos[i].title = ticket.title
+            } else if !knownKeys.contains(ticket.jiraKey!) {
+                add(ticket)
+            }
+        }
+    }
+
+    // MARK: - 持久化
+
+    private func persistTodos() {
+        Persistence.save(todos, to: "todos.json")
+    }
+
+    /// 重置为演示数据（Debug 菜单 / Demo 翻车兜底）
+    func resetDemoData() {
+        crownedToday = false
+        todos = Self.demoTodos()
+        meetings = Self.demoMeetings()
+        dismiss()
+    }
+
+    // MARK: - 演示数据（与 prototype.html 一致）
+
+    static func demoTodos() -> [Todo] {
+        let cal = Calendar.current
+        let today18 = cal.date(bySettingHour: 18, minute: 0, second: 0, of: Date())!
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: Date())!
+        let friday = cal.date(byAdding: .day, value: 3, to: Date())!
+        return [
+            Todo(title: "提交 PRD 草稿", source: .screenshot, priority: .high,
+                 dueDate: today18, aiExplanation: "检测到「今晚之前」关键词 → 紧急"),
+            Todo(title: "买生日礼物", source: .manual, priority: .medium, dueDate: friday),
+            Todo(title: "健身打卡", source: .manual, priority: .low, tags: ["每天"]),
+            Todo(title: "回复客户邮件", source: .wechat, priority: .medium, dueDate: tomorrow),
+            Todo(title: "整理本周会议纪要", source: .manual, priority: .low, dueDate: friday),
+            Todo(title: "修复登录 bug", source: .jira, priority: .high,
+                 jiraKey: "MD-1024", jiraURL: URL(string: "https://example.atlassian.net/browse/MD-1024"),
+                 jiraStatus: "In Progress"),
+            Todo(title: "优化首页加载", source: .jira, priority: .medium,
+                 jiraKey: "MD-1031", jiraURL: URL(string: "https://example.atlassian.net/browse/MD-1031"),
+                 jiraStatus: "To Do"),
+            Todo(title: "用户反馈调研", source: .jira, priority: .low,
+                 jiraKey: "MD-1042", jiraURL: URL(string: "https://example.atlassian.net/browse/MD-1042"),
+                 jiraStatus: "To Do"),
+        ]
+    }
+
+    static func demoMeetings() -> [Meeting] {
+        let cal = Calendar.current
+        let m1Start = cal.date(bySettingHour: 10, minute: 0, second: 0, of: Date())!
+        let m2Start = cal.date(bySettingHour: 15, minute: 0, second: 0, of: Date())!
+        return [
+            Meeting(title: "产品评审", start: m1Start, end: m1Start.addingTimeInterval(3600),
+                    link: URL(string: "https://zoom.us/j/123456789"), platform: .zoom,
+                    attendees: ["陈昊", "林嘉"], calendarName: "工作"),
+            Meeting(title: "周会", start: m2Start, end: m2Start.addingTimeInterval(1800),
+                    link: URL(string: "https://meeting.tencent.com/dm/abc"), platform: .tencent,
+                    attendees: ["全员"], calendarName: "工作"),
+        ]
+    }
+}
+
+// MARK: - 统一动画（island-shell spec：所有形态切换用同一弹簧）
+
+enum IslandAnimation {
+    static let spring = Animation.spring(response: 0.45, dampingFraction: 0.72)
+}
