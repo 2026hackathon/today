@@ -374,14 +374,13 @@ struct PanelCheckCircle: View {
             Circle()
                 .strokeBorder(hovering ? DS.Colors.text1 : DS.Colors.text3, lineWidth: 1.5)
                 .frame(width: 16, height: 16)
-                // 形状的点击判定只算画了像素的区域——纯描边圆只有 1.5pt 的环可点，
-                // 圆心是空的。扩到 24×24 实心热区，否则要点很多次才能命中
-                .padding(4)
-                .contentShape(Rectangle())
+                // 形状的点击判定只算画了像素的区域——纯描边圆只有 1.5pt 的环可点。
+                // 负 inset 只外扩命中区域(26×26)不占布局，保持与 Jira 行 16pt 图标列对齐
+                .contentShape(Rectangle().inset(by: -5))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .padding(.top, -3) // 抵消热区 padding，视觉位置不变
+        .padding(.top, 1)
     }
 }
 
