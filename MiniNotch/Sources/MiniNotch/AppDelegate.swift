@@ -18,7 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private lazy var aiService: AIService = MockAIService()           // owner B: 换 AnthropicAIService(apiKey:)
     private lazy var captureService: CaptureService = HotkeyCaptureService() // owner C
-    private lazy var jiraService: JiraService = MockJiraService()     // owner C: 换 RealJiraService(...)
+    /// Mock 常驻：配置不全时兜底 + Debug「模拟 Jira 新分配」演示
+    private let mockJiraService = MockJiraService()
     private lazy var calendarService: CalendarService = MockCalendarService() // owner C: 换 EventKitCalendarService()
     private lazy var reminderScheduler: ReminderScheduler = TimerReminderScheduler()
     private lazy var pushService: PushService = NoopPushService()     // owner C: 按 settings 换 Feishu/Bark
@@ -100,11 +101,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 按配置动态选择 Jira 服务：三项齐全 → Real，否则 → Mock。
+    /// 每个轮询周期重新判定，设置面板改完即生效，无需重启（integrations spec delta）。
+    private func currentJiraService() -> JiraService {
+        let s = store.settings
+        if !s.jiraBaseURL.isEmpty, !s.jiraEmail.isEmpty, !s.jiraAPIToken.isEmpty {
+            return RealJiraService(baseURL: s.jiraBaseURL, email: s.jiraEmail, apiToken: s.jiraAPIToken)
+        }
+        return mockJiraService
+    }
+
     /// Jira 60s / 日历 60min 轮询（integrations spec）
     private func startPolling() {
         pollingTasks.append(Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                if let self, let tickets = try? await self.jiraService.fetchAssignedTickets() {
+                if let self, let tickets = try? await self.currentJiraService().fetchAssignedTickets() {
                     self.store.mergeJiraTodos(tickets)
                 }
                 try? await Task.sleep(for: .seconds(60))
@@ -320,13 +331,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CelebrationWindowController.shared.celebrate(streakDays: 3)
     }
 
+    /// 走 Mock 演示「现场分配」，不依赖真实 Jira 配置
     @objc private func debugJiraAssign() {
-        if let mock = jiraService as? MockJiraService {
-            mock.extraTicketArmed = true
-            Task { @MainActor in
-                if let tickets = try? await jiraService.fetchAssignedTickets() {
-                    store.mergeJiraTodos(tickets)
-                }
+        mockJiraService.extraTicketArmed = true
+        Task { @MainActor in
+            if let tickets = try? await mockJiraService.fetchAssignedTickets() {
+                store.mergeJiraTodos(tickets)
             }
         }
     }

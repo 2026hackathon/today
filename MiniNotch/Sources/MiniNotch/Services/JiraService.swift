@@ -65,8 +65,10 @@ final class MockJiraService: JiraService {
     }
 }
 
-// MARK: - 真实现骨架（C 接管）
+// MARK: - 真实现（Jira Cloud REST v3）
 
+/// 注意端点：Jira Cloud 已下线旧 `GET /rest/api/3/search`，
+/// 现行端点是 `GET /rest/api/3/search/jql`（2026-06 在 wonder.atlassian.net 实测通过）。
 @MainActor
 final class RealJiraService: JiraService {
 
@@ -76,7 +78,8 @@ final class RealJiraService: JiraService {
 
     /// - Parameters: 来自 settings.jiraBaseURL / jiraEmail / jiraAPIToken
     init(baseURL: String, email: String, apiToken: String) {
-        self.baseURL = baseURL
+        // 容忍用户在设置里多敲一个尾部斜杠
+        self.baseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
         self.email = email
         self.apiToken = apiToken
     }
@@ -85,14 +88,76 @@ final class RealJiraService: JiraService {
         guard !baseURL.isEmpty, !email.isEmpty, !apiToken.isEmpty else {
             throw JiraServiceError.notConfigured
         }
-        // TODO: C 实现真实 Jira 调用：
-        // 1. GET {baseURL}/rest/api/3/search?jql=assignee=currentUser()%20AND%20statusCategory!=Done
-        //    &fields=summary,status,priority,duedate
-        // 2. Header: Authorization: Basic base64("\(email):\(apiToken)")，Accept: application/json
-        // 3. let (data, _) = try await URLSession.shared.data(for: request)
-        // 4. 解析 issues[] → Todo(source: .jira, jiraKey: key,
-        //    jiraURL: URL("\(baseURL)/browse/\(key)"), jiraStatus: fields.status.name)
-        // 5. 网络失败时调用方静默用上次缓存（design.md 第 5 节降级策略）
-        throw JiraServiceError.notConfigured
+
+        var components = URLComponents(string: "\(baseURL)/rest/api/3/search/jql")
+        components?.queryItems = [
+            URLQueryItem(name: "jql", value: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"),
+            URLQueryItem(name: "fields", value: "summary,status,priority,duedate"),
+            URLQueryItem(name: "maxResults", value: "50"),
+        ]
+        guard let url = components?.url else { throw JiraServiceError.notConfigured }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        let credentials = Data("\(email):\(apiToken)".utf8).base64EncodedString()
+        request.setValue("Basic \(credentials)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            NSLog("[Jira] fetch failed: HTTP \(code)")
+            throw JiraServiceError.invalidResponse
+        }
+
+        let result = try JSONDecoder().decode(SearchResponse.self, from: data)
+        return result.issues.map { issue in
+            Todo(
+                title: issue.fields.summary,
+                source: .jira,
+                priority: Self.mapPriority(issue.fields.priority?.name),
+                dueDate: issue.fields.duedate.flatMap(Self.parseDueDate),
+                jiraKey: issue.key,
+                jiraURL: URL(string: "\(baseURL)/browse/\(issue.key)"),
+                jiraStatus: issue.fields.status.name
+            )
+        }
+    }
+
+    /// Jira 优先级名 → 三档（integrations spec delta）
+    nonisolated private static func mapPriority(_ name: String?) -> Priority {
+        switch name?.lowercased() {
+        case "highest", "high", "blocker", "critical": .high
+        case "medium": .medium
+        default: .low
+        }
+    }
+
+    /// duedate 是 "yyyy-MM-dd"（无时间）→ 按当天 18:00 进入提醒系统
+    nonisolated private static func parseDueDate(_ raw: String) -> Date? {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = .current
+        guard let day = f.date(from: raw) else { return nil }
+        return Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: day)
+    }
+
+    // MARK: 响应模型（只取要用的字段）
+
+    private struct SearchResponse: Decodable {
+        let issues: [Issue]
+    }
+    private struct Issue: Decodable {
+        let key: String
+        let fields: Fields
+    }
+    private struct Fields: Decodable {
+        let summary: String
+        let status: NamedField
+        let priority: NamedField?
+        let duedate: String?
+    }
+    private struct NamedField: Decodable {
+        let name: String
     }
 }

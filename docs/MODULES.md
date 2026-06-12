@@ -60,7 +60,7 @@ swift run        # 跑起来：刘海出现黑岛，菜单栏出现图标
 - `RealJiraService` / `EventKitCalendarService` 骨架 + TODO 注释；会议链接 6 平台正则提取已实现
 
 **待你完成**：
-- [ ] F-12 `RealJiraService`：REST `/rest/api/3/search` JQL=assignee=currentUser()，60s 轮询已在 AppDelegate 接好
+- [x] ~~F-12 `RealJiraService`~~ **已完成**：`/rest/api/3/search/jql`（注意旧 `/search` 端点已被 Atlassian 下线）+ Basic Auth，已在 wonder.atlassian.net 实测。装配规则：设置面板 Jira 三项填齐 → 自动切真实服务（下个 60s 轮询生效），清空任一项 → 回退 Mock；Debug「模拟 Jira 新分配」始终走 Mock 不受影响
 - [ ] F-14 `EventKitCalendarService`：EventKit 授权 + 今日事件拉取（Info.plist 需加 NSCalendarsFullAccessUsageDescription）
 - [ ] F-04 提醒推送通道按 settings 装配（现在固定 Noop，改 AppDelegate 装配处按配置选 Feishu/Bark）
 - [ ] F-10 快捷键全套（⌘⇧L 展开收起等，参考 HotkeyCaptureService 的 Carbon 写法）
