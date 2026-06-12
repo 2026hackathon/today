@@ -210,6 +210,9 @@ private struct JiraTodoRow: View {
         }
         .padding(8)
         .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+        // 整行可点：Jira 行只读，唯一动作就是跳转，不必让用户瞄准小字
+        .contentShape(RoundedRectangle(cornerRadius: DS.Radius.m))
+        .onTapGesture { openJira() }
         .onHover { hovering = $0 }
     }
 
