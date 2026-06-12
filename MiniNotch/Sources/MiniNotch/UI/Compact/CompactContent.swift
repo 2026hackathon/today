@@ -29,7 +29,8 @@ struct CompactContent: View {
         HStack(spacing: 6) {
             switch state {
             case .idle:
-                compactIcon("tray", color: DS.Colors.text3)
+                // 今日无事 → 打钩；明天的任务不挂数字（右翼提示下一个时间）
+                compactIcon("checkmark", color: DS.Colors.success)
                 countText("0", color: DS.Colors.text3)
             case .near:
                 compactIcon("clock", color: DS.Colors.text2)
@@ -60,7 +61,14 @@ struct CompactContent: View {
     @ViewBuilder
     private var rightContent: some View {
         switch state {
-        case .idle, .celebrate:
+        case .idle:
+            // 今天清空但未来有任务 → 提示下一个什么时候（如「明天 08:30」）
+            if let due = store.nextDue {
+                sideText(Self.upcomingLabel(due), color: DS.Colors.text3)
+            } else {
+                sideText("清空", color: DS.Colors.text3)
+            }
+        case .celebrate:
             sideText("清空", color: DS.Colors.text3)
         case .near:
             sideText("\(minutesToNextDue) 分钟", color: DS.Colors.text2)
@@ -71,25 +79,33 @@ struct CompactContent: View {
         case .justCompleted:
             sideText("−1 完成", color: DS.Colors.text2)
         default: // .normal 及兜底
-            if let due = store.nextDue {
+            // 今日有定时 → 下一个截止；今日全无定时 → 提示未来最近截止；都没有 → 无截止
+            if let due = store.todayNextDue {
                 sideText("下个 \(due.dsHHmm)", color: DS.Colors.text2)
+            } else if let upcoming = store.nextDue {
+                sideText(Self.upcomingLabel(upcoming), color: DS.Colors.text3)
             } else {
-                sideText("今日", color: DS.Colors.text2)
+                sideText("无截止", color: DS.Colors.text3)
             }
         }
     }
 
     // MARK: - 派生
 
-    /// 距最近截止的分钟数（向上取整，不小于 0）
+    /// 距今日最近截止的分钟数（向上取整，不小于 0）
     private var minutesToNextDue: Int {
-        guard let due = store.nextDue else { return 0 }
+        guard let due = store.todayNextDue else { return 0 }
         return max(0, Int((due.timeIntervalSinceNow / 60).rounded(.up)))
     }
 
     private var isOverdue: Bool {
-        guard let due = store.nextDue else { return false }
+        guard let due = store.todayNextDue else { return false }
         return due.timeIntervalSinceNow <= 0
+    }
+
+    /// 未来任务的提示文案：明天带时间（「明天 08:30」），更远用 dsShortLabel（周X / M/d）
+    private static func upcomingLabel(_ due: Date) -> String {
+        Calendar.current.isDateInTomorrow(due) ? "明天 \(due.dsHHmm)" : "下个 \(due.dsShortLabel)"
     }
 
     // MARK: - 小构件

@@ -115,9 +115,10 @@ final class AppStore: ObservableObject {
     private func derivedCompactState() -> IslandState {
         if isAIWorking { return .aiWorking }
         if crownedToday && pendingTodos.allSatisfy({ $0.source == .jira }) { return .celebrate }
-        guard let nearest = nextDue else {
-            return pendingTodos.isEmpty ? .idle : .normal
-        }
+        // compact 以「今日焦点」为准：今天没事 → 打钩清空态，
+        // 明天的任务不在刘海上挂数字（用户实测：只剩明早任务时不该显示待办）
+        guard todayFocusCount > 0 else { return .idle }
+        guard let nearest = todayNextDue else { return .normal }
         let interval = nearest.timeIntervalSinceNow
         if interval < 30 * 60 { return .urgent }   // 30min 内 / 已过期
         if interval < 60 * 60 { return .near }     // 1h 内
@@ -138,6 +139,18 @@ final class AppStore: ObservableObject {
             if todo.source == .jira, !isActiveJira(todo) { return nil }
             if let snooze = todo.snoozedUntil, snooze > Date() { return nil }
             return todo.dueDate
+        }.min()
+    }
+
+    /// 今日范围内（含已过期）最近截止 —— compact 态派生与右翼倒计时用，
+    /// 不含明天及以后（明早的任务不该让刘海显示成"有事待办"）
+    var todayNextDue: Date? {
+        let cal = Calendar.current
+        let endOfToday = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: Date()))!
+        return pendingTodos.compactMap { todo -> Date? in
+            if let snooze = todo.snoozedUntil, snooze > Date() { return nil }
+            guard let due = todo.dueDate, due < endOfToday else { return nil }
+            return due
         }.min()
     }
 
