@@ -199,7 +199,7 @@ final class EventKitCalendarService: CalendarService {
 
     /// 可同步的事件日历：只保留用户手动创建或账户（iCloud/Google/Exchange 等）同步的可写日历。
     /// 排除系统自动生成的只读日历——「生日」「节假日」等订阅日历、Siri 建议（找到的活动）。
-    private static func isSyncableCalendar(_ calendar: EKCalendar) -> Bool {
+    nonisolated private static func isSyncableCalendar(_ calendar: EKCalendar) -> Bool {
         if calendar.type == .birthday || calendar.type == .subscription { return false }
         if let sourceType = calendar.source?.sourceType,
            sourceType == .birthdays || sourceType == .subscribed { return false }
