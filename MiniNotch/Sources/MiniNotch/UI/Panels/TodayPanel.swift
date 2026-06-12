@@ -216,7 +216,8 @@ struct JiraTodoRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        // 图标垂直居中：行高随标题换行变化，顶对齐会让图标吊在左上角
+        HStack(alignment: .center, spacing: 10) {
             // Jira 是只读集成（PRD Out of Scope：不改 Jira 状态），
             // 不提供完成操作，用静态图标占住完成圈的位置保持对齐
             Image(systemName: "briefcase.fill")
@@ -252,7 +253,6 @@ struct JiraTodoRow: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(DS.Colors.text3)
                 .opacity(hovering ? 1 : 0)
-                .padding(.top, 2)
                 .onTapGesture { openJira() }
         }
         .padding(8)
@@ -403,6 +403,10 @@ struct PanelTabBar: View {
             }
             Spacer(minLength: 0)
             if current != .settings {
+                // 临时 Debug 入口：菜单栏图标可能被刘海吞掉找不到（hackathon 期间保留）
+                PanelIconButton(symbol: "ladybug") {
+                    (NSApp.delegate as? AppDelegate)?.showDebugMenuAtMouse()
+                }
                 PanelRefreshButton()
                 PanelIconButton(symbol: "plus") { store.present(.quickInput) }
                 PanelIconButton(symbol: "gearshape.fill") { store.present(.expanded(tab: .settings)) }

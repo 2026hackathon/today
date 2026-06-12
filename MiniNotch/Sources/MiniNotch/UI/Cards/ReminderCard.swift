@@ -24,12 +24,13 @@ struct ReminderCard: View {
             overdueBadge
                 .padding(.bottom, 12)
 
+            // 次要操作（稍后提醒）在上，主操作（标记完成）压底收尾
+            snoozeSection
+                .padding(.bottom, 12)
+
             // complete() 内部处理状态回落（justCompleted 闪光 / celebrate），不再 dismiss
             Button("标记完成") { store.complete(todo) }
                 .buttonStyle(DSPrimaryButtonStyle())
-                .padding(.bottom, 10)
-
-            snoozeRow
         }
         .padding(.top, 36)   // 摄像头区
         .padding(.horizontal, 18)
@@ -85,15 +86,26 @@ struct ReminderCard: View {
         return minutes >= 1 ? "已超时 \(minutes) 分钟" : "现在到点了"
     }
 
-    // MARK: - Snooze 选项行（snooze() 内部已 dismiss）
+    // MARK: - Snooze 选项（snooze() 内部已 dismiss）
 
-    private var snoozeRow: some View {
-        HStack(spacing: 6) {
-            snoozeButton("5 分钟") { snooze(minutes: 5) }
-            snoozeButton("15 分钟") { snooze(minutes: 15) }
-            snoozeButton("1 小时") { snooze(minutes: 60) }
-            snoozeButton("明天") { store.snooze(todo, until: Self.tomorrowMorning()) }
-            snoozeButton("自定义") { snooze(minutes: 30) }
+    private var snoozeSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // 没有这行标签时，时间按钮看起来像不明所以的选项（用户实测反馈）
+            HStack(spacing: 4) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 9))
+                Text("稍后再提醒我")
+            }
+            .font(DS.Fonts.tag)
+            .foregroundStyle(DS.Colors.text3)
+
+            HStack(spacing: 6) {
+                snoozeButton("5 分钟") { snooze(minutes: 5) }
+                snoozeButton("15 分钟") { snooze(minutes: 15) }
+                snoozeButton("1 小时") { snooze(minutes: 60) }
+                snoozeButton("明天") { store.snooze(todo, until: Self.tomorrowMorning()) }
+                snoozeButton("自定义") { snooze(minutes: 30) }
+            }
         }
     }
 

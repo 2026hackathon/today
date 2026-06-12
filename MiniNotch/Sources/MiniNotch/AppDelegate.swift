@@ -336,6 +336,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusItem = item
     }
 
+    /// 面板里的 Debug 入口（PanelTabBar 瓢虫按钮）：菜单栏图标可能被刘海吞掉，
+    /// 这里在鼠标位置直接弹同一份 Debug 菜单
+    func showDebugMenuAtMouse() {
+        guard let menu = buildDebugMenu().submenu else { return }
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
     /// Debug 状态菜单：联调 + Demo 翻车兜底（island-shell spec）
     private func buildDebugMenu() -> NSMenuItem {
         let debugMenu = NSMenu()
@@ -355,7 +362,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("重置演示数据", #selector(debugReset)),
         ]
         for (title, sel) in entries {
-            debugMenu.addItem(withTitle: title, action: sel, keyEquivalent: "")
+            let item = debugMenu.addItem(withTitle: title, action: sel, keyEquivalent: "")
+            // 从面板 popUp 时不走菜单栏的响应链，必须显式指 target
+            item.target = self
         }
         let item = NSMenuItem(title: "Debug 状态", action: nil, keyEquivalent: "")
         item.submenu = debugMenu
