@@ -448,25 +448,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Debug actions
 
     /// 走完整 AI 链路（含流光），用 Mock 数据
+    /// 优先用真实任务数据预览降落卡（没有未完成个人任务才回退 Mock 草稿）
     @objc private func debugNewTask() {
-        store.isAIWorking = true
+        if let todo = store.personalTodos.first {
+            store.present(.newTask(draft: Self.draftFrom(todo)))
+            return
+        }
         Task { @MainActor in
-            let mock = MockAIService()
-            let drafts = (try? await mock.parseScreenshot(Data())) ?? []
-            store.isAIWorking = false
+            let drafts = (try? await mockAIService.parseScreenshot(Data())) ?? []
             if let first = drafts.first { store.present(.newTask(draft: first)) }
         }
     }
 
+    /// 优先用真实任务数据预览批量卡（不足 3 条才回退 Mock 会议纪要）
     @objc private func debugBatch() {
-        store.isAIWorking = true
+        let real = store.personalTodos.prefix(5).map(Self.draftFrom)
+        if real.count >= 3 {
+            store.present(.batch(drafts: Array(real)))
+            return
+        }
         Task { @MainActor in
             let mock = MockAIService()
             mock.batchMode = true
             let drafts = (try? await mock.parseScreenshot(Data())) ?? []
-            store.isAIWorking = false
             store.present(.batch(drafts: drafts))
         }
+    }
+
+    /// 真实 Todo → 调试预览草稿（保留优先级/截止/周期标签）
+    private static func draftFrom(_ todo: Todo) -> TodoDraft {
+        TodoDraft(
+            title: todo.title,
+            source: todo.source,
+            priority: todo.priority,
+            dueDate: todo.dueDate,
+            aiExplanation: "Debug 预览 · 取自当前真实任务",
+            tags: todo.tags
+        )
     }
 
     @objc private func debugReminder() {
@@ -498,7 +516,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func debugCelebrate() {
-        CelebrationWindowController.shared.celebrate(streakDays: 3)
+        // 用真实的连续清空天数（只读不递增），没有记录按 1 天展示
+        let streak = max(UserDefaults.standard.integer(forKey: "clearStreak"), 1)
+        CelebrationWindowController.shared.celebrate(streakDays: streak)
     }
 
     /// 走 Mock 演示「现场分配」，不依赖真实 Jira 配置

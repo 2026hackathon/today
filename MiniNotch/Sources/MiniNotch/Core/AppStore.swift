@@ -262,6 +262,10 @@ final class AppStore: ObservableObject {
             // justCompleted 是 compact 闪光态——只在收缩态播；
             // 在展开面板里点完成时保持面板不塌，金色高光(completionFlash)照常播
             flashJustCompleted()
+        } else if case .reminder(let shown) = islandState, shown.id == todo.id {
+            // 提醒卡上的任务被标记完成：卡片使命结束，收卡回落
+            // （否则卡片留在原地，用户感觉「点了没反应」）
+            dismiss()
         }
     }
 
