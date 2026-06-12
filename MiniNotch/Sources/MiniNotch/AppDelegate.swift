@@ -449,7 +449,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mockJiraService.extraTicketArmed = true
         Task { @MainActor in
             if let tickets = try? await mockJiraService.fetchAssignedTickets() {
-                store.mergeJiraTodos(tickets)
+                // prune: false —— Mock 注入不能把真实 ticket 清掉（jira-sync-prune spec）
+                store.mergeJiraTodos(tickets, prune: false)
             }
         }
     }

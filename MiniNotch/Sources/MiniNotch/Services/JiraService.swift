@@ -91,12 +91,41 @@ final class RealJiraService: JiraService {
             throw JiraServiceError.notConfigured
         }
 
+        // 分页拉全（jira-sync-prune spec）：清理逻辑要求结果完整，截断会误删。
+        // 5 页 × 50 条封顶，超出属异常工作量，不再翻页。
+        var issues: [Issue] = []
+        var pageToken: String?
+        for _ in 0..<5 {
+            let page = try await fetchPage(nextPageToken: pageToken)
+            issues += page.issues
+            guard page.isLast == false, let token = page.nextPageToken else { break }
+            pageToken = token
+        }
+
+        return issues.map { issue in
+            Todo(
+                title: issue.fields.summary,
+                source: .jira,
+                priority: Self.mapPriority(issue.fields.priority?.name),
+                dueDate: issue.fields.duedate.flatMap(Self.parseDueDate),
+                jiraKey: issue.key,
+                jiraURL: URL(string: "\(baseURL)/browse/\(issue.key)"),
+                jiraStatus: issue.fields.status.name
+            )
+        }
+    }
+
+    private func fetchPage(nextPageToken: String?) async throws -> SearchResponse {
         var components = URLComponents(string: "\(baseURL)/rest/api/3/search/jql")
-        components?.queryItems = [
+        var items = [
             URLQueryItem(name: "jql", value: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"),
             URLQueryItem(name: "fields", value: "summary,status,priority,duedate"),
             URLQueryItem(name: "maxResults", value: "50"),
         ]
+        if let nextPageToken {
+            items.append(URLQueryItem(name: "nextPageToken", value: nextPageToken))
+        }
+        components?.queryItems = items
         guard let url = components?.url else { throw JiraServiceError.notConfigured }
 
         var request = URLRequest(url: url)
@@ -111,19 +140,7 @@ final class RealJiraService: JiraService {
             NSLog("[Jira] fetch failed: HTTP \(code)")
             throw JiraServiceError.http(code)
         }
-
-        let result = try JSONDecoder().decode(SearchResponse.self, from: data)
-        return result.issues.map { issue in
-            Todo(
-                title: issue.fields.summary,
-                source: .jira,
-                priority: Self.mapPriority(issue.fields.priority?.name),
-                dueDate: issue.fields.duedate.flatMap(Self.parseDueDate),
-                jiraKey: issue.key,
-                jiraURL: URL(string: "\(baseURL)/browse/\(issue.key)"),
-                jiraStatus: issue.fields.status.name
-            )
-        }
+        return try JSONDecoder().decode(SearchResponse.self, from: data)
     }
 
     /// Jira 优先级名 → 三档（integrations spec delta）
@@ -148,6 +165,8 @@ final class RealJiraService: JiraService {
 
     private struct SearchResponse: Decodable {
         let issues: [Issue]
+        let isLast: Bool?
+        let nextPageToken: String?
     }
     private struct Issue: Decodable {
         let key: String

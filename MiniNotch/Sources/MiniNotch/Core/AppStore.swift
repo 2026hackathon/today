@@ -280,9 +280,20 @@ final class AppStore: ObservableObject {
     }
 
     /// Jira 同步：按 jiraKey 合并，新 ticket 触发 Touchdown（integrations spec）。
-    /// - Parameter notify: true 且 island 处于 compact 态时，新分配弹通知卡
-    ///   （jira-landed-card spec）；启动后首轮同步传 false 避免初始全量误报。
-    func mergeJiraTodos(_ fetched: [Todo], notify: Bool = true) {
+    /// - Parameters:
+    ///   - notify: true 且 island 处于 compact 态时，新分配弹通知卡
+    ///     （jira-landed-card spec）；启动后首轮同步传 false 避免初始全量误报。
+    ///   - prune: 镜像清理（jira-sync-prune spec）——本地未完成的 Jira todo
+    ///     若 key 不在本次结果中则移除（被转走/关闭）。要求 fetched 是完整
+    ///     拉取结果；Debug 的 Mock 注入传 false，避免清掉真实 ticket。
+    func mergeJiraTodos(_ fetched: [Todo], notify: Bool = true, prune: Bool = true) {
+        if prune {
+            let fetchedKeys = Set(fetched.compactMap(\.jiraKey))
+            todos.removeAll { todo in
+                guard todo.source == .jira, !todo.isCompleted, let key = todo.jiraKey else { return false }
+                return !fetchedKeys.contains(key)
+            }
+        }
         let knownKeys = Set(todos.compactMap(\.jiraKey))
         var landed: [Todo] = []
         for ticket in fetched where ticket.jiraKey != nil {
