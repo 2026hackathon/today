@@ -1,10 +1,14 @@
-# AI 升级设计：下一件事推荐 / 自动任务收集 / 对话式晨晚报
+# AI 升级设计：下一件事推荐 / 自动任务收集 / 对话式晨晚报 / Jira 灵动岛进阶
 
-> 三个功能的共同原则：**AI 负责草拟，用户只做一次确认**；所有岛上输出约束为一行可点击的话；
+> 共同原则：**AI 负责草拟，用户只做一次确认**；所有岛上输出约束为一行可点击的话；
 > AI 失败时一律静默回落到现有行为（Mock / 静态文案），绝不让岛卡死在等待态。
 >
 > 复用现有契约：`AIService` 协议（Services/AIService.swift）、`IslandState` 状态机
 > （Island/IslandState.swift）、`AppStore` 单一数据源、`ReminderScheduler` 的 firedKeys 去重模式。
+>
+> **v0.2 聚焦说明**：黑客松时间收紧，团队决定死磕 Jira Ticket 在灵动岛中的进阶使用。
+> 新增 F4~F7（Jira × 灵动岛专属功能，配合 [jira-ticket-prd.md](jira-ticket-prd.md) 的 M1/M2 地基）；
+> F1~F3 降级为 backlog 保留设计。筛选标准：**离开灵动岛这个形态就不成立的功能，才配叫"灵动岛进阶"。**
 
 ---
 
@@ -408,19 +412,198 @@ Mock 实现返回手工构造的 DayPlan/EveningReview（demo 必须能离线演
 
 ---
 
-## 实施顺序建议（按演示价值/成本比）
+---
 
-1. **F2(a) ticket 摘要** —— 半天。一个字段 + 一个 prompt，Jira/GitHub 落地卡立刻变聪明
-2. **F1 推荐** —— 一天。S-1/S-2 基建 + prompt + 面板/hover 改造；nudge 卡可后置
-3. **F2(b) 会后跟进卡** —— 一天。确认流全复用，主要是触发扫描 + 一张新卡
-4. **F3 晨报计划** —— 一天半。新面板 UI 是大头；调整轮（对话）做不完可以砍，先保「生成+应用」
-5. **F3 晚报处置** —— 一天。与晨报共享面板组件
+# Jira × 灵动岛进阶（v0.2 聚焦方案，F4~F7）
 
-每步独立可演示、可单独合入 main，符合 hackathon 节奏。
+> 前提：[jira-ticket-prd.md](jira-ticket-prd.md) 的 M1（状态事件卡）+ M2（写回流转）是地基，先保住。
+> 以下功能全部建立在"刘海这个位置独有"的能力上：常驻屏幕顶端、知道你正在干什么。
+
+## F4 Live Ticket：正在做的票驻岛（最高优先）
+
+### 目标
+
+iOS 灵动岛的本源概念是 **Live Activity——正在进行的事**，而现有 compact 态本质是静态计数器。
+把"我正在做的那张票"变成驻岛活动：点「开始 ▶」上岛计时，流转走时退场。
+
+### 数据模型与状态
+
+```swift
+// AppStore 新增（持久化到 activeTicket.json，跨重启恢复计时）
+@Published private(set) var activeTicket: (todo: Todo, startedAt: Date)?
+
+/// 写回 In Progress（复用 PRD JT-302）+ 钉岛。同时只允许一张票驻岛——
+/// 已有驻岛票时先问是否切换（人不能同时做两件事，模型也不该假装可以）
+func startTicket(_ todo: Todo)
+/// 流转（待验证/Done）+ 退场 + 把本次时长追加到 timeLog
+func stopTicket(_ todo: Todo, transitionTo: String)
+```
+
+**关键架构决策：Live Ticket 不新增 IslandState case。**
+island-shell spec 约定"岛长什么样只由 IslandState 决定"——驻岛票是 `normal/near/urgent` 态下
+**CompactContent 的数据变体**（activeTicket 非 nil 时换内容），不是新形态。
+紧急覆盖原则：near/urgent 的截止提醒**优先于**驻岛显示（用户自己定的 deadline > 工作状态展示）。
+
+### Compact 渲染
+
+```
+驻岛中（normal 态变体）：
+        ╭───────────────────────────────────────────╮
+        │  ▶ MD-1024   ░░[ 摄像头 ]░░     2h 15m    │
+        ╰───────────────────────────────────────────╯
+              ▲ 左翼票号（蓝色）        ▲ 右翼已投入时长，每分钟刷新
+
+退场（流转成功后）：票号闪一下金色（复用 completionFlash）→ 回落计数态
+```
+
+### 计时数据的去处（不止是显示）
+
+- 本地 `timeLog`：`{jiraKey, startedAt, endedAt}` 追加记录
+- 反哺日报 prompt 的【今日完成】区块（"修复 MD-1024，投入 4.5h"）——dev-daily-promt 直接受益
+- 反哺 F7 滞留自检的实际耗时判断
+
+### 触发与交互
+
+| 动作 | 入口 | 行为 |
+|---|---|---|
+| 上岛 | 票行/事件卡「开始 ▶」（JT-302/303 同一按钮） | 写回 In Progress + activeTicket 赋值 |
+| 退场 | 票行「✅/流转」、驻岛票号点击后的快捷菜单 | 写回 + 清空 + 金色闪光 |
+| 暂停 | 快捷菜单「暂停」 | 只停计时不流转（开会去了） |
+| 恢复 | 重启应用 | 从 activeTicket.json 恢复，时长照常累计 |
+
+## F5 剪贴板票号感应（demo 杀手锏）
+
+### 目标
+
+同事在群里发"看下 MD-1077"→ 复制 → 刘海浮出预览卡（标题/状态/经办人 + 认领/打开）。
+**不用打开任何东西，复制即预览**——"灵动岛知道你在干什么"的最直观演示。
+
+### 实现
+
+```swift
+/// 1s Timer 轮询 NSPasteboard.general.changeCount（变化才读内容，成本可忽略）
+@MainActor final class ClipboardWatcher {
+    var onTicketKey: ((String) -> Void)?   // 命中票号正则时回调
+}
+```
+
+- 正则：`\b[A-Z][A-Z0-9]+-\d+\b`；用**已同步票的项目前缀**（如 `MD-`）收窄匹配，降误报
+- JiraService 新方法 `fetchTicket(key:) -> Todo`：`GET /rest/api/3/issue/{key}`，
+  fields/expand 与现有 search 一致，认证复用
+- 新 IslandState case：`.ticketPeek(todo: Todo)`（380pt 卡，几何同 jiraLanded）
+
+### 状态机
+
+```
+compact ──剪贴板命中票号 且 Gate.allow("peek-\(key)-\(日桶)") 且该票不在本地──▶ 拉取单票
+   │  成功 ──▶ .ticketPeek(todo)
+   │           ├─ [认领] → PUT assignee=me 写回 → 落地动效（走现有 add 管线）
+   │           ├─ [打开 ↗] → 浏览器深链
+   │           └─ 点外部 / 8s 倒计时 → dismiss()
+   └─ 失败（无权限/不存在）──▶ 静默放弃，不打扰
+```
+
+### 隐私红线（必须写进代码注释和演示词）
+
+只对剪贴板内容做**票号正则匹配**，不解析、不存储、不上传任何其他剪贴板内容；
+命中后上传的只有票号本身（用于查询）。这一条在 demo 里主动讲，是加分项不是风险。
+
+## F6 票的故事线：AI 摘要 changelog（白捡的功能）
+
+### 目标
+
+接手新票（尤其被打回的二轮票）最需要"前世今生"。而 **changelog 已经在每次轮询的响应里**
+（JiraService.swift:138 `expand=changelog`，现在只提取指派人后丢弃）——数据是白捡的，只差一段 prompt。
+
+### AIService 扩展
+
+```swift
+/// changelog 事件 → ≤3 行故事线
+struct TicketHistoryEvent: Sendable { var date: Date; var author: String?; var field: String; var from: String?; var to: String? }
+func summarizeTicketHistory(_ todo: Todo, events: [TicketHistoryEvent]) async throws -> [String]
+```
+
+JiraService 把 changelog 映射为 `[TicketHistoryEvent]` 保留（status/assignee 两类变更即可），
+按 `jiraKey + 最后更新时间` 缓存摘要，避免重复调 LLM。
+
+### Prompt（jsonMode）
+
+```
+你是任务背景助手。把一张 Jira 票的变更历史压缩成给新接手人看的故事线。
+只输出 JSON：{"lines": ["...", "...", "..."]}（最多 3 行，每行 ≤24 字，按时间顺序）
+规则：
+- 只保留关键节点：创建、首次开发、驳回/重开（必须保留并写明原因字段里的要点）、重新指派
+- 多次琐碎流转合并表述（"两轮开发-驳回"）
+- 日期用 M/d；只引用历史中出现的人名，禁止编造
+```
+
+### 触发与展示
+
+| 场景 | 时机 | 展示位 |
+|---|---|---|
+| 新指派事件卡 | 弹卡时异步生成，回来刷新卡片 | 卡片副行（卡不等 AI，同 F2a 模式） |
+| 票详情展开 | 打开时生成（命中缓存则即时） | 详情顶部三行 |
+
+## F7 滞留自检：SP 与实际耗时的错位提醒
+
+### 目标
+
+给**经办人自己**的自检（不是给 leader 的监控——措辞红线）："这张 3SP 的票第 4 天了，
+拆一下还是站会上说？"补上 PRD JT-205（检测别人滞留）缺失的自我视角，共用检测思路。
+
+### 规则（纯本地，无 AI 也能跑）
+
+```
+inProgressSince = changelog 中最近一次流转到 In Progress 的时间（F6 已保留该数据）
+预期天数 = storyPoints 映射（1SP≈1天，可在设置调）
+实际天数 > 预期 × 1.5 且票仍 In Progress
+  → 自检卡（firedKeys 去重：每票每档位一次），文案固定模板，AI 润色可选
+卡片动作：[拆分建议（调 LLM）] [今天能收尾，别催] [打开 Jira ↗]
+```
+
+驻岛票（F4）的 timeLog 可让判断从"天数"精确到"实际投入时长"——两个功能互相喂数据。
+
+## 体验细节（小，但决定演示成败）
+
+1. **写回后立即拉取**：流转成功不等 60s 轮询，立刻补一次 fetch 校准——否则 demo 里点完
+   「验证通过」，岛上状态静止一分钟，观感是"坏了"（PRD JT-305 的补充）
+2. **Debug 演练开关**：照 `MockJiraService.extraTicketArmed` 模式加 `transitionArmed`——
+   下一轮 fetch 让 MD-1024 状态变"待验证"，**事件卡 demo 不依赖真实 Jira 和现场网络**
+
+## 明确不做（时间陷阱）
+
+- 拖拽看板手势、票行内联编辑——交互打磨无底洞
+- 评论流展示——F6 故事线已覆盖核心价值
+- Webhook 实时推送——本地 app 收不了 webhook，轮询 + 写回后即时拉取已够快
+
+## 演示动线（串起 PRD M1/M2 + F4~F6）
+
+> 复制群里的 `MD-1077` → 刘海浮出预览卡，一键认领（**F5**）→ 点「开始」票驻岛计时（**F4**）
+> → 修完流转，票金色退场 → 切 QA 视角：事件卡"可以验证了"弹出（PRD M1）
+> → 卡上一键「验证通过」写回，Jira 网页同步变化（PRD M2）
+> → 收尾彩蛋：新指派的票带着 AI 故事线落岛（**F6**）
+
+一条线讲完"灵动岛上的 Jira 全生命周期"，每个节点都有视觉事件，全程不切出应用。
+
+---
+
+## 实施顺序建议（v0.2，Jira 聚焦后）
+
+1. **PRD M1 状态事件检测 + 事件卡** —— 半天。merge 时 diff 状态，地基中的地基
+2. **PRD M2 写回流转**（transitions API + 票行/卡上按钮 + 写回后即时拉取）—— 一天
+3. **F4 Live Ticket 驻岛** —— 一天。CompactContent 数据变体 + 计时持久化，与写回同一按钮
+4. **F5 剪贴板感应** —— 半天。ClipboardWatcher + 单票 fetch + 一张新卡
+5. **F6 故事线** —— 半天。数据已在响应里，prompt + 缓存
+6. **F7 滞留自检** —— 半天，可砍。规则检测 + 一张卡
+7. **Debug 演练开关** —— 穿插做，demo 保险，不计入排期
+
+每步独立可演示、可单独合入 main。F1~F3（推荐/自动收集/对话式晨晚报）保留设计，hackathon 后再议。
 
 ## 风险与红线
 
-- **打扰预算**：主动卡（nudge + followUp + reminder）理论上可能连环弹。ProactiveGate 全局兜底：任意两张**主动**卡间隔 ≥10 分钟，reminder（用户自己定的截止）永远优先且不受限
+- **打扰预算**：主动卡（nudge + followUp + ticketPeek + 事件卡 + reminder）理论上可能连环弹。ProactiveGate 全局兜底：任意两张**主动**卡间隔 ≥10 分钟，reminder（用户自己定的截止）永远优先且不受限
 - **字数失控**：所有岛上文案 prompt 里写死字数上限之外，**代码层再 truncate**（`.lineLimit(1)` 已有，但截断要在数据层做，别让 UI 吞字）
 - **Equatable**：新 IslandState case 的关联值都已是 Equatable struct，状态机判等不受影响
-- **改 Models.swift 字段** 按契约需开 openspec change 并通知全员（`aiBrief` 一处）
+- **改 Models.swift 字段** 按契约需开 openspec change 并通知全员（`aiBrief` 一处；F4 的 activeTicket/timeLog 是 AppStore 新增持久化文件，不动 Todo 契约）
+- **剪贴板隐私**（F5）：只做票号正则匹配，不解析/存储/上传其他剪贴板内容——写进代码注释，demo 里主动讲
+- **监控措辞**（F7）：滞留自检只给经办人自己，文案面向"事"（"比预期慢了"）不面向"人"；任何把他人滞留数据排名化的做法都越线
