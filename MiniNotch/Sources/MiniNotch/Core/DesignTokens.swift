@@ -29,6 +29,9 @@ enum DS {
         /// 仅用于 过期/阻塞
         static let alert = Color(red: 0xFF / 255, green: 0x6B / 255, blue: 0x61 / 255)
         static let alertSoft = alert.opacity(0.13)
+        /// 高优先级实心红 chip 底色：更深更饱和，白字才压得住，
+        /// 与「中」的淡橙 tint 拉开「实心 vs 描边」的权重差
+        static let alertSolid = Color(red: 0xE5 / 255, green: 0x48 / 255, blue: 0x43 / 255)
 
         /// 到期前 15min 档预警橙（reminders spec：中强度，与过期红区分）
         static let warning = Color(red: 1.0, green: 0.62, blue: 0.29)
@@ -81,10 +84,11 @@ enum DS {
     }
 
     // 优先级标签配色（红绿灯三档，全 app 唯一来源，改这里即处处生效）：
-    // 高=红字红底 / 中=橙字橙底 / 低=暗灰字淡底。
+    // 高=白字实心红（最响，danger）/ 中=橙字淡橙底（描边感）/ 低=暗灰字淡底。
+    // 「高」用实心填充与「中」的 tint 拉开权重差，小尺寸下也一眼可分。
     static func priorityTagFG(_ p: Priority) -> Color {
         switch p {
-        case .high: Colors.alert
+        case .high: .white
         case .medium: Colors.warning
         case .low: Colors.text3
         }
@@ -92,7 +96,7 @@ enum DS {
 
     static func priorityTagBG(_ p: Priority) -> Color {
         switch p {
-        case .high: Colors.alertSoft
+        case .high: Colors.alertSolid
         case .medium: Colors.warningSoft
         case .low: Colors.surface1
         }

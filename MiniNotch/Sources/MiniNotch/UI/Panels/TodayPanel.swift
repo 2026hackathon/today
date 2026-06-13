@@ -158,6 +158,19 @@ struct TodayPanel: View {
     }
 }
 
+// MARK: - 任务行统一布局度量
+
+/// PersonalTodoRow 与 MeetingRow 共用的行布局度量，保证同一列表内
+/// 状态字形、时间轨、标题起始位置像素级对齐（time-first / priority-last）。
+enum PanelRowMetric {
+    /// HStack 行内间距
+    static let spacing: CGFloat = 8
+    /// 状态字形列宽（绿勾 / 完成圈 / 小点）
+    static let statusGlyphWidth: CGFloat = 16
+    /// 时间轨列宽（等宽左对齐，标题对齐到同一竖线）
+    static let timeTrackWidth: CGFloat = 44
+}
+
 // MARK: - 统一任务行（Todo 现已全是个人来源；外部工单走 WorkItemRow）
 
 struct TaskRow: View {
@@ -179,82 +192,62 @@ struct PersonalTodoRow: View {
     @State private var confirmingDelete = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            // 已完成：绿勾（点击撤销）；可完成：完成圈；其余（未来/无截止）：静态小点
-            if todo.isCompleted {
-                Button { store.uncomplete(todo) } label: {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(DS.Colors.success)
-                        .frame(width: 16, height: 16)
-                        .contentShape(Rectangle().inset(by: -5))
+        HStack(alignment: .center, spacing: PanelRowMetric.spacing) {
+            // 状态字形：完成绿勾(撤销) / 可完成圈 / 未来静态小点，等宽占位
+            statusGlyph
+                .frame(width: PanelRowMetric.statusGlyphWidth)
+
+            // 时间轨：行首等宽左对齐，标题对齐到同一竖线；无截止时间留空占位
+            timeTrack
+                .frame(width: PanelRowMetric.timeTrackWidth, alignment: .leading)
+
+            // 标题：单行，完成态删除线
+            Text(todo.title)
+                .font(DS.Fonts.todoTitle)
+                .foregroundStyle(todo.isCompleted ? DS.Colors.text3 : DS.Colors.text1)
+                .strikethrough(todo.isCompleted, color: DS.Colors.text3)
+                .lineLimit(1)
+
+            // kind 标签：日程/提醒才显示（纯任务不显，避免噪音）；
+            // 苹果日历同步项据此区分「日程」「提醒」
+            if todo.kind != .task {
+                Text(todo.kind.label)
+                    .dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
+            }
+            ForEach(todo.tags, id: \.self) { tag in
+                HStack(spacing: 3) {
+                    Image(systemName: "repeat").font(.system(size: 8))
+                    Text(tag)
+                }
+                .dsTag()
+            }
+            // 截图来源且有图：小相机可点，点击用「预览」打开全部原图（多图带数量角标）
+            if todo.source == .screenshot, !todo.screenshotPaths.isEmpty {
+                Button {
+                    ScreenshotViewer.open(todo.screenshotPaths, store: store)
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "camera.fill").font(.system(size: 9))
+                        if todo.screenshotPaths.count > 1 {
+                            Text("\(todo.screenshotPaths.count)")
+                        }
+                    }
+                    .dsTag(DS.Colors.text2)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 1)
-            } else if store.canComplete(todo) {
-                PanelCheckCircle(action: onComplete)
-            } else {
-                Circle()
-                    .fill(DS.Colors.text3.opacity(0.55))
-                    .frame(width: 5, height: 5)
-                    .frame(width: 16, height: 16)
-                    .padding(.top, 1)
+                .help(todo.screenshotPaths.count > 1 ? "查看 \(todo.screenshotPaths.count) 张原始截图" : "查看原始截图")
+            } else if let symbol = Self.sourceSymbol(todo.source) {
+                Image(systemName: symbol)
+                    .font(.system(size: 9))
+                    .dsTag()
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(todo.title)
-                    .font(DS.Fonts.todoTitle)
-                    .foregroundStyle(todo.isCompleted ? DS.Colors.text3 : DS.Colors.text1)
-                    .strikethrough(todo.isCompleted, color: DS.Colors.text3)
-                HStack(spacing: 6) {
-                    PanelPriorityTag(priority: todo.priority)
-                    // kind 标签：日程/提醒才显示（纯任务不显，避免噪音）；
-                    // 苹果日历同步项据此区分「日程」「提醒」
-                    if todo.kind != .task {
-                        Text(todo.kind.label)
-                            .dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
-                    }
-                    // 显示有效截止（snooze 后即新时间）；snooze 过的标个铃铛
-                    if let due = todo.effectiveDue {
-                        HStack(spacing: 3) {
-                            if todo.snoozedUntil != nil {
-                                Image(systemName: "bell.fill").font(.system(size: 8))
-                            }
-                            Text(PanelFormat.due(due))
-                        }
-                        .font(DS.Fonts.meta)
-                        .foregroundStyle(todo.isOverdue ? DS.Colors.alert : DS.Colors.text3)
-                    }
-                    ForEach(todo.tags, id: \.self) { tag in
-                        HStack(spacing: 3) {
-                            Image(systemName: "repeat").font(.system(size: 8))
-                            Text(tag)
-                        }
-                        .dsTag()
-                    }
-                    // 截图来源且有图：小相机可点，点击用「预览」打开全部原图（多图带数量角标）
-                    if todo.source == .screenshot, !todo.screenshotPaths.isEmpty {
-                        Button {
-                            ScreenshotViewer.open(todo.screenshotPaths, store: store)
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "camera.fill").font(.system(size: 9))
-                                if todo.screenshotPaths.count > 1 {
-                                    Text("\(todo.screenshotPaths.count)")
-                                }
-                            }
-                            .dsTag(DS.Colors.text2)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help(todo.screenshotPaths.count > 1 ? "查看 \(todo.screenshotPaths.count) 张原始截图" : "查看原始截图")
-                    } else if let symbol = Self.sourceSymbol(todo.source) {
-                        Image(systemName: symbol)
-                            .font(.system(size: 9))
-                            .dsTag()
-                    }
-                }
-            }
+
             Spacer(minLength: 0)
+
+            // 优先级徽章：行尾（time-first / priority-last）
+            PanelPriorityTag(priority: todo.priority)
+
             // 截图来源：行尾缩略图（多图叠角标），点击用「预览」打开全部原图
             if !todo.screenshotPaths.isEmpty {
                 ScreenshotThumb(paths: todo.screenshotPaths)
@@ -298,6 +291,57 @@ struct PersonalTodoRow: View {
         .onChange(of: confirmingDelete) { _, presented in
             store.dialogPresentedCount += presented ? 1 : -1
         }
+    }
+
+    /// 状态字形：完成绿勾（点击撤销）/ 可完成圈 / 未来·无截止的静态小点
+    @ViewBuilder
+    private var statusGlyph: some View {
+        if todo.isCompleted {
+            Button { store.uncomplete(todo) } label: {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DS.Colors.success)
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle().inset(by: -5))
+            }
+            .buttonStyle(.plain)
+        } else if store.canComplete(todo) {
+            PanelCheckCircle(action: onComplete)
+        } else {
+            Circle()
+                .fill(DS.Colors.text3.opacity(0.55))
+                .frame(width: 5, height: 5)
+                .frame(width: 16, height: 16)
+        }
+    }
+
+    /// 时间轨：有有效截止显示时间（snooze 过的标铃铛）；无则留空占位以对齐标题
+    @ViewBuilder
+    private var timeTrack: some View {
+        if let due = todo.effectiveDue {
+            HStack(spacing: 3) {
+                if todo.snoozedUntil != nil {
+                    Image(systemName: "bell.fill").font(.system(size: 8))
+                }
+                Text(timeLabel(due))
+            }
+            .font(DS.Fonts.compactSide)
+            .foregroundStyle(timeColor)
+        } else {
+            Color.clear.frame(height: 1)
+        }
+    }
+
+    /// 时间文案：当天裸 HH:mm（与 MeetingRow 一致）；非当天紧凑日期标签
+    private func timeLabel(_ due: Date) -> String {
+        Calendar.current.isDateInToday(due) ? PanelFormat.hm(due) : due.dsShortLabel
+    }
+
+    /// 时间颜色：完成灰 / 超期红 / 常规与 MeetingRow 一致（text1）
+    private var timeColor: Color {
+        if todo.isCompleted { return DS.Colors.text3 }
+        if todo.isOverdue { return DS.Colors.alert }
+        return DS.Colors.text1
     }
 
     /// 苹果来源项删除前确认（真删苹果日历/提醒，不可恢复）；本地任务直接删
@@ -538,17 +582,17 @@ struct MeetingRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: PanelRowMetric.spacing) {
             // 状态字形区：仅真实状态才占位（进行中/快到了/已完成/提醒），
             // 普通事件留空 —— 去掉装饰性灰点，同时用空位保证标题左对齐
             statusGlyph
-                .frame(width: 16)
+                .frame(width: PanelRowMetric.statusGlyphWidth)
 
             // 时间轨：等宽左对齐，所有行标题对齐到同一条竖线
             Text(timeLabel)
                 .font(DS.Fonts.compactSide)
                 .foregroundStyle(timeColor)
-                .frame(width: 44, alignment: .leading)
+                .frame(width: PanelRowMetric.timeTrackWidth, alignment: .leading)
 
             Text(meeting.title)
                 .font(DS.Fonts.todoTitle)
