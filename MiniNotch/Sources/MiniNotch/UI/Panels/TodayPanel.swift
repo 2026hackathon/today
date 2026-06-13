@@ -25,6 +25,8 @@ struct TodayPanel: View {
             PanelTabBar(current: currentTab)
             PanelScrollView {
                 switch currentTab {
+                case .messages:
+                    MessageInboxPanel()
                 case .inbox:
                     InboxPanel()
                 case .favorites:
@@ -569,7 +571,11 @@ struct PanelTabBar: View {
     var body: some View {
         HStack(spacing: 2) {
             ForEach(visibleTabs, id: \.self) { tab in
-                PanelTabButton(title: tab.title, isActive: tab == current) {
+                PanelTabButton(
+                    title: tab.title,
+                    isActive: tab == current,
+                    badge: tab == .messages ? store.unprocessedMessageCount : 0
+                ) {
                     guard tab != current else { return }
                     store.present(.expanded(tab: tab))
                 }
@@ -593,13 +599,15 @@ struct PanelTabBar: View {
     }
 
     private var visibleTabs: [PanelTab] {
-        current == .settings ? PanelTab.allCases : [.today, .calendar, .inbox, .favorites]
+        current == .settings ? PanelTab.allCases : [.today, .calendar, .messages, .inbox, .favorites]
     }
 }
 
 struct PanelTabButton: View {
     let title: String
     let isActive: Bool
+    /// 未处理计数（>0 时标题右上角红点角标，消息页签用）
+    var badge: Int = 0
     let action: () -> Void
     @State private var hovering = false
 
@@ -611,6 +619,17 @@ struct PanelTabButton: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(isActive ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+                .overlay(alignment: .topTrailing) {
+                    if badge > 0 {
+                        Text("\(badge)")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 13, minHeight: 13)
+                            .background(DS.Colors.alert, in: Capsule())
+                            .offset(x: 2, y: -1)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

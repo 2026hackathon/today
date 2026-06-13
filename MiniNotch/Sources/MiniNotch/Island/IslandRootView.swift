@@ -136,6 +136,9 @@ struct IslandRootView: View {
         case .jiraLanded(let todo, let moreCount):
             JiraLandedCard(todo: todo, moreCount: moreCount)
 
+        case .messageLanded(let message, let moreCount):
+            MessageLandedCard(message: message, moreCount: moreCount)
+
         case .expanded(let tab):
             if tab == .settings {
                 SettingsPanel()

@@ -44,6 +44,28 @@ enum TodoSource: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// 消息来源（email-integration spec）—— 决定链接归一与来源标识/配色
+enum MessageSource: String, Codable, CaseIterable, Sendable {
+    case slack, jira, email
+
+    var label: String {
+        switch self {
+        case .slack: "Slack"
+        case .jira: "Jira"
+        case .email: "邮件"
+        }
+    }
+
+    /// 来源 SF Symbol（消息卡/页签行图标）
+    var iconSymbol: String {
+        switch self {
+        case .slack: "number.square.fill"
+        case .jira: "briefcase.fill"
+        case .email: "envelope.fill"
+        }
+    }
+}
+
 enum MeetingPlatform: String, Codable, CaseIterable, Sendable {
     case zoom, tencent, googleMeet, teams, feishu, dingtalk, other
 
@@ -268,6 +290,66 @@ extension Meeting {
     }
 }
 
+// MARK: - Message（邮件提炼的一句话提醒，message-inbox spec）
+
+/// 独立于 Todo：邮件消息有自己的「已处理/未处理」生命周期，持久化到 messages.json。
+struct Message: Identifiable, Codable, Equatable, Sendable {
+    var id = UUID()
+    /// 邮件 Message-ID —— addMessages 去重键（Mock 用合成值）
+    var messageId: String
+    /// AI 一句话提醒（who + 要点 + 可选时间）
+    var summary: String
+    var source: MessageSource = .email
+    /// 可点击跳转链接：slack 深链 / jira issue / 邮件链接（email-integration spec）
+    var link: URL?
+    var receivedAt = Date()
+    /// nil = 未处理（白）；非 nil = 已处理（灰）
+    var processedAt: Date?
+    var sender: String?
+    var rawSubject: String?
+
+    var isProcessed: Bool { processedAt != nil }
+
+    init(
+        id: UUID = UUID(), messageId: String, summary: String,
+        source: MessageSource = .email, link: URL? = nil,
+        receivedAt: Date = Date(), processedAt: Date? = nil,
+        sender: String? = nil, rawSubject: String? = nil
+    ) {
+        self.id = id; self.messageId = messageId; self.summary = summary
+        self.source = source; self.link = link
+        self.receivedAt = receivedAt; self.processedAt = processedAt
+        self.sender = sender; self.rawSubject = rawSubject
+    }
+
+    /// 向后兼容解码（与 Todo/Meeting 同理）：逐字段 decodeIfPresent，缺失取默认
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
+        messageId = (try? c.decodeIfPresent(String.self, forKey: .messageId)) ?? ""
+        summary = (try? c.decodeIfPresent(String.self, forKey: .summary)) ?? ""
+        source = (try? c.decodeIfPresent(MessageSource.self, forKey: .source)) ?? .email
+        link = try? c.decodeIfPresent(URL.self, forKey: .link)
+        receivedAt = (try? c.decodeIfPresent(Date.self, forKey: .receivedAt)) ?? Date()
+        processedAt = try? c.decodeIfPresent(Date.self, forKey: .processedAt)
+        sender = try? c.decodeIfPresent(String.self, forKey: .sender)
+        rawSubject = try? c.decodeIfPresent(String.self, forKey: .rawSubject)
+    }
+}
+
+/// 待 AI 摘要的邮件输入（email-integration spec）：EmailService 完成来源识别 /
+/// 链接归一 / 隐私预处理后产出，AppDelegate 调 AIService 生成 summary 再组装 Message。
+struct EmailDigestInput: Sendable {
+    var messageId: String
+    var source: MessageSource
+    var link: URL?
+    var sender: String?
+    var subject: String
+    /// 已截断 / 剥离签名与引用历史后的正文片段（隐私预处理产物）
+    var bodyExcerpt: String
+    var receivedAt: Date
+}
+
 // MARK: - 晨报/晚报上下文（ai-pipeline spec）
 
 struct ReportContext: Sendable {
@@ -303,6 +385,11 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// 飞书 webhook / Bark 推送
     var feishuWebhook = ""
     var barkToken = ""
+    /// 邮件接入（email-integration spec）：三项齐全 → RealEmailService(IMAP)，否则 Mock。
+    /// 密码本期入 settings.json，后续升级 Keychain（design D7）
+    var emailAddress = ""
+    var emailImapHost = ""
+    var emailAppPassword = ""
 
     init() {}
 
@@ -324,6 +411,9 @@ struct AppSettings: Codable, Equatable, Sendable {
         githubToken = try c.decodeIfPresent(String.self, forKey: .githubToken) ?? ""
         feishuWebhook = try c.decodeIfPresent(String.self, forKey: .feishuWebhook) ?? ""
         barkToken = try c.decodeIfPresent(String.self, forKey: .barkToken) ?? ""
+        emailAddress = try c.decodeIfPresent(String.self, forKey: .emailAddress) ?? ""
+        emailImapHost = try c.decodeIfPresent(String.self, forKey: .emailImapHost) ?? ""
+        emailAppPassword = try c.decodeIfPresent(String.self, forKey: .emailAppPassword) ?? ""
     }
 
     func isQuietHour(_ date: Date = Date()) -> Bool {

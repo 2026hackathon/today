@@ -55,6 +55,15 @@ enum DS {
         }
     }
 
+    /// 消息来源色（消息卡/页签来源标识）
+    static func messageColor(_ source: MessageSource) -> Color {
+        switch source {
+        case .slack: Color(red: 0x61 / 255, green: 0x1F / 255, blue: 0x69 / 255)  // Slack aubergine
+        case .jira: sourceColor(.jira)                                            // 复用 Jira 蓝
+        case .email: Colors.accent
+        }
+    }
+
     static func priorityColor(_ p: Priority) -> Color {
         switch p {
         case .high: Colors.alert
