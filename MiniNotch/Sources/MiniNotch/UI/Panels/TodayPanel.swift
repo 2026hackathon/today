@@ -99,9 +99,17 @@ struct TodayPanel: View {
                     TaskRow(todo: todo)
                 }
             }
+            // agent 会话栏：运行中 / 待确认 / 已完成，点击跳转对应终端 session
+            if !store.sortedAgentSessions.isEmpty {
+                PanelMiniDividerLabel(text: "Agent")
+                ForEach(store.sortedAgentSessions) { session in
+                    AgentSessionRow(session: session) { store.jumpToAgent(session) }
+                }
+            }
             // 外部只读项沉底（Jira/GitHub 不可完成，不挡可操作任务）
             if !store.todayExternalTodos.isEmpty {
-                if !store.todayTimedTodos.isEmpty || !store.todayUntimedTodos.isEmpty {
+                if !store.todayTimedTodos.isEmpty || !store.todayUntimedTodos.isEmpty
+                    || !store.sortedAgentSessions.isEmpty {
                     PanelMiniDividerLabel(text: "Jira · GitHub")
                 }
                 ForEach(store.todayExternalTodos) { todo in

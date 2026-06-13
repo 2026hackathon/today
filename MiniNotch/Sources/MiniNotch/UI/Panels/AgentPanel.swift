@@ -62,7 +62,7 @@ struct AgentPanel: View {
 
 // MARK: - 会话行
 
-private struct AgentSessionRow: View {
+struct AgentSessionRow: View {
     let session: AgentSession
     let onJump: () -> Void
     @State private var hovering = false
