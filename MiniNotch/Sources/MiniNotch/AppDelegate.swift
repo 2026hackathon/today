@@ -153,8 +153,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
                 guard let self else { return }
+                // newTask/batch 也要激活：卡里的优先级/时间/提前提醒是 SwiftUI Menu，
+                // 非激活的 accessory 面板里 Menu 标签不渲染（显示成空白），激活后才画出来
                 let needsKeyboard: Bool = switch state {
-                case .quickInput, .editTask, .expanded(tab: .settings): true
+                case .quickInput, .editTask, .newTask, .batch, .expanded(tab: .settings): true
                 default: false
                 }
                 if needsKeyboard {
