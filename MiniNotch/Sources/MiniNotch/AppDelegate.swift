@@ -266,12 +266,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        // 任务/会议变化后重新生成 AI 建议（防抖 2s：连续完成/新建只打一次 LLM；
-        // dropFirst 跳过启动时的初始赋值，首条建议由 launch 的延迟调用负责）
-        Publishers.CombineLatest(store.$todos, store.$meetings)
+        // 任务/会议/工作项变化后重新生成 AI 建议（上下文喂了这三者，触发条件须一致）。
+        // dropFirst 跳过启动时的初始赋值（首条建议由 launch 的延迟调用负责）；
+        // removeDuplicates 去重——工作项每轮轮询都会无条件重新赋值，不去重会每 60s 白打一次 LLM；
+        // debounce 2s 让连续完成/新建/同轮多源更新只打一次。
+        Publishers.CombineLatest3(store.$todos, store.$meetings, store.$workItems)
             .dropFirst()
+            .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 && $0.2 == $1.2 }
             .debounce(for: .seconds(2), scheduler: RunLoop.main)
-            .sink { [weak self] _, _ in self?.refreshAISuggestion() }
+            .sink { [weak self] _ in self?.refreshAISuggestion() }
             .store(in: &cancellables)
 
         // 完成今日全部 → 全屏庆祝（effects spec）
@@ -370,8 +373,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshAISuggestion(afterSeconds delay: Double = 0) {
         Task { @MainActor in
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
-            if let text = try? await currentAIService().generateDailySuggestion(todaySuggestionContext()) {
+            // 未配置 AI Key：给明确提示，而不是伪装成一条真建议（Mock 那句固定文案没用到真实任务）
+            guard !store.settings.aiAPIKey.isEmpty else {
+                store.updateAISuggestion("建议: 未配置 AI，前往设置 ⚙ 填入 API Key 即可获得基于今日任务的个性化建议")
+                return
+            }
+            do {
+                let text = try await currentAIService().generateDailySuggestion(todaySuggestionContext())
                 store.updateAISuggestion(text)
+            } catch {
+                store.updateAISuggestion("建议: AI 生成失败，点 ↻ 重试（或检查设置里的 AI 端点/模型配置）")
             }
         }
     }
@@ -728,11 +739,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(for: .seconds(interval))
             }
         })
-        // @我提及：5min 轮询（变动不频繁，不必跟 Jira 同频）
+        // @我提及：1min 轮询
         pollingTasks.append(Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 await self?.syncMentions()
-                try? await Task.sleep(for: .seconds(5 * 60))
+                try? await Task.sleep(for: .seconds(60))
             }
         })
         // 晚报每分钟检查是否到点（reminders/ai-pipeline spec）+ agent 陈旧会话清理
