@@ -25,6 +25,13 @@ cp "${BUILD_DIR}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 cp Info.plist "${APP_BUNDLE}/Contents/Info.plist"
 echo -n "APPL????" > "${APP_BUNDLE}/Contents/PkgInfo"
 
+# SwiftPM 资源 bundle 必须一起打进 Resources，否则发布版会丢资源：
+# MiniNotch_MiniNotch.bundle = 品牌 SVG 图标（缺则退化成 SF Symbol）；
+# SwiftGlow_SwiftGlow.bundle = 流光库的 Metal 资源（缺则 aiWorking 流光失效）。
+for bundle in "${BUILD_DIR}"/*.bundle; do
+    [ -e "${bundle}" ] && cp -R "${bundle}" "${APP_BUNDLE}/Contents/Resources/"
+done
+
 echo "==> [4/5] 签名..."
 # 优先自签名证书（FocusIsland Dev）：本机 TCC 日历授权不随重编译失效；
 # 无证书退回 ad-hoc。两种签名对接收方一样：第一次打开需右键 → 打开（绕过 Gatekeeper）

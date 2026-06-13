@@ -212,10 +212,7 @@ struct QuickInputCard: View {
                         manualPriority = p
                     } label: {
                         Text(p.label)
-                            .dsTag(
-                                p == .high ? DS.Colors.alert : DS.Colors.text2,
-                                bg: p == .high ? DS.Colors.alertSoft : DS.Colors.surface1
-                            )
+                            .dsTag(DS.priorityTagFG(p), bg: DS.priorityTagBG(p))
                             .opacity(manualPriority == p ? 1 : 0.35)
                     }
                     .buttonStyle(.plain)
@@ -423,10 +420,7 @@ struct QuickInputCard: View {
             setPriority(p)
         } label: {
             Text(p.label)
-                .dsTag(
-                    p == .high ? DS.Colors.alert : DS.Colors.text2,
-                    bg: p == .high ? DS.Colors.alertSoft : DS.Colors.surface1
-                )
+                .dsTag(DS.priorityTagFG(p), bg: DS.priorityTagBG(p))
                 .opacity(selected ? 1 : 0.35)
         }
         .buttonStyle(.plain)

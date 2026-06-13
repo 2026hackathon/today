@@ -964,16 +964,9 @@ struct PanelPriorityTag: View {
     let priority: Priority
 
     var body: some View {
-        // 红绿灯式三档（产品指定）：高=红 / 中=橙 / 低=灰。
-        // 高、中用「彩字 + 同色淡底」chip 拉开存在感；低=暗字无底，明显轻一档。
-        switch priority {
-        case .high:
-            Text(priority.label).dsTag(DS.Colors.alert, bg: DS.Colors.alertSoft)
-        case .medium:
-            Text(priority.label).dsTag(DS.Colors.warning, bg: DS.Colors.warning.opacity(0.15))
-        case .low:
-            Text(priority.label).dsTag(DS.Colors.text3, bg: .clear)
-        }
+        // 红绿灯三档：高=红 / 中=橙 / 低=灰（配色统一走 DS.priorityTagFG/BG，全 app 一致）
+        Text(priority.label)
+            .dsTag(DS.priorityTagFG(priority), bg: DS.priorityTagBG(priority))
     }
 }
 

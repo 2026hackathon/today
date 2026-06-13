@@ -109,7 +109,9 @@ struct NewTaskCard: View {
     private var metaRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                badge(.priority, text: "\(edited.priority.label)优先级", isAlert: edited.priority == .high)
+                // 优先级 badge 走统一红绿灯色（高红/中橙/低灰），与全 app 一致
+                badge(.priority, text: "\(edited.priority.label)优先级",
+                      fg: DS.priorityTagFG(edited.priority), bg: DS.priorityTagBG(edited.priority))
                 // 显示具体时间点（明天 16:00），不只是「明天」
                 badge(.time, text: edited.dueDate.map(PanelFormat.due) ?? "无截止")
                 // 提前提醒：仅在有截止时间时可设（无截止 → 提醒无意义，隐藏）
@@ -124,14 +126,15 @@ struct NewTaskCard: View {
         .padding(.bottom, 12)
     }
 
-    private func badge(_ field: EditField, text: String, isAlert: Bool = false) -> some View {
+    private func badge(_ field: EditField, text: String,
+                       fg: Color = DS.Colors.text2, bg: Color = DS.Colors.surface1) -> some View {
         Button {
             store.cardHeld = true
             withAnimation(.easeOut(duration: 0.15)) {
                 editingField = (editingField == field) ? nil : field
             }
         } label: {
-            metaBadge(text, isAlert: isAlert)
+            metaBadge(text, fg: fg, bg: bg)
         }
         .buttonStyle(.plain)
     }
@@ -254,7 +257,7 @@ struct NewTaskCard: View {
         return minutes >= 60 ? "\(minutes / 60)小时" : "\(minutes)分"
     }
 
-    private func metaBadge(_ text: String, isAlert: Bool) -> some View {
+    private func metaBadge(_ text: String, fg: Color = DS.Colors.text2, bg: Color = DS.Colors.surface1) -> some View {
         HStack(spacing: 5) {
             Text(text)
             Image(systemName: "chevron.down")
@@ -262,13 +265,10 @@ struct NewTaskCard: View {
                 .opacity(0.5)
         }
         .font(.system(size: 11, weight: .medium, design: .monospaced))
-        .foregroundStyle(isAlert ? DS.Colors.alert : DS.Colors.text2)
+        .foregroundStyle(fg)
         .padding(.horizontal, 8)
         .frame(height: 22)
-        .background(
-            isAlert ? DS.Colors.alertSoft : DS.Colors.surface1,
-            in: RoundedRectangle(cornerRadius: 4)
-        )
+        .background(bg, in: RoundedRectangle(cornerRadius: 4))
         .contentShape(RoundedRectangle(cornerRadius: 4))
     }
 

@@ -32,6 +32,8 @@ enum DS {
 
         /// 到期前 15min 档预警橙（reminders spec：中强度，与过期红区分）
         static let warning = Color(red: 1.0, green: 0.62, blue: 0.29)
+        /// 预警橙的淡底（优先级「中」chip、Snooze 再次提醒卡共用）
+        static let warningSoft = warning.opacity(0.15)
 
         /// 仅用于完成确认
         static let success = Color(red: 0x4C / 255, green: 0xD2 / 255, blue: 0x7D / 255)
@@ -78,11 +80,21 @@ enum DS {
         }
     }
 
-    static func priorityColor(_ p: Priority) -> Color {
+    // 优先级标签配色（红绿灯三档，全 app 唯一来源，改这里即处处生效）：
+    // 高=红字红底 / 中=橙字橙底 / 低=暗灰字淡底。
+    static func priorityTagFG(_ p: Priority) -> Color {
         switch p {
         case .high: Colors.alert
-        case .medium: Colors.text2
+        case .medium: Colors.warning
         case .low: Colors.text3
+        }
+    }
+
+    static func priorityTagBG(_ p: Priority) -> Color {
+        switch p {
+        case .high: Colors.alertSoft
+        case .medium: Colors.warningSoft
+        case .low: Colors.surface1
         }
     }
 

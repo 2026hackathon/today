@@ -72,15 +72,6 @@ struct HoverPreview: View {
         .padding(.vertical, 5)
     }
 
-    private func tagColor(_ p: Priority) -> Color {
-        switch p {
-        case .high: DS.Colors.alert
-        case .medium: DS.Colors.text2
-        case .low: DS.Colors.text3
-        }
-    }
-
-    private func tagBackground(_ p: Priority) -> Color {
-        p == .high ? DS.Colors.alertSoft : DS.Colors.surface1
-    }
+    private func tagColor(_ p: Priority) -> Color { DS.priorityTagFG(p) }
+    private func tagBackground(_ p: Priority) -> Color { DS.priorityTagBG(p) }
 }

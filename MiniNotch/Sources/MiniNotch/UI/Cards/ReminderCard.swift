@@ -14,10 +14,10 @@ struct ReminderCard: View {
     @State private var showCustom = false
     @State private var customMinutes = 30
 
-    /// Snooze 后再次提醒 → 黄色系；首次提醒 → 红色系（reminders spec 验收项）
+    /// Snooze 后再次提醒 → 橙色系（与优先级「中」同色）；首次提醒 → 红色系（reminders spec 验收项）
     private var snoozed: Bool { todo.snoozeCount > 0 }
-    private var tone: Color { snoozed ? DS.Colors.gold : DS.Colors.alert }
-    private var toneSoft: Color { snoozed ? DS.Colors.goldSoft : DS.Colors.alertSoft }
+    private var tone: Color { snoozed ? DS.Colors.warning : DS.Colors.alert }
+    private var toneSoft: Color { snoozed ? DS.Colors.warningSoft : DS.Colors.alertSoft }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

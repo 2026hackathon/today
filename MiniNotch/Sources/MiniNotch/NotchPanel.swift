@@ -26,6 +26,9 @@ final class NotchPanel: NSPanel {
         self.isMovableByWindowBackground = false
         self.hidesOnDeactivate = false
         self.animationBehavior = .none
+        // 岛体永远是深色 UI——强制窗口深色外观，让原生控件（DatePicker / Toggle /
+        // Stepper / Menu）也渲染深色变体，否则浅色模式下会冒出白底控件（如编辑卡的日期选择器白框）。
+        self.appearance = NSAppearance(named: .darkAqua)
 
         // 在所有 Space 显示 + 覆盖全屏窗口
         self.collectionBehavior = [

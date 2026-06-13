@@ -23,10 +23,11 @@ struct EditTaskCard: View {
         self.todo = todo
         _title = State(initialValue: todo.title)
         _priority = State(initialValue: todo.priority)
-        _hasDue = State(initialValue: todo.dueDate != nil)
         _lead = State(initialValue: todo.reminderLeadMinutes)
-        // 无截止时给一个合理默认（今天 18:00），打开开关即用
-        _due = State(initialValue: todo.dueDate
+        // 用 effectiveDue（snooze 优先）作初值：打开编辑卡显示的就是用户当前看到的那个时间，
+        // 而不是被 snooze 覆盖前的原始 dueDate。
+        _hasDue = State(initialValue: todo.effectiveDue != nil)
+        _due = State(initialValue: todo.effectiveDue
             ?? Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: Date()) ?? Date())
     }
 
@@ -67,7 +68,7 @@ struct EditTaskCard: View {
                         DatePicker("", selection: $due)
                             .datePickerStyle(.compact)
                             .labelsHidden()
-                            .scaleEffect(0.9, anchor: .leading)
+                            .tint(DS.Colors.accent)
                     } else {
                         Text("无截止")
                             .font(DS.Fonts.meta)
@@ -101,12 +102,9 @@ struct EditTaskCard: View {
     private var header: some View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: "pencil")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(DS.Colors.accent)
                 Text("编辑任务")
                     .font(DS.Fonts.meta.weight(.medium))
-                    .foregroundStyle(DS.Colors.accent)
+                    .foregroundStyle(DS.Colors.text2)
                 Spacer()
             }
             Rectangle().fill(DS.Colors.border).frame(height: 1)
@@ -147,10 +145,7 @@ struct EditTaskCard: View {
             priority = p
         } label: {
             Text(p.label)
-                .dsTag(
-                    p == .high ? DS.Colors.alert : DS.Colors.text2,
-                    bg: p == .high ? DS.Colors.alertSoft : DS.Colors.surface1
-                )
+                .dsTag(DS.priorityTagFG(p), bg: DS.priorityTagBG(p))
                 .opacity(priority == p ? 1 : 0.35)
         }
         .buttonStyle(.plain)
@@ -200,6 +195,10 @@ struct EditTaskCard: View {
         updated.priority = priority
         updated.dueDate = hasDue ? due : nil
         updated.reminderLeadMinutes = hasDue ? lead : nil
+        // 显式编辑截止后清掉旧 snooze——否则 effectiveDue = snoozedUntil ?? dueDate 会让
+        // 残留的 snooze 时间盖过用户刚设的新时间，表现为「编辑没生效」。
+        updated.snoozedUntil = nil
+        updated.snoozeCount = 0
         store.update(updated)
         store.dismiss()
     }
