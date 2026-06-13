@@ -57,9 +57,6 @@ struct SettingsPanel: View {
             SettingsRow(label: "截图 → Todo") {
                 HotKeyRecorderField(config: $store.settings.todoHotKey, defaultConfig: .todoDefault)
             }
-            SettingsRow(label: "截图收藏") {
-                HotKeyRecorderField(config: $store.settings.favoriteHotKey, defaultConfig: .favoriteDefault)
-            }
             SettingsRow(label: "语音速记") {
                 HotKeyRecorderField(config: $store.settings.voiceHotKey, defaultConfig: .voiceDefault)
             }

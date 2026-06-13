@@ -517,7 +517,6 @@ struct HotKeyConfig: Codable, Equatable, Sendable {
     var keyLabel: String
 
     static let todoDefault = HotKeyConfig(keyCode: 0x78, modifiers: 0, keyLabel: "F2")
-    static let favoriteDefault = HotKeyConfig(keyCode: 0x63, modifiers: 0, keyLabel: "F3")
     static let voiceDefault = HotKeyConfig(keyCode: 0x31, modifiers: 2048, keyLabel: "Space") // ⌥Space
 
     /// 设置页展示串：修饰键符号 + 基键名（如 "⌥Space"、"⌘⇧K"、"F2"）
@@ -554,7 +553,6 @@ struct AppSettings: Codable, Equatable, Sendable {
     var githubToken = ""
     /// 全局热键（用户可在设置里改键，避免与其它软件冲突；keyCode/modifiers 见 HotKeyConfig）
     var todoHotKey = HotKeyConfig.todoDefault       // 截图 → Todo（默认 F2）
-    var favoriteHotKey = HotKeyConfig.favoriteDefault // 截图收藏（默认 F3）
     var voiceHotKey = HotKeyConfig.voiceDefault     // 语音速记（默认 ⌥Space）
     /// 邮件接入（email-integration spec）：host + 账号 + 应用密码齐全 → RealEmailService(IMAP)。
     /// 应用密码不在此存储 —— 走 Keychain（AppStore.emailAppPassword，design D7）；
@@ -584,7 +582,6 @@ struct AppSettings: Codable, Equatable, Sendable {
         jiraPollSeconds = try c.decodeIfPresent(Int.self, forKey: .jiraPollSeconds) ?? 60
         githubToken = try c.decodeIfPresent(String.self, forKey: .githubToken) ?? ""
         todoHotKey = try c.decodeIfPresent(HotKeyConfig.self, forKey: .todoHotKey) ?? .todoDefault
-        favoriteHotKey = try c.decodeIfPresent(HotKeyConfig.self, forKey: .favoriteHotKey) ?? .favoriteDefault
         voiceHotKey = try c.decodeIfPresent(HotKeyConfig.self, forKey: .voiceHotKey) ?? .voiceDefault
         emailAddress = try c.decodeIfPresent(String.self, forKey: .emailAddress) ?? ""
         emailImapHost = try c.decodeIfPresent(String.self, forKey: .emailImapHost) ?? ""

@@ -24,15 +24,12 @@ protocol CaptureService: AnyObject {
     /// 截图完成：(图像数据, 落盘路径) → AI 解析链路。
     /// 统一走数组：F2 单张 = 1 元素；快速录入连续贴多张 = 多元素，归到同一条任务。
     var onTodoCapture: ((_ images: [Data], _ savedPaths: [String]) -> Void)? { get set }
-    /// F3 收藏完成：落盘路径（不走 AI）
-    var onFavoriteCapture: ((String) -> Void)? { get set }
     /// 安装事件 handler（应用启动时调用一次）
     func start()
     /// 按配置（重新）注册全局热键。设置里改键后再次调用即可热生效，无需重启。
-    func applyHotKeys(todo: HotKeyConfig, favorite: HotKeyConfig, voice: HotKeyConfig)
+    func applyHotKeys(todo: HotKeyConfig, voice: HotKeyConfig)
     /// 手动触发（菜单/Debug 用）
     func captureForTodo()
-    func captureForFavorite()
     /// 从剪贴板读图识别（兼容 CleanShot/微信等外部截图工具）。
     /// 找到图片 → 走与 F2 相同的 onTodoCapture 管线并返回 true；剪贴板无图返回 false
     func captureFromPasteboard() -> Bool
@@ -50,7 +47,6 @@ protocol CaptureService: AnyObject {
 final class HotkeyCaptureService: CaptureService {
 
     var onTodoCapture: ((_ images: [Data], _ savedPaths: [String]) -> Void)?
-    var onFavoriteCapture: ((String) -> Void)?
     var onVoiceCapture: (() -> Void)?
     var onScreenRecordingDenied: (() -> Void)?
 
@@ -60,7 +56,6 @@ final class HotkeyCaptureService: CaptureService {
     private static let hotKeySignature: OSType = 0x5444_494C
     private enum HotKeyID: UInt32 {
         case todo = 1      // F2
-        case favorite = 2  // F3
         case voice = 3     // ⌥Space
     }
 
@@ -117,11 +112,10 @@ final class HotkeyCaptureService: CaptureService {
     }
 
     /// 按配置重注册：先注销全部旧热键，再注册三个新键（被占用的单个失败只打日志，不影响其它）
-    func applyHotKeys(todo: HotKeyConfig, favorite: HotKeyConfig, voice: HotKeyConfig) {
+    func applyHotKeys(todo: HotKeyConfig, voice: HotKeyConfig) {
         for ref in hotKeyRefs { UnregisterEventHotKey(ref) }
         hotKeyRefs.removeAll()
         registerHotKey(todo, id: .todo)
-        registerHotKey(favorite, id: .favorite)
         registerHotKey(voice, id: .voice)
     }
 
@@ -144,7 +138,6 @@ final class HotkeyCaptureService: CaptureService {
     private func handleHotKey(id: UInt32) {
         switch HotKeyID(rawValue: id) {
         case .todo: captureForTodo()
-        case .favorite: captureForFavorite()
         case .voice: onVoiceCapture?()
         case nil: break
         }
@@ -155,12 +148,6 @@ final class HotkeyCaptureService: CaptureService {
     func captureForTodo() {
         capture(into: Persistence.screenshotsDir) { [weak self] data, path in
             self?.onTodoCapture?([data], [path])
-        }
-    }
-
-    func captureForFavorite() {
-        capture(into: Persistence.favoritesDir) { [weak self] _, path in
-            self?.onFavoriteCapture?(path)
         }
     }
 

@@ -200,10 +200,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-        // F3 收藏：文件已落盘 favorites/，收藏 Tab 待接入（capture spec / owner C）
-        captureService.onFavoriteCapture = { path in
-            NSLog("[Capture] favorited: \(path)") // TODO(C): 收藏 Tab + AI 打标签
-        }
         // 缺「屏幕录制」权限：弹快速录入给出明确提示，并打开系统设置对应面板（授权后需重启 App）
         captureService.onScreenRecordingDenied = { [weak self] in
             guard let self else { return }
@@ -218,10 +214,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 全局热键按 settings 注册，改键即热生效（Published 首发当前值 → 同时完成首次注册）。
         // removeDuplicates 避免无关设置变更（如输入 Jira token）反复重注册热键。
         store.$settings
-            .map { [$0.todoHotKey, $0.favoriteHotKey, $0.voiceHotKey] }
+            .map { [$0.todoHotKey, $0.voiceHotKey] }
             .removeDuplicates()
             .sink { [weak self] keys in
-                self?.captureService.applyHotKeys(todo: keys[0], favorite: keys[1], voice: keys[2])
+                self?.captureService.applyHotKeys(todo: keys[0], voice: keys[1])
             }
             .store(in: &cancellables)
 
@@ -800,7 +796,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "截图 → Todo（F2）", action: #selector(captureTodo), keyEquivalent: "")
         menu.addItem(withTitle: "从剪贴板识别截图", action: #selector(pasteCapture), keyEquivalent: "v")
         menu.addItem(withTitle: "语音速记（⌥Space）", action: #selector(voiceCapture), keyEquivalent: "")
-        menu.addItem(withTitle: "截图收藏（F3）", action: #selector(captureFavorite), keyEquivalent: "")
         menu.addItem(withTitle: "快速新建 Todo", action: #selector(quickNew), keyEquivalent: "n")
         menu.addItem(.separator())
         menu.addItem(buildDebugMenu())
@@ -930,7 +925,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func captureTodo() { captureService.captureForTodo() }
     @objc private func pasteCapture() { store.pasteScreenshot() }
     @objc private func voiceCapture() { store.presentVoiceInput() }
-    @objc private func captureFavorite() { captureService.captureForFavorite() }
     @objc private func quickNew() {
         store.quickInputNotice = nil
         store.present(.quickInput)

@@ -12,13 +12,6 @@ enum Persistence {
         return dir
     }
 
-    /// F3 截图收藏目录（capture spec）
-    static var favoritesDir: URL {
-        let dir = baseDir.appendingPathComponent("favorites", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
-
     /// 截图临时目录（F2 解析用）
     static var screenshotsDir: URL {
         let dir = baseDir.appendingPathComponent("screenshots", isDirectory: true)
