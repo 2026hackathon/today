@@ -108,9 +108,10 @@ struct NewTaskCard: View {
 
     private var metaRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 badge(.priority, text: "\(edited.priority.label)优先级", isAlert: edited.priority == .high)
-                badge(.time, text: edited.dueDate?.dsShortLabel ?? "无截止")
+                // 显示具体时间点（明天 16:00），不只是「明天」
+                badge(.time, text: edited.dueDate.map(PanelFormat.due) ?? "无截止")
                 // 提前提醒：仅在有截止时间时可设（无截止 → 提醒无意义，隐藏）
                 if edited.dueDate != nil {
                     badge(.lead, text: Self.leadLabel(edited.reminderLeadMinutes ?? edited.kind.defaultLeadMinutes))

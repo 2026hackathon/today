@@ -106,7 +106,10 @@ struct IslandGeometry: Equatable {
         case .hoverPreview:
             // 与 compact 同宽：悬停时壳体只向下拉伸，不发生横向跳变
             return .init(width: compactW + 150, height: nil, cornerRadius: DS.Radius.island)
-        case .newTask, .reminder, .jiraLanded, .messageLanded, .agentLanded:
+        case .newTask:
+            // 比通知卡宽：要容下「优先级/时间/提前」三个 badge + 展开的选项 chip
+            return .init(width: 460, height: nil, cornerRadius: DS.Radius.island)
+        case .reminder, .jiraLanded, .messageLanded, .agentLanded:
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)
         case .batch:
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)
