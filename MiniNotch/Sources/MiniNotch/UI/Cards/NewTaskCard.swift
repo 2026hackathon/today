@@ -112,8 +112,8 @@ struct NewTaskCard: View {
                 // 优先级 badge 走统一红绿灯色（高红/中橙/低灰），与全 app 一致
                 badge(.priority, text: "\(edited.priority.label)优先级",
                       fg: DS.priorityTagFG(edited.priority), bg: DS.priorityTagBG(edited.priority))
-                // 显示具体时间点（明天 16:00），不只是「明天」
-                badge(.time, text: edited.dueDate.map(PanelFormat.due) ?? "无截止")
+                // 显示具体时间点（始终带时间，远日期也不省略）
+                badge(.time, text: edited.dueDate.map(dueBadgeLabel) ?? "无截止")
                 // 提前提醒：仅在有截止时间时可设（无截止 → 提醒无意义，隐藏）
                 if edited.dueDate != nil {
                     badge(.lead, text: Self.leadLabel(edited.reminderLeadMinutes ?? edited.kind.defaultLeadMinutes))
@@ -226,6 +226,19 @@ struct NewTaskCard: View {
 
     private var dueTimeLabel: String {
         edited.dueDate.map(PanelFormat.hm) ?? "—"
+    }
+
+    /// 时间 badge 文案：始终带时间（今天/明天 HH:mm；本周 周X HH:mm；更远 M/d HH:mm）
+    private func dueBadgeLabel(_ due: Date) -> String {
+        let cal = Calendar.current
+        let t = PanelFormat.hm(due)
+        if cal.isDateInToday(due) { return "今天 \(t)" }
+        if cal.isDateInTomorrow(due) { return "明天 \(t)" }
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()),
+                                      to: cal.startOfDay(for: due)).day ?? 0
+        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = (2...6).contains(days) ? "EEE HH:mm" : "M/d HH:mm"
+        return f.string(from: due)
     }
 
     private func optionChip(_ text: String, selected: Bool, action: @escaping () -> Void) -> some View {
