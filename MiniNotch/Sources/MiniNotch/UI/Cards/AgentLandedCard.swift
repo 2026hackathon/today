@@ -20,8 +20,9 @@ struct AgentLandedCard: View {
     @State private var hovering = false
     @State private var collecting = false
 
-    /// agent 完成用绿色（success），与 Jira 蓝 / GitHub 紫区分
-    private var accent: Color { DS.Colors.success }
+    /// agent 一轮完成 = 待确认（等你 review），用橙色 warning，
+    /// 与 Agent 面板/刘海徽章的 replied 态铃铛统一（不是绿色「已完成」）
+    private var accent: Color { DS.Colors.warning }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -44,10 +45,10 @@ struct AgentLandedCard: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: "checkmark.seal.fill")
+            Image(systemName: "bell.badge.fill")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(accent)
-            Text("已完成")
+            Text("待确认")
                 .font(DS.Fonts.meta.weight(.medium))
                 .foregroundStyle(DS.Colors.text2)
             Spacer(minLength: 0)
