@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let mockJiraService = MockJiraService()
     /// Mock 常驻：配置不全时兜底 + Debug「模拟 PR 新分配」演示
     private let mockGitHubService = MockGitHubService()
+    /// Mock 常驻：邮件未配置时兜底演示 + Debug「模拟新邮件」演示
+    private let mockEmailService = MockEmailService()
     /// EventKit 真实日历服务（权限就绪时使用；被拒/失败 → 上层按空列表处理，不用 Mock 填充）
     private let eventKitCalendarService = EventKitCalendarService()
     private lazy var reminderScheduler: ReminderScheduler = TimerReminderScheduler()
@@ -38,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 误删真实数据（review-fixes #1）
     private var didLaunchCleanupJira = false
     private var didLaunchCleanupGitHub = false
+    /// 邮件首轮同步静默基线（首轮不弹降落卡，避免初始全量误报为新消息）
+    private var emailBaselineSynced = false
 
     private var cancellables = Set<AnyCancellable>()
     private var pollingTasks: [Task<Void, Never>] = []
@@ -243,6 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 手动刷新按钮 → 立即同步 Jira + 日历
         store.onRefresh = { [weak self] in
             await self?.syncExternalSources(notifyJira: true)
+            await self?.syncEmail(notify: true)
             self?.refreshAISuggestion()
         }
 
@@ -482,6 +487,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return token.isEmpty ? nil : RealGitHubService(token: token)
     }
 
+    /// 邮件装配（integrations spec）：凭据齐全本应走 RealEmailService(IMAP)，
+    /// 真实现待 group 7；当前始终用 Mock，保证无凭证也能演示。
+    private func currentEmailService() -> EmailService {
+        mockEmailService
+    }
+
+    /// 拉取一轮邮件：来源识别/链接归一在服务层完成，这里调 AI 生成一句话再入库。
+    /// 去重在 fetch 之后、AI 之前（避免对已知邮件重复打 LLM）；首轮静默不弹卡。
+    private func syncEmail(notify: Bool) async {
+        let service = currentEmailService()
+        guard let inputs = try? await service.fetchNewMessages(), !inputs.isEmpty else { return }
+        let knownIds = Set(store.messages.map(\.messageId))
+        let fresh = inputs.filter { !knownIds.contains($0.messageId) }
+        guard !fresh.isEmpty else { emailBaselineSynced = true; return }
+        // AI 一句话提醒；无 Key/失败时 AIService 自身已降级，这里再兜一层规则化
+        let summaries = (try? await currentAIService().summarizeEmails(fresh)) ?? fresh.map(EmailSummary.rule)
+        let messages = zip(fresh, summaries).map { input, summary in
+            Message(messageId: input.messageId, summary: summary, source: input.source,
+                    link: input.link, receivedAt: input.receivedAt,
+                    sender: input.sender, rawSubject: input.subject)
+        }
+        store.addMessages(messages, notify: notify && emailBaselineSynced)
+        emailBaselineSynced = true
+    }
+
     /// 拉取一轮 Jira：未配置时合并空列表（prune 清掉历史 Mock/失效残留）
     private func syncJira(notify: Bool) async {
         guard let service = currentJiraService() else {
@@ -551,6 +581,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             while !Task.isCancelled {
                 self?.refreshCalendarMeetings()
                 try? await Task.sleep(for: .seconds(15 * 60))
+            }
+        })
+        // 邮件轮询：与 Jira 同款间隔（首轮由 emailBaselineSynced 静默）
+        pollingTasks.append(Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                await self?.syncEmail(notify: true)
+                let interval = max(5, self?.store.settings.jiraPollSeconds ?? 60)
+                try? await Task.sleep(for: .seconds(interval))
             }
         })
         // 晚报：每分钟检查是否到点（reminders/ai-pipeline spec）
@@ -656,6 +694,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("全屏庆祝", #selector(debugCelebrate)),
             ("模拟 Jira 新分配", #selector(debugJiraAssign)),
             ("模拟 PR 新分配", #selector(debugPRAssign)),
+            ("模拟新邮件", #selector(debugNewMail)),
             ("回到收缩态", #selector(debugDismiss)),
             ("重置演示数据", #selector(debugReset)),
         ]
@@ -809,6 +848,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // prune: false —— Mock 注入不能把真实 PR 清掉
                 store.mergeExternalTodos(prs, source: .github, notify: true, prune: false)
             }
+        }
+    }
+
+    /// 走 Mock 演示「现场来信」：额外注入 1 封新邮件，弹消息降落卡
+    @objc private func debugNewMail() {
+        mockEmailService.extraMailArmed = true
+        Task { @MainActor in
+            // 演示需弹卡：先确保已过首轮静默基线
+            emailBaselineSynced = true
+            await syncEmail(notify: true)
         }
     }
 

@@ -8,6 +8,7 @@ import Foundation
 enum PanelTab: String, CaseIterable, Sendable {
     case today = "Today"
     case calendar = "日历"
+    case messages = "消息"
     case inbox = "Inbox"
     case favorites = "收藏"
     case settings = "设置"
@@ -34,6 +35,9 @@ enum IslandState: Equatable, Sendable {
     /// 新 Jira 分配通知卡：纯通知无操作，倒计时后自动收入岛体
     /// moreCount = 同轮其余新分配数（>0 显示「等 N 条」）
     case jiraLanded(todo: Todo, moreCount: Int)
+    /// 新邮件消息降落卡（沿用 jiraLanded 样式/倒计时）：点击打开链接并标记已处理
+    /// moreCount = 同轮其余新消息数（>0 聚合显示「N 条新消息」）
+    case messageLanded(message: Message, moreCount: Int)
 
     // ── 展开态 ──
     case expanded(tab: PanelTab)
@@ -83,7 +87,7 @@ struct IslandGeometry: Equatable {
         case .hoverPreview:
             // 与 compact 同宽：悬停时壳体只向下拉伸，不发生横向跳变
             return .init(width: compactW + 150, height: nil, cornerRadius: DS.Radius.island)
-        case .newTask, .reminder, .jiraLanded:
+        case .newTask, .reminder, .jiraLanded, .messageLanded:
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)
         case .batch:
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)

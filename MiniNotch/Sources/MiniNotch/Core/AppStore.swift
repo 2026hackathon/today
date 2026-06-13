@@ -13,6 +13,8 @@ final class AppStore: ObservableObject {
 
     @Published private(set) var todos: [Todo] = [] { didSet { persistTodos() } }
     @Published private(set) var meetings: [Meeting] = [] { didSet { Persistence.save(meetings, to: "meetings.json") } }
+    /// 邮件提炼的一句话提醒消息（message-inbox spec），持久化 messages.json
+    @Published private(set) var messages: [Message] = [] { didSet { Persistence.save(messages, to: "messages.json") } }
     @Published var settings = AppSettings() { didSet { Persistence.save(settings, to: "settings.json") } }
 
     // MARK: - Island 状态
@@ -101,6 +103,7 @@ final class AppStore: ObservableObject {
         // Debug 菜单「重置演示数据」显式载入（Demo 兜底）
         todos = Persistence.load([Todo].self, from: "todos.json") ?? []
         meetings = Persistence.load([Meeting].self, from: "meetings.json") ?? []
+        messages = Persistence.load([Message].self, from: "messages.json") ?? []
         if let saved = Persistence.load(AppSettings.self, from: "settings.json") {
             settings = saved
         }
@@ -536,6 +539,38 @@ final class AppStore: ObservableObject {
     /// 兼容包装：既有调用方（轮询/刷新/Debug）继续可用
     func mergeJiraTodos(_ fetched: [Todo], notify: Bool = true, prune: Bool = true) {
         mergeExternalTodos(fetched, source: .jira, notify: notify, prune: prune)
+    }
+
+    // MARK: - 消息（message-inbox spec）
+
+    /// 消息列表按接收时间倒序（消息页签消费）
+    var sortedMessages: [Message] { messages.sorted { $0.receivedAt > $1.receivedAt } }
+
+    /// 未处理消息数（消息页签角标）
+    var unprocessedMessageCount: Int { messages.lazy.filter { !$0.isProcessed }.count }
+
+    /// 合并新消息：按 messageId 去重（已存在的保留已处理状态不覆盖）。
+    /// notify 且 compact 态时，新消息弹降落通知卡（同轮多条聚合为「N 条」）。
+    func addMessages(_ incoming: [Message], notify: Bool = true) {
+        let knownIds = Set(messages.map(\.messageId))
+        var landed: [Message] = []
+        for msg in incoming where !knownIds.contains(msg.messageId) {
+            messages.append(msg)
+            landed.append(msg)
+        }
+        guard !landed.isEmpty else { return }
+        // 降落通知卡：不打断展开态/其他卡片态（静默入库，待回 compact 顺延）
+        if notify, let first = landed.first, islandState.isCompact {
+            present(.messageLanded(message: first, moreCount: landed.count - 1))
+        }
+        refreshCompactState()
+    }
+
+    /// 标记消息已处理（点击完成 / 点击跳转均调用）；幂等：已处理则不刷新时间
+    func markProcessed(_ message: Message) {
+        guard let i = messages.firstIndex(where: { $0.id == message.id }),
+              messages[i].processedAt == nil else { return }
+        messages[i].processedAt = Date()
     }
 
     // MARK: - 持久化
