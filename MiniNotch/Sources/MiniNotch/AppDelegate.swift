@@ -255,6 +255,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // ⌥Space 全局语音速记：弹快速录入并自动开始聆听
+        captureService.onVoiceCapture = { [weak self] in
+            self?.store.presentVoiceInput()
+        }
+
         // 提醒事项任务完成/撤销 → EventKit 回写（失败仅记日志，本地状态不回滚）
         store.onReminderCompletionChanged = { [weak self] identifier, completed in
             Task { @MainActor in
@@ -632,6 +637,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "显示/隐藏面板", action: #selector(togglePanel), keyEquivalent: "t")
         menu.addItem(withTitle: "截图 → Todo（F2）", action: #selector(captureTodo), keyEquivalent: "")
         menu.addItem(withTitle: "从剪贴板识别截图", action: #selector(pasteCapture), keyEquivalent: "v")
+        menu.addItem(withTitle: "语音速记（⌥Space）", action: #selector(voiceCapture), keyEquivalent: "")
         menu.addItem(withTitle: "截图收藏（F3）", action: #selector(captureFavorite), keyEquivalent: "")
         menu.addItem(withTitle: "快速新建 Todo", action: #selector(quickNew), keyEquivalent: "n")
         menu.addItem(.separator())
@@ -717,6 +723,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func captureTodo() { captureService.captureForTodo() }
     @objc private func pasteCapture() { store.pasteScreenshot() }
+    @objc private func voiceCapture() { store.presentVoiceInput() }
     @objc private func captureFavorite() { captureService.captureForFavorite() }
     @objc private func quickNew() {
         store.quickInputNotice = nil

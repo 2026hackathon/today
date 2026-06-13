@@ -32,6 +32,8 @@ protocol CaptureService: AnyObject {
     /// 从剪贴板读图识别（兼容 CleanShot/微信等外部截图工具）。
     /// 找到图片 → 走与 F2 相同的 onTodoCapture 管线并返回 true；剪贴板无图返回 false
     func captureFromPasteboard() -> Bool
+    /// 全局语音热键（⌥Space）：弹出快速录入并自动开始语音
+    var onVoiceCapture: (() -> Void)? { get set }
 }
 
 @MainActor
@@ -39,6 +41,7 @@ final class HotkeyCaptureService: CaptureService {
 
     var onTodoCapture: ((Data, _ savedPath: String) -> Void)?
     var onFavoriteCapture: ((String) -> Void)?
+    var onVoiceCapture: (() -> Void)?
 
     // MARK: Carbon 热键
 
@@ -47,6 +50,7 @@ final class HotkeyCaptureService: CaptureService {
     private enum HotKeyID: UInt32 {
         case todo = 1      // F2
         case favorite = 2  // F3
+        case voice = 3     // ⌥Space
     }
 
     private var hotKeyRefs: [EventHotKeyRef] = []
@@ -99,15 +103,16 @@ final class HotkeyCaptureService: CaptureService {
             return
         }
 
-        // 2. 注册 F2 / F3（无 modifier）
+        // 2. 注册 F2 / F3（无 modifier）+ ⌥Space 语音速记（避开 Spotlight 的 ⌘Space）
         registerHotKey(keyCode: UInt32(kVK_F2), id: .todo)      // 0x78
         registerHotKey(keyCode: UInt32(kVK_F3), id: .favorite)  // 0x63
+        registerHotKey(keyCode: UInt32(kVK_Space), id: .voice, modifiers: UInt32(optionKey))
     }
 
-    private func registerHotKey(keyCode: UInt32, id: HotKeyID) {
+    private func registerHotKey(keyCode: UInt32, id: HotKeyID, modifiers: UInt32 = 0) {
         var ref: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: Self.hotKeySignature, id: id.rawValue)
-        let status = RegisterEventHotKey(keyCode, 0, hotKeyID, GetApplicationEventTarget(), 0, &ref)
+        let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
         if status != noErr || ref == nil {
             // 注册失败（被占用等）不崩溃，仅打日志
             NSLog("[Capture] RegisterEventHotKey keyCode=\(keyCode) failed: \(status)")
@@ -120,6 +125,7 @@ final class HotkeyCaptureService: CaptureService {
         switch HotKeyID(rawValue: id) {
         case .todo: captureForTodo()
         case .favorite: captureForFavorite()
+        case .voice: onVoiceCapture?()
         case nil: break
         }
     }

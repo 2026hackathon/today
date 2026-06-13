@@ -25,6 +25,7 @@ struct QuickInputCard: View {
     @State private var manualPriority: Priority = .medium
     @State private var parseTask: Task<Void, Never>?
     @FocusState private var focused: Bool
+    @StateObject private var dictation = SpeechDictation()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -51,8 +52,15 @@ struct QuickInputCard: View {
         }
         .padding(.top, 36)   // 摄像头区
         .padding(.bottom, 6)
-        .onAppear { focused = true }
-        .onDisappear { parseTask?.cancel() }
+        .onAppear {
+            focused = true
+            // ⌥Space 语音速记进入：自动开始聆听（消费一次标志）
+            if store.quickInputAutoVoice {
+                store.quickInputAutoVoice = false
+                dictation.toggle { spoken in text = spoken }
+            }
+        }
+        .onDisappear { parseTask?.cancel(); dictation.stop() }
     }
 
     private var isParsed: Bool {
@@ -151,12 +159,29 @@ struct QuickInputCard: View {
             Text("›")
                 .font(.system(size: 14, design: .monospaced))
                 .foregroundStyle(DS.Colors.text3)
-            TextField("输入任务，AI 自动解析时间和优先级", text: $text)
+            TextField(dictation.isListening ? "正在聆听…" : "输入或说一句任务，AI 自动解析", text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .foregroundStyle(DS.Colors.text1)
                 .focused($focused)
                 .onSubmit { create() }
+            // 语音输入：点麦克风开始/停止实时转写，文本写回输入框自动触发解析
+            if !dictation.unavailable {
+                Button {
+                    dictation.toggle { spoken in text = spoken }
+                } label: {
+                    Image(systemName: dictation.isListening ? "mic.fill" : "mic")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(dictation.isListening ? DS.Colors.alert : DS.Colors.text3)
+                        .frame(width: 22, height: 22)
+                        .background(
+                            dictation.isListening ? DS.Colors.alertSoft : .clear,
+                            in: RoundedRectangle(cornerRadius: DS.Radius.s)
+                        )
+                        .symbolEffect(.pulse, isActive: dictation.isListening)
+                }
+                .buttonStyle(.plain)
+            }
             Text("return")
                 .font(DS.Fonts.tag)
                 .foregroundStyle(DS.Colors.text3)

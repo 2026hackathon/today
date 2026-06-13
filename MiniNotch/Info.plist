@@ -30,5 +30,9 @@
     <string>MiniNotch 需要读取日历以展示今日会议和加入会议链接。</string>
     <key>NSRemindersFullAccessUsageDescription</key>
     <string>MiniNotch 需要读取提醒事项以展示今日待办提醒。</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>MiniNotch 需要麦克风以支持语音输入待办。</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>MiniNotch 需要语音识别，把你说的话转成待办文字。</string>
 </dict>
 </plist>

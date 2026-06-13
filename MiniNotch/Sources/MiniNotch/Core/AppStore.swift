@@ -42,6 +42,15 @@ final class AppStore: ObservableObject {
 
     /// 触发剪贴板贴图识别（面板按钮/菜单调用）
     func pasteScreenshot() { onPasteScreenshot?() }
+
+    /// ⌥Space 语音速记：QuickInputCard onAppear 读到 true 即自动开始聆听，用后自清
+    @Published var quickInputAutoVoice = false
+
+    /// 弹出快速录入并自动开始语音（全局热键/菜单调用）
+    func presentVoiceInput() {
+        quickInputAutoVoice = true
+        present(.quickInput)
+    }
     /// 提醒事项任务完成/撤销 → EventKit 回写（calendarItemIdentifier, 完成态），AppDelegate 装配
     var onReminderCompletionChanged: ((String, Bool) -> Void)?
 
