@@ -48,8 +48,8 @@ extension CalendarService {
 
 /// 同步窗口常量 + 日期范围便捷构造
 enum CalendarSyncConfig {
-    /// 同步窗口：未来天数（日历只展示今天起到未来 7 天，不含历史）
-    static let syncDaysFuture = 7
+    /// 同步窗口：未来天数（今天起到未来 15 天，不含历史；与日历页签展示窗上界 today+15 对齐）
+    static let syncDaysFuture = 15
 
     /// 默认同步范围：[today 00:00, today + syncDaysFuture + 1)
     static func defaultRange() -> ClosedRange<Date> {

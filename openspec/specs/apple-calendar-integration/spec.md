@@ -15,7 +15,7 @@ EventKitCalendarService SHALL 在首次拉取会议时调用 `requestFullAccessT
 - **THEN** 抛出 `CalendarServiceError.accessDenied`，AppDelegate 降级到 Mock
 
 ### Requirement: 今日事件拉取
-EventKitCalendarService.fetchMeetings(in:) SHALL 查询指定日期范围内所有 EKEvent，映射为 Meeting 并按 start 升序返回。日期范围由调用方指定（默认同步窗口为 today-29 天 ~ today+6 天）。提醒事项 SHALL 查询同一范围内的未完成提醒。
+EventKitCalendarService.fetchMeetings(in:) SHALL 查询指定日期范围内所有 EKEvent，映射为 Meeting 并按 start 升序返回。日期范围由调用方指定（默认同步窗口为今天 00:00 ~ 未来 15 天，不含历史）。提醒事项 SHALL 查询同一范围内的未完成提醒。
 
 #### Scenario: 拉取 30 天窗口的多场会议
 - **WHEN** 调用 `fetchMeetings(in: [6月1日, 6月18日])` 且日历含该范围内 10 场会议
@@ -86,11 +86,15 @@ EKEvent/EKReminder → Meeting 映射 SHALL 携带稳定标识：日历事件取
 - **THEN** 解码成功，eventIdentifier 为 nil，不崩溃
 
 ### Requirement: 同步窗口
-日历同步范围 SHALL 为今天 00:00 起至未来 7 天（不含历史）；日历页签与今日任务合并均以该窗口为数据源。
+日历同步范围 SHALL 为今天 00:00 起至未来 15 天（不含历史）；日历页签与今日任务合并均以该窗口为数据源。该未来上界 SHALL 与日历页签展示窗的未来上界（today+15）对齐，确保 +8 ~ +15 天的苹果事件/提醒能被拉取并展示。
 
 #### Scenario: 历史日程不展示
 - **WHEN** 日历中存在昨天及更早的事件
 - **THEN** 同步结果不含历史日程，日历页签从「今天」段开始展示
+
+#### Scenario: 未来 15 天内的苹果日程可见
+- **WHEN** 苹果日历/提醒中存在今天之后第 8 ~ 15 天的事件或提醒
+- **THEN** 同步结果包含这些条目，日历页签在对应日期段展示，不再因同步窗过窄而缺失
 
 ### Requirement: 已完成提醒保留
 提醒事项拉取 SHALL 同时包含未完成（按 due 窗口）与已完成（按完成时间窗口，due 仍限定在同步范围内）的提醒，`Meeting.isCompleted` 携带 EventKit 完成态——已完成提醒的行保留在日历页签并打勾，而非消失。
@@ -156,11 +160,11 @@ AppStore SHALL 新增 `meetingsByDate: [(date: Date, meetings: [Meeting])]` 计�
 - **THEN** `meetingsByDate` 返回空数组
 
 ### Requirement: 同步范围常量
-系统 SHALL 定义日历同步窗口常量 `calendarSyncDaysPast = 29` 和 `calendarSyncDaysFuture = 6`，由 AppDelegate 在构建同步日期范围时使用。常量 SHALL 集中在 `CalendarService` 或 `AppSettings` 中定义。
+系统 SHALL 在 `CalendarService` 集中定义同步窗口常量 `CalendarSyncConfig.syncDaysFuture = 15`（不含历史，无独立 past 常量）。`CalendarSyncConfig.defaultRange()` SHALL 据此构建同步日期范围，AppDelegate 的初始 / 周期 / 事件驱动同步均调用该便捷方法。
 
 #### Scenario: 构建同步日期范围
 - **WHEN** AppDelegate 需要执行日历同步
-- **THEN** 构建 `ClosedRange<Date>` 为 `[Calendar.startOfDay(today - 29天), Calendar.startOfDay(today + 7天)]`（含 today 共 36 天）
+- **THEN** `defaultRange()` 返回 `[Calendar.startOfDay(today), Calendar.startOfDay(today) + (syncDaysFuture + 1) 天)`，即今天 00:00 起、含未来 15 天
 
 ### Requirement: 完成与删除的可用性及删除回写
 任务/会议行的「完成」(✓) 与「删除」操作 SHALL 按来源与时间相关性区分可用性：
@@ -224,3 +228,28 @@ AppStore SHALL 新增 `meetingsByDate: [(date: Date, meetings: [Meeting])]` 计�
 - **WHEN** 苹果来源事件本地完成后发生下一轮 `fetchMeetings` 同步
 - **THEN** `mergeCalendarTodos()` 保留本地 `completedAt`，该事件仍显示为已完成
 
+
+### Requirement: 日历页签展示时间窗
+日历页签 SHALL 仅展示「昨天 00:00 ~ 今天 +15 天」窗口内的数据；窗口外（前天及更早、+15 天之后）的日程/提醒/任务 SHALL NOT 出现在时间线。该窗口是日历页签的展示过滤（作用于 `meetingsByDate` 与 `calendarPersonalTodos` 的合并结果），不改变后台同步深度。窗口内分日期口径区分：
+- **昨天**分组 SHALL 仅展示本地自定义且**未完成**的任务（`source` 非 Jira/GitHub 且非 `.calendar`，且 `isCompleted == false`）；苹果来源的日程/会议/提醒与已完成的本地任务 SHALL NOT 出现在昨天分组。
+- **今天及未来 15 天**照旧展示全部（苹果日程/会议/提醒 + 本地任务，含已完成的删除线项）。
+- 无固定时间（无截止）的本地任务仍归入今天分组，不受昨天口径影响。
+
+#### Scenario: 历史与远期被过滤
+- **WHEN** 日历中存在前天的会议或 +16 天后的日程
+- **THEN** 这些项不出现在日历页签时间线
+
+#### Scenario: 昨天只剩未完成自定义任务
+- **WHEN** 昨天既有一个苹果会议、一个已完成的本地任务，又有一个未完成的本地自定义任务
+- **THEN** 昨天分组仅显示那个未完成的本地自定义任务，会议与已完成任务都不显示
+
+#### Scenario: 今天及未来正常全量
+- **WHEN** 今天和未来 10 天内有苹果日程与已完成的本地任务
+- **THEN** 它们均正常显示在对应日期分组（已完成项带删除线保留）
+
+### Requirement: 行操作悬停热区覆盖整行
+日历页签时间线的任务行（`PersonalTodoRow`）与会议行（`MeetingRow`）SHALL 以整行矩形（含标题右侧空白、缩略图与行尾区域）作为悬停热区，使删除按钮在鼠标位于该行任意位置时即出现，而非仅在文字上方。
+
+#### Scenario: 空白处悬停也显示删除按钮
+- **WHEN** 鼠标悬停在某行标题右侧的空白区域（非文字上）
+- **THEN** 该行高亮且删除按钮出现，可直接点击删除
