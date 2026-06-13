@@ -237,6 +237,19 @@ struct TodoDraft: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+// MARK: - Mention（@我：Jira 评论 / Confluence 页面，只读跳转）
+
+struct Mention: Identifiable, Codable, Equatable, Sendable {
+    enum Source: String, Codable, Sendable { case jira, confluence }
+
+    var id: String          // 稳定键：jira issueKey / confluence contentId
+    var source: Source
+    var title: String       // Jira: 「MD-123 摘要」；Confluence: 页面标题
+    var context: String?    // Jira 状态 / Confluence 空间名
+    var url: URL?
+    var updated: Date?
+}
+
 // MARK: - Meeting
 
 struct Meeting: Identifiable, Codable, Equatable, Sendable {

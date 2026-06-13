@@ -15,6 +15,34 @@ final class AppStore: ObservableObject {
     @Published private(set) var meetings: [Meeting] = [] { didSet { Persistence.save(meetings, to: "meetings.json") } }
     /// 邮件提炼的一句话提醒消息（message-inbox spec），持久化 messages.json
     @Published private(set) var messages: [Message] = [] { didSet { Persistence.save(messages, to: "messages.json") } }
+    /// 各渠道@我的条目（只读，不落盘——每次同步重新拉取）
+    @Published private(set) var mentions: [Mention] = []
+    /// 已读标记：id → 标记当时的 updated 时间。落盘，重启保留。
+    /// 之后该条若有更新的活动（updated 更新）会重新视为未读冒出来
+    @Published private(set) var mentionReads: [String: Date] = [:] {
+        didSet { Persistence.save(mentionReads, to: "mentionReads.json") }
+    }
+
+    /// 未读提及：从未读过，或上次读后又有新活动
+    var unreadMentions: [Mention] {
+        mentions.filter { m in
+            guard let readAt = mentionReads[m.id] else { return true }
+            guard let updated = m.updated else { return false } // 无时间且已读 → 隐藏
+            return updated > readAt
+        }
+    }
+
+    func replaceMentions(_ new: [Mention]) {
+        mentions = new
+        // 防止 mentionReads 无限增长：只保留仍在结果里的条目
+        let liveIDs = Set(new.map(\.id))
+        mentionReads = mentionReads.filter { liveIDs.contains($0.key) }
+    }
+
+    /// 标记某条已读（点开跳转时调用）→ 从未读列表消失
+    func markMentionRead(_ mention: Mention) {
+        mentionReads[mention.id] = mention.updated ?? Date()
+    }
     @Published var settings = AppSettings() { didSet { Persistence.save(settings, to: "settings.json") } }
 
     // MARK: - Island 状态
@@ -202,6 +230,7 @@ final class AppStore: ObservableObject {
         if let saved = Persistence.load(AppSettings.self, from: "settings.json") {
             settings = saved
         }
+        mentionReads = Persistence.load([String: Date].self, from: "mentionReads.json") ?? [:]
         refreshCompactState()
     }
 

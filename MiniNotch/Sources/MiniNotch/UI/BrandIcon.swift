@@ -10,13 +10,14 @@ import SwiftUI
 
 struct BrandIcon: View {
     enum Brand: String {
-        case jira, github
+        case jira, github, confluence
 
         /// 资源缺失时的 SF Symbol 兜底
         var fallbackSymbol: String {
             switch self {
             case .jira: "briefcase.fill"
             case .github: "arrow.triangle.pull"
+            case .confluence: "doc.text.fill"
             }
         }
     }

@@ -614,7 +614,7 @@ struct PanelTabBar: View {
     }
 
     private var visibleTabs: [PanelTab] {
-        current == .settings ? PanelTab.allCases : [.today, .calendar, .messages, .inbox, .favorites, .agent]
+        current == .settings ? PanelTab.allCases : [.today, .calendar, .messages, .mentions, .inbox, .favorites, .agent]
     }
 }
 

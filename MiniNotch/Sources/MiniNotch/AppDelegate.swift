@@ -434,6 +434,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             meetings = (try? await calendar.fetchMeetings(in: CalendarSyncConfig.defaultRange())) ?? []
         }
         store.replaceMeetings(meetings)
+        await syncMentions()
+    }
+
+    /// @我同步：未配置 Atlassian 凭据 → 空（不 Mock 填充列表，同其他源口径）
+    private func syncMentions() async {
+        guard let service = currentMentionService() else { store.replaceMentions([]); return }
+        if let items = try? await service.fetchMentions() {
+            store.replaceMentions(items)
+        }
+    }
+
+    private func currentMentionService() -> MentionService? {
+        let s = store.settings
+        guard !s.jiraBaseURL.isEmpty, !s.jiraEmail.isEmpty, !s.jiraAPIToken.isEmpty else { return nil }
+        return RealMentionService(baseURL: s.jiraBaseURL, email: s.jiraEmail, apiToken: s.jiraAPIToken)
     }
 
     /// 挂接 Layer 1 事件驱动回调（仅在权限授予后调用）
@@ -606,6 +621,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self?.syncEmail(notify: true)
                 let interval = max(5, self?.store.settings.jiraPollSeconds ?? 60)
                 try? await Task.sleep(for: .seconds(interval))
+            }
+        })
+        // @我提及：5min 轮询（变动不频繁，不必跟 Jira 同频）
+        pollingTasks.append(Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                await self?.syncMentions()
+                try? await Task.sleep(for: .seconds(5 * 60))
             }
         })
         // 晚报每分钟检查是否到点（reminders/ai-pipeline spec）+ agent 陈旧会话清理

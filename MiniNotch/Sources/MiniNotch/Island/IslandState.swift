@@ -9,6 +9,7 @@ enum PanelTab: String, CaseIterable, Sendable {
     case today = "Today"
     case calendar = "日历"
     case messages = "消息"
+    case mentions = "Mentions"
     case inbox = "Inbox"
     case favorites = "收藏"
     case agent = "Agent"
@@ -21,6 +22,7 @@ enum PanelTab: String, CaseIterable, Sendable {
         case .today: "Today"   // 保留英文品牌标签（产品指定）
         case .calendar: "日历"
         case .messages: "消息"
+        case .mentions: "提及"
         case .inbox: "收件箱"
         case .favorites: "收藏"
         case .agent: "Agent"
