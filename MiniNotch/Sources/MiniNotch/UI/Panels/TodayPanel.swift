@@ -27,8 +27,6 @@ struct TodayPanel: View {
                 switch currentTab {
                 case .messages:
                     InboxHubPanel()   // 邮件消息 + @我提及，内部分段切换
-                case .tasks:
-                    TasksPanel()      // 全部未完成个人任务
                 case .workItems:
                     WorkItemPanel()   // 全部 Jira/GitHub 工作项
                 case .agent:
@@ -694,37 +692,30 @@ struct PanelTabBar: View {
     let current: PanelTab
 
     var body: some View {
-        // 概念页签变多（7 个），页签区横向滚动；右端 ＋/↻/⚙ 固定不随滚动。
-        // scrollClipDisabled 让未读角标能溢出滚动边界不被裁（concept-tabs spec）。
-        HStack(spacing: 6) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(visibleTabs, id: \.self) { tab in
-                        PanelTabButton(
-                            title: tab.title,
-                            isActive: tab == current,
-                            badge: tab == .messages ? (store.unprocessedMessageCount + store.unreadMentions.count)
-                                : (tab == .agent ? store.waitingAgentCount : 0)
-                        ) {
-                            guard tab != current else { return }
-                            store.present(.expanded(tab: tab))
-                        }
-                        // 拖动重排（settings tab 固定不参与）
-                        .draggable(tab.rawValue) { dragChip(tab) }
-                        .dropDestination(for: String.self) { items, _ in
-                            guard current != .settings, let raw = items.first,
-                                  let dragged = PanelTab(rawValue: raw) else { return false }
-                            store.moveTab(dragged, before: tab)
-                            return true
-                        }
-                    }
+        // 5 个 tab 单行放得下，不套 ScrollView——避免横滚手势吞掉拖动重排、且角标不被裁。
+        // 拖动 tab 即可重排（settings 不参与）；右端 ＋/↻/⚙ 固定。
+        HStack(spacing: 2) {
+            ForEach(visibleTabs, id: \.self) { tab in
+                PanelTabButton(
+                    title: tab.title,
+                    isActive: tab == current,
+                    badge: tab == .messages ? (store.unprocessedMessageCount + store.unreadMentions.count)
+                        : (tab == .agent ? store.waitingAgentCount : 0)
+                ) {
+                    guard tab != current else { return }
+                    store.present(.expanded(tab: tab))
                 }
-                .padding(.vertical, 2) // 给角标留出溢出空间
+                // 拖动重排（settings tab 固定不参与）
+                .draggable(tab.rawValue) { dragChip(tab) }
+                .dropDestination(for: String.self) { items, _ in
+                    guard current != .settings, let raw = items.first,
+                          let dragged = PanelTab(rawValue: raw) else { return false }
+                    store.moveTab(dragged, before: tab)
+                    return true
+                }
             }
-            .scrollClipDisabled()
-
+            Spacer(minLength: 8)
             if current != .settings {
-                // 右端固定图标组——不随页签滚动
                 // 新建：手动输入 / ⌥Space 语音 / ⌘V 贴图识别（记住来源面板，完成后回面板）
                 PanelIconButton(symbol: "plus") { store.presentQuickInput() }
                 // 系统组：刷新（同步 Jira/日历）+ 设置

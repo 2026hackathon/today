@@ -147,8 +147,6 @@ struct IslandRootView: View {
                 SettingsPanel()
             } else if tab == .calendar {
                 CalendarPanel()
-            } else if tab == .events {
-                EventsPanel()
             } else {
                 TodayPanel()
             }

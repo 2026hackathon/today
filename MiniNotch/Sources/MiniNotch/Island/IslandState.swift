@@ -9,9 +9,7 @@ import Foundation
 // + 合并时间线 Calendar。rawValue 稳定（持久化 tabOrder 用）。
 enum PanelTab: String, CaseIterable, Sendable {
     case today = "Today"
-    case tasks = "任务"        // Todo —— 全部未完成个人任务
     case workItems = "工作项"  // WorkItem —— 全部 Jira/GitHub
-    case events = "日历事件"   // CalendarEvent —— 纯事件议程
     case calendar = "日历"     // 合并时间线（事件 + 任务，later-into-calendar）
     case messages = "消息"     // Message + Mention（内部分段）
     case agent = "Agent"
@@ -21,9 +19,7 @@ enum PanelTab: String, CaseIterable, Sendable {
     var title: String {
         switch self {
         case .today: "Today"
-        case .tasks: "Tasks"
         case .workItems: "Work"
-        case .events: "Events"
         case .calendar: "Calendar"
         case .messages: "Inbox"    // 邮件消息 + @我提及
         case .agent: "Agent"
