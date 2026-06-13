@@ -55,22 +55,28 @@ enum EmailClassifier {
         }
     }
 
-    /// 链接归一（IMAP 用）：slack/jira 深链 → 邮件链接（message://）兜底
+    /// 链接归一（IMAP 用）：slack/jira 深链 → email 来源的「原邮箱链接」兜底
     static func normalizedLink(
-        source: MessageSource, body: String, messageId: String
+        source: MessageSource, body: String, messageId: String, host: String
     ) -> URL? {
-        deepLink(source: source, body: body) ?? mailLink(messageId: messageId, body: body)
+        deepLink(source: source, body: body) ?? mailLink(messageId: messageId, host: host)
     }
 
-    /// 邮件链接：优先 message:// 唤起本地邮件客户端，无 Message-ID 时回退正文里的 http 链接
-    private static func mailLink(messageId: String, body: String) -> URL? {
+    /// email 来源的原邮箱链接：直接指向邮箱网页端那封原始邮件，点开即原邮件。
+    /// Gmail → 网页端 rfc822msgid 链接；其余通用 IMAP 无已知 webmail 时才回退
+    /// `message://`（唤起本地邮件客户端，最后兜底）。不再扫描正文 http 链接。
+    private static func mailLink(messageId: String, host: String) -> URL? {
         let trimmed = messageId.trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
-        if !trimmed.isEmpty,
-           let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-           let url = URL(string: "message://%3C\(encoded)%3E") {
-            return url
+        guard !trimmed.isEmpty,
+              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+        else { return nil }
+
+        // Gmail：用 Message-ID 打开 Gmail 网页端的原始邮件（不走苹果邮箱 message://）
+        if host.lowercased().contains("gmail.com") {
+            return URL(string: "https://mail.google.com/mail/u/0/#search/rfc822msgid:\(encoded)")
         }
-        return firstMatch(in: body, pattern: #"https?://[^\s"'<>]+"#)
+        // 通用 IMAP 兜底：无 webmail 链接，唤起本地邮件客户端
+        return URL(string: "message://%3C\(encoded)%3E")
     }
 
     private static func firstMatch(in text: String, pattern: String) -> URL? {
@@ -174,7 +180,7 @@ final class MockEmailService: EmailService {
             return EmailDigestInput(
                 messageId: id,
                 source: source,
-                link: EmailClassifier.normalizedLink(source: source, body: body, messageId: id),
+                link: EmailClassifier.normalizedLink(source: source, body: body, messageId: id, host: domain),
                 sender: sender,
                 subject: subject,
                 bodyExcerpt: EmailPreprocess.excerpt(body),
@@ -260,7 +266,7 @@ final class RealEmailService: EmailService {
             out.append(EmailDigestInput(
                 messageId: messageId,
                 source: source,
-                link: EmailClassifier.normalizedLink(source: source, body: raw.body, messageId: messageId),
+                link: EmailClassifier.normalizedLink(source: source, body: raw.body, messageId: messageId, host: host),
                 sender: raw.displayName.isEmpty ? raw.from : raw.displayName,
                 subject: raw.subject,
                 bodyExcerpt: EmailPreprocess.excerpt(raw.body),

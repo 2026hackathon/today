@@ -47,7 +47,8 @@ final class GraphEmailService: EmailService {
             let body = msg.bodyPreview ?? ""
             let source = EmailClassifier.source(fromDomain: domain, listId: nil, body: body)
             let webURL = msg.webLink.flatMap { URL(string: $0) }
-            // slack/jira 优先深链，否则用 OWA webLink（email 直接 webLink）
+            // 链接归一契约：email 来源的原邮箱链接 = Graph 的 webLink（OWA 原邮件 web 链接，
+            // 点开即邮箱里那封原始邮件）。slack/jira 仍优先正文深链。
             let link = EmailClassifier.deepLink(source: source, body: body) ?? webURL
 
             return EmailDigestInput(
