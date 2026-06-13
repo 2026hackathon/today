@@ -124,8 +124,10 @@ struct AgentSessionRow: View {
     private var icon: String {
         switch session.state {
         case .working: "cpu"
-        case .waiting: "bell.badge.fill"  // 与刘海待处理徽章一致
-        case .replied: "checkmark.seal.fill"
+        // 待确认 / 完成待 review 都用铃铛（与刘海待处理徽章一致），靠颜色区分：
+        // 等待确认=橙、完成待 review=绿
+        case .waiting: "bell.badge.fill"
+        case .replied: "bell.badge.fill"
         case .ended: "xmark.circle"
         }
     }
