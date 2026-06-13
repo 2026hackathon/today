@@ -45,7 +45,10 @@ struct TodayPanel: View {
 
     private var greeting: String {
         var parts = ["今天 \(store.todayFocusCount) 个任务"]
-        if !store.todayMeetings.isEmpty { parts.append("\(store.todayMeetings.count) 场会议") }
+        // 只算真实会议(排除提醒事项——它们以 .calendar 任务计入「任务」)且未完成的，
+        // 否则已完成的提醒会被错当成「N 场会议」显示，列表里却看不到
+        let meetingCount = store.todayMeetings.filter { !$0.isReminder && !store.isMeetingCompleted($0) }.count
+        if meetingCount > 0 { parts.append("\(meetingCount) 场会议") }
         if !store.overdueTodos.isEmpty { parts.append("\(store.overdueTodos.count) 项超期") }
         return parts.joined(separator: "、")
     }
