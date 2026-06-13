@@ -75,8 +75,9 @@ enum EmailClassifier {
         if host.lowercased().contains("gmail.com") {
             return URL(string: "https://mail.google.com/mail/u/0/#search/rfc822msgid:\(encoded)")
         }
-        // 通用 IMAP 兜底：无 webmail 链接，唤起本地邮件客户端
-        return URL(string: "message://%3C\(encoded)%3E")
+        // 通用 IMAP 无已知 webmail：不再回退 message://——该 scheme 仅当邮件恰好在本机
+        // Mail.app 才打得开，SES/IMAP 邮件点了只会弹「MCMailErrorDomain 1030」。无链接即不显示跳转箭头。
+        return nil
     }
 
     private static func firstMatch(in text: String, pattern: String) -> URL? {
@@ -114,6 +115,56 @@ enum EmailPreprocess {
         let noiseWords = ["unsubscribe", "退订", "促销", "newsletter", "广告", "newsletter",
                           "verify your email", "验证码", "对账单", "账单通知", "daily digest"]
         return noiseDomains.contains(where: d.contains) || noiseWords.contains(where: s.contains)
+    }
+
+    /// 这些来源已有专属页签，其通知邮件不再进「消息」收件箱，避免与其它页签内容重复：
+    /// Jira/Confluence → Mentions 页签；GitHub → Today 的 Jira·GitHub 区。
+    static func isCoveredByOtherTab(domain: String, source: MessageSource) -> Bool {
+        if source == .jira { return true }              // Jira/Confluence 通知（atlassian.net）
+        return domain.lowercased().hasSuffix("github.com")  // GitHub 通知邮件
+    }
+
+    // MARK: 非真人自动通知过滤（收件箱只留真人需处理邮件）
+
+    /// 发件地址 localpart 命中自动发件特征（no-reply / notifications / team / mailer …）。
+    /// 这是最稳的信号：自动邮件几乎都用这类专用地址，真人邮件极少。
+    static func isAutomatedAddress(_ from: String) -> Bool {
+        let local = (from.lowercased().split(separator: "@").first.map(String.init) ?? "")
+        let markers = ["no-reply", "noreply", "no_reply", "donotreply", "do-not-reply",
+                       "notification", "notify", "mailer", "mailer-daemon", "bounce",
+                       "automated", "auto-confirm", "newsletter", "digest", "marketing",
+                       "updates", "alerts", "account-security", "security-noreply"]
+        if markers.contains(where: local.contains) { return true }
+        // 纯结构化别名（team/hello/news/info/support/notifications）按整段匹配，避免误伤 teamlead.li 之类
+        let exact = ["team", "hello", "news", "info", "support", "notifications", "noreply-marketing"]
+        return exact.contains(local)
+    }
+
+    /// 主题像「知会/通知/digest/活动/邀请/纪要」这类无需真人回应的内容（地址拿不到时也能判，如已落盘消息）
+    static func looksLikeNotificationSubject(_ subject: String) -> Bool {
+        let s = subject.lowercased()
+        let words = ["digest", "weekly", "newsletter", "changelog", "release note",
+                     "what's new", "what’s new", "product update", "activity in",
+                     "summary of", "meeting notes", "invitation to", "invited you",
+                     "you're invited", "you’re invited", "security alert", "sign-in",
+                     "周报", "月报", "更新", "活动", "纪要", "邀请你加入", "受邀", "知会", "通知"]
+        return words.contains(where: s.contains)
+    }
+
+    /// 收件箱过滤：非真人发来的自动通知/产品更新/营销/系统告警 —— 自动发件地址 或 通知类主题。
+    static func isAutomatedNotification(from: String, subject: String) -> Bool {
+        isAutomatedAddress(from) || looksLikeNotificationSubject(subject)
+    }
+
+    /// 已落盘消息的兜底判定（无原始发件地址，只有展示名 + 原主题）：
+    /// 展示名含 no-reply/notifications/team/bot/security/support 等，或主题像通知类。
+    static func isAutomatedSenderName(_ name: String, subject: String) -> Bool {
+        let n = name.lowercased()
+        let nameMarkers = ["no-reply", "noreply", "notification", "notifications", "team",
+                           "bot", "security", "support", "mailer", "newsletter", "digest",
+                           "do not reply", "automated", "alerts", "no reply"]
+        if nameMarkers.contains(where: n.contains) { return true }
+        return looksLikeNotificationSubject(subject)
     }
 }
 
@@ -175,8 +226,12 @@ final class MockEmailService: EmailService {
         // 经真实分类/归一/预处理产出（Mock 也走同一套逻辑，保证 demo 即验证）
         return raws.compactMap { id, from, sender, subject, listId, body in
             let domain = from.split(separator: "@").last.map(String.init) ?? ""
-            guard !EmailPreprocess.isNoise(domain: domain, subject: subject) else { return nil }
+            guard !EmailPreprocess.isNoise(domain: domain, subject: subject),
+                  !EmailPreprocess.isAutomatedNotification(from: from, subject: subject)
+            else { return nil }
             let source = EmailClassifier.source(fromDomain: domain, listId: listId, body: body)
+            // 与真实现一致：Jira/Confluence/GitHub 通知邮件不进消息收件箱（已有专属页签）
+            guard !EmailPreprocess.isCoveredByOtherTab(domain: domain, source: source) else { return nil }
             return EmailDigestInput(
                 messageId: id,
                 source: source,
@@ -260,8 +315,13 @@ final class RealEmailService: EmailService {
             guard let raw = try? await conn.fetchMessage(uid: uid) else { continue }
             let domain = raw.from.split(separator: "@").last.map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "> ")) } ?? ""
             // 送 AI 之前的一段代码过滤：丢弃明显噪音/无效邮件
-            guard !EmailPreprocess.isNoise(domain: domain, subject: raw.subject) else { continue }
+            guard !EmailPreprocess.isNoise(domain: domain, subject: raw.subject),
+                  // 非真人自动通知/产品更新/营销/系统告警：收件箱只留真人需处理邮件
+                  !EmailPreprocess.isAutomatedNotification(from: raw.from, subject: raw.subject)
+            else { continue }
             let source = EmailClassifier.source(fromDomain: domain, listId: raw.listId, body: raw.body)
+            // Jira/Confluence/GitHub 通知邮件已在 Mentions/Today 呈现，不重复进消息收件箱
+            guard !EmailPreprocess.isCoveredByOtherTab(domain: domain, source: source) else { continue }
             let messageId = raw.messageId.isEmpty ? "imap-\(uid)" : raw.messageId
             out.append(EmailDigestInput(
                 messageId: messageId,

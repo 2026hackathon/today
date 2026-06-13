@@ -568,7 +568,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //    !Self.isOffice365IMAP(s.emailImapHost) {
         //     services.append(RealEmailService(host: s.emailImapHost, email: s.emailAddress, auth: .password(password)))
         // }
-        return services.isEmpty ? [mockEmailService] : services
+        // 未连接任何邮箱 → 返回空，不再用 Mock 假数据填充消息页（用户要求去掉 mock）。
+        // MockEmailService 仍保留，只供 Debug 菜单「模拟新邮件」显式演示。
+        return services
     }
 
     /// O365 IMAP 主机 —— 基础认证已被禁用，密码 IMAP 必失败，应跳过（走 Microsoft 登录/Graph）。
@@ -580,9 +582,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 拉取一轮邮件：多来源各自 fetch（来源识别/链接归一/隐私预处理在服务层完成），
     /// 跨来源按 messageId 去重，再调 AI 分析重要级别 + ≤20 字一句话建议入库。
     /// 去重在 AI 之前（避免对已知邮件重复打 LLM）；首轮静默不弹卡。
-    private func syncEmail(notify: Bool) async {
+    private func syncEmail(notify: Bool, services: [EmailService]? = nil) async {
         var inputs: [EmailDigestInput] = []
-        for service in currentEmailServices() {
+        for service in (services ?? currentEmailServices()) {
             if let got = try? await service.fetchNewMessages() { inputs.append(contentsOf: got) }
         }
         guard !inputs.isEmpty else { return }
@@ -1020,9 +1022,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func debugNewMail() {
         mockEmailService.extraMailArmed = true
         Task { @MainActor in
-            // 演示需弹卡：先确保已过首轮静默基线
+            // 演示需弹卡：先确保已过首轮静默基线。Mock 不再是默认来源，显式传入。
             emailBaselineSynced = true
-            await syncEmail(notify: true)
+            await syncEmail(notify: true, services: [mockEmailService])
         }
     }
 

@@ -94,15 +94,15 @@ struct CompactContent: View {
             // 今日可动手的事清零 → 右翼绿色打钩（用户指定放这一侧）
             compactIcon("checkmark.circle.fill", color: DS.Colors.success)
         case .celebrate:
-            sideText("清空", color: DS.Colors.text3)
+            sideText("Clear", color: DS.Colors.text3)
         case .near:
-            sideText("\(minutesToNextDue) 分钟", color: DS.Colors.text2)
+            sideText("\(minutesToNextDue) min", color: DS.Colors.text2)
         case .urgent:
-            sideText(isOverdue ? "已超时" : "\(minutesToNextDue) 分钟", color: urgentColor)
+            sideText(isOverdue ? "Overdue" : "\(minutesToNextDue) min", color: urgentColor)
         case .aiWorking:
             BouncingDots()
         case .justCompleted:
-            sideText("−1 完成", color: DS.Colors.text2)
+            sideText("−1 done", color: DS.Colors.text2)
         default: // .normal 及兜底
             // 今日还有定时项 → 下一个截止时间；今日的提醒/会议都清空了 →
             // 不再向前看「明天 / Next 周一」(用户指定:今天的都完成了就别提示明天)，

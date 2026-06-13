@@ -41,8 +41,10 @@ final class GraphEmailService: EmailService {
             let address = msg.from?.emailAddress?.address ?? ""
             let domain = address.split(separator: "@").last.map(String.init) ?? ""
             let subject = msg.subject ?? ""
-            // 送 AI 之前的一段代码过滤：丢弃明显噪音/无效邮件
-            guard !EmailPreprocess.isNoise(domain: domain, subject: subject) else { return nil }
+            // 送 AI 之前的一段代码过滤：丢弃明显噪音/无效邮件 + 非真人自动通知（收件箱只留真人需处理）
+            guard !EmailPreprocess.isNoise(domain: domain, subject: subject),
+                  !EmailPreprocess.isAutomatedNotification(from: address, subject: subject)
+            else { return nil }
 
             let body = msg.bodyPreview ?? ""
             let source = EmailClassifier.source(fromDomain: domain, listId: nil, body: body)

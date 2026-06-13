@@ -468,7 +468,9 @@ final class OpenAIChatAIService: AIService {
         let system = """
         你是邮件提醒助手。逐封分析邮件并输出：\
         importance（high=需我尽快行动/老板或客户催办/明确截止，medium=一般待办，low=仅知会/通知类），\
-        suggestion（一句话行动建议，**20 个汉字以内**、不换行、不加引号，点明该做什么）。\
+        suggestion（提炼这封邮件最关键的一件事——对方具体要我做什么、或我必须知道的核心信息，\
+        务必带上关键对象：人名 / 单号 / 截止时间；去掉寒暄、签名、客套和无关细节；\
+        纯知会类直接概括要点即可。**20 个汉字以内**、不换行、不加引号、不要用「查看…」「了解…」这类空泛说法）。\
         只输出 JSON 对象：{"results": [{"index": 0, "importance": "high|medium|low", "suggestion": "..."}]}，\
         index 与输入序号一致、覆盖全部邮件。只依据给定内容，不要臆造。
         """

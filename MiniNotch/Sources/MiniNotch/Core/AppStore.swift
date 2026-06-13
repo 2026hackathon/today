@@ -313,7 +313,19 @@ final class AppStore: ObservableObject {
         // Debug 菜单「重置演示数据」显式载入（Demo 兜底）
         todos = Persistence.load([Todo].self, from: "todos.json") ?? []
         meetings = Persistence.load([Meeting].self, from: "meetings.json") ?? []
-        messages = Persistence.load([Message].self, from: "messages.json") ?? []
+        // 清洗历史落盘消息：① 去掉演示邮件（Mock 固定数据）② 去掉 Jira/Confluence 通知
+        // （已在 Mentions 页签呈现，不重复）③ 去掉非真人自动通知（产品更新/营销/系统告警/邀请等，
+        // 按展示名+原主题兜底判定）④ 抹掉打不开的 message:// 链接（点了只会弹 Mail 1030 错误）
+        messages = (Persistence.load([Message].self, from: "messages.json") ?? [])
+            .filter { msg in
+                !Self.isDemoMessageId(msg.messageId)
+                    && msg.source != .jira
+                    && !EmailPreprocess.isAutomatedSenderName(msg.sender ?? "", subject: msg.rawSubject ?? "")
+            }
+            .map { msg in
+                guard msg.link?.scheme == "message" else { return msg }
+                var m = msg; m.link = nil; return m
+            }
         if let saved = Persistence.load(AppSettings.self, from: "settings.json") {
             settings = saved
         }
@@ -780,6 +792,11 @@ final class AppStore: ObservableObject {
 
     /// 未处理消息数（消息页签角标）
     var unprocessedMessageCount: Int { messages.lazy.filter { !$0.isProcessed }.count }
+
+    /// 演示邮件 messageId（MockEmailService 固定前缀）：用于启动时清掉历史落盘的假数据
+    static func isDemoMessageId(_ id: String) -> Bool {
+        ["slack-demo", "jira-demo", "email-demo", "urgent-"].contains { id.hasPrefix($0) }
+    }
 
     /// 合并新消息：按 messageId 去重（已存在的保留已处理状态不覆盖）。
     /// notify 且 compact 态时，新消息弹降落通知卡（同轮多条聚合为「N 条」）。
