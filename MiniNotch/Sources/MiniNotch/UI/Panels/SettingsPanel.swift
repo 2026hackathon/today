@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import AppKit
 
 // ============================================================
 // SettingsPanel —— 设置面板（prototype `settings` 状态，460×540）。
@@ -21,7 +20,9 @@ struct SettingsPanel: View {
                     integrationSection
                     emailSection
                     reminderSection
-                    diskCleanupSection
+                    // 磁盘清理入口暂隐藏（实现保留在下方 diskCleanupSection / DiskCleanupContent，
+                    // 恢复时取消注释本行即可；服务与 AppStore 状态均无需改动）
+                    // diskCleanupSection
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
