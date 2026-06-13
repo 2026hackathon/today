@@ -101,10 +101,38 @@ final class AppStore: ObservableObject {
     /// ⌥Space 语音速记：QuickInputCard onAppear 读到 true 即自动开始聆听，用后自清
     @Published var quickInputAutoVoice = false
 
+    /// 从展开面板里点 + 进 quickInput 时记住来源 tab：完成/取消后回到面板继续操作，
+    /// 而不是一路收起到刘海再让用户重新挪回去。nil = 来源是 compact（全局 ⌥Space 等），回落 compact。
+    private var quickInputOrigin: PanelTab?
+
+    private var currentExpandedTab: PanelTab? {
+        if case .expanded(let tab) = islandState { return tab }
+        return nil
+    }
+
+    /// 点 + 弹快速录入：记住来源面板（手动新建不自动语音）。
+    /// 注意先取来源再 present——present 会把 islandState 切成 .quickInput 并清空 origin。
+    func presentQuickInput() {
+        let origin = currentExpandedTab
+        quickInputAutoVoice = false
+        present(.quickInput)
+        quickInputOrigin = origin
+    }
+
+    /// quickInput 完成/取消：有来源面板就回到面板继续操作，否则回落 compact
+    func closeQuickInput() {
+        guard let tab = quickInputOrigin else { dismiss(); return }
+        quickInputNotice = nil
+        cardHeld = false
+        present(.expanded(tab: tab))   // present 内部已清空 quickInputOrigin
+    }
+
     /// 弹出快速录入并自动开始语音（全局热键/菜单调用）
     func presentVoiceInput() {
+        let origin = currentExpandedTab
         quickInputAutoVoice = true
         present(.quickInput)
+        quickInputOrigin = origin
     }
     /// 提醒事项任务完成/撤销 → EventKit 回写（calendarItemIdentifier, 完成态），AppDelegate 装配
     var onReminderCompletionChanged: ((String, Bool) -> Void)?
@@ -298,6 +326,7 @@ final class AppStore: ObservableObject {
     /// 切换到事件态（卡片/展开/晨晚报）
     func present(_ state: IslandState) {
         cardHeld = false
+        quickInputOrigin = nil   // 默认清空；presentQuickInput/Voice 会在 present 之后重设
         withAnimation(IslandAnimation.spring) { islandState = state }
     }
 

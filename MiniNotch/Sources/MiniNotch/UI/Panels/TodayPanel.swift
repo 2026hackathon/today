@@ -606,8 +606,9 @@ struct PanelTabBar: View {
             }
             Spacer(minLength: 8)
             if current != .settings {
-                // 新建：手动输入 / ⌥Space 语音 / ⌘V 贴图识别（贴图功能已并入快速录入框）
-                PanelIconButton(symbol: "plus") { store.present(.quickInput) }
+                // 新建：手动输入 / ⌥Space 语音 / ⌘V 贴图识别（贴图功能已并入快速录入框）。
+                // 记住来源面板，取消/创建后回到面板继续操作，不一路收起到刘海
+                PanelIconButton(symbol: "plus") { store.presentQuickInput() }
                 // 系统组：刷新（同步 Jira/日历）+ 设置
                 PanelRefreshButton()
                 PanelIconButton(symbol: "gearshape.fill") { store.present(.expanded(tab: .settings)) }

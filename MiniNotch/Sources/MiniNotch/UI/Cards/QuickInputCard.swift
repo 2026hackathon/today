@@ -454,7 +454,7 @@ struct QuickInputCard: View {
 
             Spacer()
 
-            Button("取消") { store.dismiss() }
+            Button("取消") { store.closeQuickInput() }
                 .buttonStyle(DSGhostButtonStyle(fullWidth: false))
 
             Button(pastedImage != nil ? "识图创建" : "创建") { create() }
@@ -479,7 +479,7 @@ struct QuickInputCard: View {
         // 先回落 compact，让 isAIWorking 驱动识图流光；识别成功/失败由流水线接管呈现。
         if let png = pastedPNG {
             store.recognizeImage(png)
-            store.dismiss()
+            store.dismiss()   // 识图走 AI 流水线：须回落 compact 播流光，再由流水线弹 newTask
             return
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -490,7 +490,7 @@ struct QuickInputCard: View {
             // 无解析结果 / 跳过 AI：原文本做标题 + 手动选择的截止/优先级
             store.add(Todo(title: trimmed, source: .manual, priority: manualPriority, dueDate: manualDue))
         }
-        store.dismiss()
+        store.closeQuickInput()   // 来自面板就回到面板（能看到刚加的任务），否则回落 compact
     }
 }
 
