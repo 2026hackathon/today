@@ -161,11 +161,12 @@ final class AppStore: ObservableObject {
         if becameReplied, let replied { onAgentReplied?(replied) }
     }
 
-    /// 陈旧清理：working 超 30min / 其它超 2h 无更新 → 视为结束（agent 崩溃兜底）
+    /// 陈旧清理：运行中的会话视为"开着"不清理（Agent tab 要展示所有打开的 session）；
+    /// 已完成/待确认的长时间(6h)无更新才清（兜底，正常靠 SessionEnd 移除）
     func sweepStaleAgentSessions(now: Date = Date()) {
         agentSessions.removeAll { s in
-            let idle = now.timeIntervalSince(s.updatedAt)
-            return idle > (s.state == .working ? 30 * 60 : 2 * 3600)
+            guard s.state != .working else { return false } // 运行中 = 开着，永不清
+            return now.timeIntervalSince(s.updatedAt) > 6 * 3600
         }
     }
 
