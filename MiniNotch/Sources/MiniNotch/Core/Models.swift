@@ -408,6 +408,31 @@ struct ReportContext: Sendable {
 
 // MARK: - 应用设置
 
+// MARK: - 全局热键配置（用户可改键）
+
+/// 全局热键的键码与修饰键。keyCode = Carbon kVK_*（如 F2=0x78）；
+/// modifiers = Carbon 修饰键掩码（cmdKey=256 / shiftKey=512 / optionKey=2048 / controlKey=4096，可叠加）。
+/// keyLabel = 录制时从事件取的人类可读基键名（如 "F2"/"Space"/"K"），用于设置页展示，免维护键码→名表。
+struct HotKeyConfig: Codable, Equatable, Sendable {
+    var keyCode: Int
+    var modifiers: Int
+    var keyLabel: String
+
+    static let todoDefault = HotKeyConfig(keyCode: 0x78, modifiers: 0, keyLabel: "F2")
+    static let favoriteDefault = HotKeyConfig(keyCode: 0x63, modifiers: 0, keyLabel: "F3")
+    static let voiceDefault = HotKeyConfig(keyCode: 0x31, modifiers: 2048, keyLabel: "Space") // ⌥Space
+
+    /// 设置页展示串：修饰键符号 + 基键名（如 "⌥Space"、"⌘⇧K"、"F2"）
+    var display: String {
+        var s = ""
+        if modifiers & 4096 != 0 { s += "⌃" }
+        if modifiers & 2048 != 0 { s += "⌥" }
+        if modifiers & 512 != 0 { s += "⇧" }
+        if modifiers & 256 != 0 { s += "⌘" }
+        return s + keyLabel
+    }
+}
+
 struct AppSettings: Codable, Equatable, Sendable {
     /// 勿扰时段（小时，22 → 22:00）
     var quietHourStart = 22
@@ -429,9 +454,10 @@ struct AppSettings: Codable, Equatable, Sendable {
     var jiraPollSeconds = 60
     /// GitHub Personal Access Token（拉取待我 review / 指派给我的 PR；空走 Mock）
     var githubToken = ""
-    /// 飞书 webhook / Bark 推送
-    var feishuWebhook = ""
-    var barkToken = ""
+    /// 全局热键（用户可在设置里改键，避免与其它软件冲突；keyCode/modifiers 见 HotKeyConfig）
+    var todoHotKey = HotKeyConfig.todoDefault       // 截图 → Todo（默认 F2）
+    var favoriteHotKey = HotKeyConfig.favoriteDefault // 截图收藏（默认 F3）
+    var voiceHotKey = HotKeyConfig.voiceDefault     // 语音速记（默认 ⌥Space）
     /// 邮件接入（email-integration spec）：host + 账号 + 应用密码齐全 → RealEmailService(IMAP)。
     /// 应用密码不在此存储 —— 走 Keychain（AppStore.emailAppPassword，design D7）；
     /// 这里只放非敏感的 IMAP 主机与账号。
@@ -459,8 +485,9 @@ struct AppSettings: Codable, Equatable, Sendable {
         jiraAPIToken = try c.decodeIfPresent(String.self, forKey: .jiraAPIToken) ?? ""
         jiraPollSeconds = try c.decodeIfPresent(Int.self, forKey: .jiraPollSeconds) ?? 60
         githubToken = try c.decodeIfPresent(String.self, forKey: .githubToken) ?? ""
-        feishuWebhook = try c.decodeIfPresent(String.self, forKey: .feishuWebhook) ?? ""
-        barkToken = try c.decodeIfPresent(String.self, forKey: .barkToken) ?? ""
+        todoHotKey = try c.decodeIfPresent(HotKeyConfig.self, forKey: .todoHotKey) ?? .todoDefault
+        favoriteHotKey = try c.decodeIfPresent(HotKeyConfig.self, forKey: .favoriteHotKey) ?? .favoriteDefault
+        voiceHotKey = try c.decodeIfPresent(HotKeyConfig.self, forKey: .voiceHotKey) ?? .voiceDefault
         emailAddress = try c.decodeIfPresent(String.self, forKey: .emailAddress) ?? ""
         emailImapHost = try c.decodeIfPresent(String.self, forKey: .emailImapHost) ?? ""
         tabOrder = try c.decodeIfPresent([String].self, forKey: .tabOrder) ?? []

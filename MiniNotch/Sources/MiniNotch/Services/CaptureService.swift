@@ -24,8 +24,10 @@ protocol CaptureService: AnyObject {
     var onTodoCapture: ((Data, _ savedPath: String) -> Void)? { get set }
     /// F3 收藏完成：落盘路径（不走 AI）
     var onFavoriteCapture: ((String) -> Void)? { get set }
-    /// 注册全局热键（应用启动时调用一次）
+    /// 安装事件 handler（应用启动时调用一次）
     func start()
+    /// 按配置（重新）注册全局热键。设置里改键后再次调用即可热生效，无需重启。
+    func applyHotKeys(todo: HotKeyConfig, favorite: HotKeyConfig, voice: HotKeyConfig)
     /// 手动触发（菜单/Debug 用）
     func captureForTodo()
     func captureForFavorite()
@@ -104,11 +106,20 @@ final class HotkeyCaptureService: CaptureService {
             NSLog("[Capture] InstallEventHandler failed: \(installStatus)")
             return
         }
+        // 具体热键由 applyHotKeys(...) 注册（AppDelegate 启动后用 settings 调用一次，改键后再调）
+    }
 
-        // 2. 注册 F2 / F3（无 modifier）+ ⌥Space 语音速记（避开 Spotlight 的 ⌘Space）
-        registerHotKey(keyCode: UInt32(kVK_F2), id: .todo)      // 0x78
-        registerHotKey(keyCode: UInt32(kVK_F3), id: .favorite)  // 0x63
-        registerHotKey(keyCode: UInt32(kVK_Space), id: .voice, modifiers: UInt32(optionKey))
+    /// 按配置重注册：先注销全部旧热键，再注册三个新键（被占用的单个失败只打日志，不影响其它）
+    func applyHotKeys(todo: HotKeyConfig, favorite: HotKeyConfig, voice: HotKeyConfig) {
+        for ref in hotKeyRefs { UnregisterEventHotKey(ref) }
+        hotKeyRefs.removeAll()
+        registerHotKey(todo, id: .todo)
+        registerHotKey(favorite, id: .favorite)
+        registerHotKey(voice, id: .voice)
+    }
+
+    private func registerHotKey(_ config: HotKeyConfig, id: HotKeyID) {
+        registerHotKey(keyCode: UInt32(config.keyCode), id: id, modifiers: UInt32(config.modifiers))
     }
 
     private func registerHotKey(keyCode: UInt32, id: HotKeyID, modifiers: UInt32 = 0) {

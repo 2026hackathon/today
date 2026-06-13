@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // ============================================================
@@ -47,14 +48,19 @@ struct SettingsPanel: View {
         }
     }
 
-    // MARK: - 快捷键（只读展示）
+    // MARK: - 快捷键（可改键：点录制按下新组合，避免与其它软件冲突）
 
     private var hotkeySection: some View {
-        SettingsSection(label: "快捷键") {
-            SettingsRow(label: "截图 → Todo") { SettingsValueText("F2") }
-            SettingsRow(label: "截图收藏") { SettingsValueText("F3") }
-            SettingsRow(label: "快速新建") { SettingsValueText("⌘N") }
-            SettingsRow(label: "展开/收起") { SettingsValueText("⌘⇧L") }
+        SettingsSection(label: "全局快捷键") {
+            SettingsRow(label: "截图 → Todo") {
+                HotKeyRecorderField(config: $store.settings.todoHotKey, defaultConfig: .todoDefault)
+            }
+            SettingsRow(label: "截图收藏") {
+                HotKeyRecorderField(config: $store.settings.favoriteHotKey, defaultConfig: .favoriteDefault)
+            }
+            SettingsRow(label: "语音速记") {
+                HotKeyRecorderField(config: $store.settings.voiceHotKey, defaultConfig: .voiceDefault)
+            }
         }
     }
 
@@ -90,24 +96,6 @@ struct SettingsPanel: View {
             }
             SettingsRow(label: "Token") {
                 SettingsInputField(placeholder: "PAT / gh auth token", text: $store.settings.githubToken, secure: true)
-            }
-
-            SettingsCardDivider()
-
-            SettingsRow(label: "飞书 Webhook") {
-                SettingsStatusText(configured: !store.settings.feishuWebhook.isEmpty)
-            }
-            SettingsRow(label: "URL") {
-                SettingsInputField(placeholder: "https://open.feishu.cn/...", text: $store.settings.feishuWebhook)
-            }
-
-            SettingsCardDivider()
-
-            SettingsRow(label: "Bark Token") {
-                SettingsStatusText(configured: !store.settings.barkToken.isEmpty)
-            }
-            SettingsRow(label: "Token") {
-                SettingsInputField(placeholder: "Bark Token", text: $store.settings.barkToken)
             }
         }
     }
@@ -220,17 +208,101 @@ private struct SettingsRow<Trailing: View>: View {
     }
 }
 
-// MARK: - 只读 value（mono）
+// MARK: - 热键录制（点一下进入录制，按下新组合即写入；Esc 取消，可一键恢复默认）
 
-private struct SettingsValueText: View {
-    let value: String
-    init(_ value: String) { self.value = value }
+private struct HotKeyRecorderField: View {
+    @Binding var config: HotKeyConfig
+    let defaultConfig: HotKeyConfig
+    @State private var recording = false
+    @State private var monitor: Any?
+    @State private var hovering = false
 
     var body: some View {
-        Text(value)
-            .font(DS.Fonts.compactSide)
-            .foregroundStyle(DS.Colors.text3)
+        HStack(spacing: 6) {
+            Button { toggle() } label: {
+                Text(recording ? "按下新组合…" : config.display)
+                    .font(DS.Fonts.compactSide)
+                    .foregroundStyle(recording ? DS.Colors.accent : (hovering ? DS.Colors.text1 : DS.Colors.text3))
+                    .lineLimit(1)
+                    .frame(minWidth: 64)
+                    .padding(.horizontal, 9)
+                    .frame(height: 24)
+                    .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DS.Radius.s)
+                            .strokeBorder(recording ? DS.Colors.accent : DS.Colors.border, lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+
+            if config != defaultConfig {
+                Button { reset() } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(DS.Colors.text3)
+                }
+                .buttonStyle(.plain)
+                .help("恢复默认")
+            }
+        }
+        .onDisappear { stopRecording() }
     }
+
+    private func toggle() { recording ? stopRecording() : startRecording() }
+
+    private func startRecording() {
+        recording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            // Esc（无修饰）取消录制，不改键
+            if event.keyCode == 53,
+               event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
+                stopRecording()
+                return nil
+            }
+            config = HotKeyConfig(
+                keyCode: Int(event.keyCode),
+                modifiers: Self.carbonModifiers(event.modifierFlags),
+                keyLabel: Self.label(for: event)
+            )
+            stopRecording()
+            return nil  // 吞掉事件，不让它继续派发到输入框
+        }
+    }
+
+    private func stopRecording() {
+        recording = false
+        if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+    }
+
+    private func reset() {
+        stopRecording()
+        config = defaultConfig
+    }
+
+    /// NSEvent 修饰键 → Carbon 掩码（cmd 256 / shift 512 / option 2048 / control 4096）
+    private static func carbonModifiers(_ flags: NSEvent.ModifierFlags) -> Int {
+        var m = 0
+        if flags.contains(.command) { m |= 256 }
+        if flags.contains(.shift) { m |= 512 }
+        if flags.contains(.option) { m |= 2048 }
+        if flags.contains(.control) { m |= 4096 }
+        return m
+    }
+
+    /// 基键的人类可读名：功能键/空格等查表，其余取 charactersIgnoringModifiers 大写
+    private static func label(for event: NSEvent) -> String {
+        if let special = specialKeys[event.keyCode] { return special }
+        let chars = (event.charactersIgnoringModifiers ?? "").trimmingCharacters(in: .whitespaces)
+        return chars.isEmpty ? "Key\(event.keyCode)" : chars.uppercased()
+    }
+
+    private static let specialKeys: [UInt16: String] = [
+        0x31: "Space", 0x24: "Return", 0x30: "Tab", 0x33: "Delete",
+        0x7B: "←", 0x7C: "→", 0x7D: "↓", 0x7E: "↑",
+        0x7A: "F1", 0x78: "F2", 0x63: "F3", 0x76: "F4", 0x60: "F5", 0x61: "F6",
+        0x62: "F7", 0x64: "F8", 0x65: "F9", 0x6D: "F10", 0x67: "F11", 0x6F: "F12",
+    ]
 }
 
 // MARK: - Jira 测试连接行（结果就地反馈：成功显示 ticket 数，失败显示原因）

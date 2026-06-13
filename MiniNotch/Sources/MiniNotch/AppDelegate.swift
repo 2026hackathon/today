@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// EventKit 真实日历服务（权限就绪时使用；被拒/失败 → 上层按空列表处理，不用 Mock 填充）
     private let eventKitCalendarService = EventKitCalendarService()
     private lazy var reminderScheduler: ReminderScheduler = TimerReminderScheduler()
-    private lazy var pushService: PushService = NoopPushService()     // owner C: 按 settings 换 Feishu/Bark
+    private lazy var pushService: PushService = NoopPushService()     // 到期提醒走系统通知中心
     /// coding agent 会话监控（agent-session spec，借鉴 Vibe Island）
     private let agentService = AgentSessionService()
 
@@ -202,6 +202,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("[Capture] favorited: \(path)") // TODO(C): 收藏 Tab + AI 打标签
         }
         captureService.start()
+        // 全局热键按 settings 注册，改键即热生效（Published 首发当前值 → 同时完成首次注册）。
+        // removeDuplicates 避免无关设置变更（如输入 Jira token）反复重注册热键。
+        store.$settings
+            .map { [$0.todoHotKey, $0.favoriteHotKey, $0.voiceHotKey] }
+            .removeDuplicates()
+            .sink { [weak self] keys in
+                self?.captureService.applyHotKeys(todo: keys[0], favorite: keys[1], voice: keys[2])
+            }
+            .store(in: &cancellables)
 
         // 到期提醒（reminders spec）：强提醒弹卡 + 推送，弱提醒只刷新 compact 色
         reminderScheduler.onFire = { [weak self] todo, level in
