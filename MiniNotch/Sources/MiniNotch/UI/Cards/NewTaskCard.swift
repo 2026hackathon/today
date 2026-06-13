@@ -289,40 +289,41 @@ struct NewTaskCard: View {
     // MARK: - AI 解释行（外框 [AI] chip + 文案）
 
     private func aiRow(_ text: String) -> some View {
-        // 用 onTapGesture 而非 Button：Button label 不传宽度约束，会让内部 Text 被提议
-        // 无限宽 → 永远一行（lineLimit(nil) 也展不开）。HStack 直接放在 VStack 里宽度才受约束。
-        HStack(alignment: .top, spacing: 7) {
-            Text("AI")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .kerning(0.4)
-                .foregroundStyle(DS.Colors.accent)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3)
-                        .stroke(DS.Colors.accent, lineWidth: 1)
-                )
-            Text(text)
-                .font(DS.Fonts.meta)
-                .foregroundStyle(DS.Colors.text2)
-                .lineSpacing(3)
-                .lineLimit(aiExpanded ? nil : 1)   // 默认一行，展开看全文
-                .frame(maxWidth: .infinity, alignment: .leading)
-            // 展开/收起箭头
-            Image(systemName: aiExpanded ? "chevron.up" : "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(DS.Colors.text3)
-                .padding(.top, 1)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: DS.Radius.s))
-        .contentShape(RoundedRectangle(cornerRadius: DS.Radius.s))
-        .onTapGesture {
+        Button {
             store.cardHeld = true
             withAnimation(.easeOut(duration: 0.18)) { aiExpanded.toggle() }
+        } label: {
+            HStack(alignment: .top, spacing: 7) {
+                Text("AI")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .kerning(0.4)
+                    .foregroundStyle(DS.Colors.accent)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(DS.Colors.accent, lineWidth: 1)
+                    )
+                Text(text)
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.text2)
+                    .lineSpacing(3)
+                    .lineLimit(aiExpanded ? nil : 2)            // 默认 2 行，展开看全文
+                    .fixedSize(horizontal: false, vertical: true) // 强制竖向撑开（多行文字标准解）
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: aiExpanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(DS.Colors.text3)
+                    .padding(.top, 1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+            .contentShape(RoundedRectangle(cornerRadius: DS.Radius.s))
         }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)   // 关键：Button 自身撑满，才会给 label 传有限宽度
         .padding(.bottom, 14)
     }
 
