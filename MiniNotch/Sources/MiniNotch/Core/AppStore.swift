@@ -94,7 +94,7 @@ final class AppStore: ObservableObject {
     /// 运行中（左翼 active 计数）
     var activeAgentCount: Int { agentSessions.filter { $0.state == .working }.count }
     /// 需要你处理：已回复 + 等待确认（右翼计数）
-    var waitingAgentCount: Int { agentSessions.filter { $0.state.needsAttention }.count }
+    var waitingAgentCount: Int { agentSessions.filter { $0.state.needsAttention && isUnseenAgent($0) }.count }
     /// 有任意徽章 → 收缩态加宽
     var hasAgentBadge: Bool { activeAgentCount > 0 || waitingAgentCount > 0 }
 
@@ -166,7 +166,18 @@ final class AppStore: ObservableObject {
 
     /// 跳转到 agent 所属终端 session（Agent 面板/卡片点击），AppDelegate 装配 → AgentSessionService.jumpTo
     var onAgentJump: ((AgentSession) -> Void)?
+
+    /// 已查看（点过跳转）的会话 → 记录当时 updatedAt。Today 栏与铃铛据此隐藏；
+    /// 该会话之后再有新活动（updatedAt 变新）会重新冒出来。Agent tab 仍展示全部。
+    private var seenAgentAt: [String: Date] = [:]
+
+    private func isUnseenAgent(_ s: AgentSession) -> Bool {
+        guard let seen = seenAgentAt[s.id] else { return true }
+        return s.updatedAt > seen
+    }
+
     func jumpToAgent(_ session: AgentSession) {
+        seenAgentAt[session.id] = session.updatedAt   // 点过即视为已查看
         onAgentJump?(session)
         // 先激活目标 app，再收起面板——否则展开的灵动岛盖住目标，像「没反应」
         dismiss()
@@ -180,9 +191,9 @@ final class AppStore: ObservableObject {
         }
     }
 
-    /// Today 的 Agent 栏：只显示需要你处理的（已完成/等待确认），运行中的不在 Today 露出
+    /// Today 的 Agent 栏：需处理（已完成/待确认）且未点击过的，运行中/已查看的不露出
     var attentionAgentSessions: [AgentSession] {
-        sortedAgentSessions.filter { $0.state.needsAttention }
+        sortedAgentSessions.filter { $0.state.needsAttention && isUnseenAgent($0) }
     }
 
     // MARK: - 日历权限（未授权时日历面板空态引导授权）
