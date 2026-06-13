@@ -40,7 +40,7 @@ struct CompactContent: View {
             }
             if store.waitingAgentCount > 0 {
                 AgentBadge(
-                    systemName: "bell.fill",
+                    systemName: "bell.badge.fill",
                     count: store.waitingAgentCount,
                     color: DS.Colors.warning,
                     pulsing: true
@@ -54,9 +54,9 @@ struct CompactContent: View {
         HStack(spacing: 6) {
             switch state {
             case .idle:
-                // 左翼维持「托盘 + 今日总数」（含只读 ticket，与面板口径一致）；
-                // "做完了"的打钩放右翼（用户指定布局）
-                compactIcon("flag.fill", color: DS.Colors.text3)
+                // 左翼维持「清单 + 今日总数」（含只读 ticket，与面板口径一致）；
+                // "做完了"的打钩放右翼（用户指定布局）。idle 低存在感 → 暗灰
+                compactIcon("list.bullet", color: DS.Colors.text3)
                 countText("\(store.todayFocusCount)", color: DS.Colors.text3)
             case .near:
                 // 提前 1h 档：弱脉冲（F-04 动效分级）
@@ -77,8 +77,8 @@ struct CompactContent: View {
             case .celebrate:
                 compactIcon("crown.fill", color: DS.Colors.gold)
                 countText("0", color: DS.Colors.text1)
-            default: // .normal 及兜底
-                compactIcon("flag.fill", color: DS.Colors.text2)
+            default: // .normal 及兜底：清单 + 今日焦点数，亮白（与 agent 蓝/铃铛橙区分）
+                compactIcon("list.bullet", color: DS.Colors.text1)
                 countText("\(store.todayFocusCount)", color: DS.Colors.text1)
             }
         }
