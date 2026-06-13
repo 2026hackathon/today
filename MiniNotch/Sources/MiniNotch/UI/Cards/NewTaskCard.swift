@@ -180,11 +180,12 @@ struct NewTaskCard: View {
     // MARK: - 操作（保存 / 忽略）
 
     private var actions: some View {
+        // 主操作（保存）靠右：macOS 默认按钮在尾部，且与 EditTask/QuickInput 卡保持一致
         HStack(spacing: 6) {
-            Button("保存") { save() }
-                .buttonStyle(DSPrimaryButtonStyle())
             Button("忽略") { store.dismiss() }
                 .buttonStyle(DSGhostButtonStyle())
+            Button("保存") { save() }
+                .buttonStyle(DSPrimaryButtonStyle())
         }
     }
 

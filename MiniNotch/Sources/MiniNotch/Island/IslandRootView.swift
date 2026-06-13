@@ -90,8 +90,6 @@ struct IslandRootView: View {
             }
             .onTapGesture { handleTap() }
             .onHover { handleHover($0) }
-            // 卡片态自动收回：newTask 悬浮 4s 后回落，悬停暂停（F-07）
-            .task(id: autoDismissKey) { await autoDismissIfNeeded() }
             .onPreferenceChange(IslandContentHeightKey.self) { newHeight in
                 Task { @MainActor in applyMeasuredHeight(newHeight) }
             }
@@ -208,26 +206,9 @@ struct IslandRootView: View {
         }
     }
 
-    // MARK: - 卡片自动收回
-
-    private var autoDismissKey: String {
-        if case .newTask(let draft) = store.islandState { return "newTask-\(draft.id)" }
-        return ""
-    }
-
-    private func autoDismissIfNeeded() async {
-        guard case .newTask = store.islandState else { return }
-        try? await Task.sleep(for: .seconds(4))
-        // 暂停条件：悬停中 / 菜单打开（优先级 Menu 弹出时鼠标在菜单上）/
-        // 用户已开始编辑（cardHeld，聚焦或点击过卡片 → 永不自动收，等用户保存/忽略）
-        // （review-fixes #8/#12）
-        while isHovering || store.isMenuTracking || store.cardHeld {
-            try? await Task.sleep(for: .seconds(0.5))
-            if Task.isCancelled { return }
-        }
-        guard !Task.isCancelled, case .newTask = store.islandState else { return }
-        store.dismiss()
-    }
+    // newTask 是「需要用户决策」的可操作卡（保存/忽略），不设倒计时自动收回——
+    // 否则用户还没想清楚卡就消失了。点击别处（失焦）仍会正常关闭，不会一直占着刘海。
+    // 纯通知类卡（jiraLanded/messageLanded/agentLanded）的自动收回另有处理，不走这里。
 }
 
 // MARK: - 内容过渡（灵动岛节奏）
