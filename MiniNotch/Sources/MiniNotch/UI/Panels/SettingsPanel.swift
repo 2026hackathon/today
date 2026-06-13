@@ -97,6 +97,7 @@ struct SettingsPanel: View {
             SettingsRow(label: "Token") {
                 SettingsInputField(placeholder: "PAT / gh auth token", text: $store.settings.githubToken, secure: true)
             }
+            GitHubConnectionTestRow()
         }
     }
 
@@ -583,6 +584,71 @@ private struct JiraConnectionTestRow: View {
                 state = .failure(code == 401 || code == 403
                     ? "认证失败 (\(code))，检查 Email/Token"
                     : "请求失败 HTTP \(code)，检查 URL")
+            } catch {
+                state = .failure("网络错误：\(error.localizedDescription)")
+            }
+        }
+    }
+}
+
+// MARK: - GitHub 测试连接行（拉一次「待我 review + 指派给我」的 open PR）
+
+private struct GitHubConnectionTestRow: View {
+    @EnvironmentObject var store: AppStore
+
+    private enum TestState: Equatable {
+        case idle, testing
+        case success(Int)
+        case failure(String)
+    }
+    @State private var state: TestState = .idle
+
+    var body: some View {
+        HStack(spacing: 8) {
+            switch state {
+            case .idle:
+                Spacer()
+            case .testing:
+                ProgressView().controlSize(.small)
+                Spacer()
+            case .success(let count):
+                Text("✓ 连接正常 · \(count) 个相关 PR")
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.success)
+                Spacer(minLength: 8)
+            case .failure(let message):
+                Text("✗ \(message)")
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.alert)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 8)
+            }
+
+            Button { runTest() } label: {
+                Text(state == .testing ? "测试中…" : "测试连接")
+                    .font(DS.Fonts.button)
+                    .foregroundStyle(DS.Colors.accent)
+            }
+            .buttonStyle(.plain)
+            .disabled(state == .testing)
+        }
+    }
+
+    private func runTest() {
+        let token = store.settings.githubToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { state = .failure("请先填写 Token"); return }
+        state = .testing
+        Task { @MainActor in
+            do {
+                let prs = try await RealGitHubService(token: token).fetchMyPullRequests()
+                state = .success(prs.count)
+            } catch GitHubServiceError.notConfigured {
+                state = .failure("请先填写 Token")
+            } catch GitHubServiceError.http(let code) {
+                state = .failure(code == 401 || code == 403
+                    ? "认证失败 (\(code))，检查 Token / SSO 授权"
+                    : "请求失败 HTTP \(code)")
             } catch {
                 state = .failure("网络错误：\(error.localizedDescription)")
             }
