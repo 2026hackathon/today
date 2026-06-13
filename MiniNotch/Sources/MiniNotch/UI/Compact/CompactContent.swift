@@ -46,6 +46,18 @@ struct CompactContent: View {
                     pulsing: true
                 )
             }
+            // 提前准备徽章（prep-reminder-card spec）：高优先级 prep 收起后常驻，
+            // 点击重开 prep 卡；任务临近/完成时自动清除
+            if store.hasPrepBadge {
+                AgentBadge(
+                    systemName: "hourglass",
+                    count: store.prepBadgeCount,
+                    color: DS.Colors.warning,
+                    pulsing: true
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { store.reopenPrep() }
+            }
         }
     }
 

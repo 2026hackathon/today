@@ -226,6 +226,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             switch level {
             case .due, .overdue:
+                // 到期接管：清除该项提前准备徽章（可能未经 fifteenMin 直接到期）
+                self.store.clearPrep(todo)
                 // 输入态不抢占（打字中的草稿无价）；推送照发，过期级 5 分钟后会再来
                 switch self.store.islandState {
                 case .quickInput, .newTask, .batch: break
@@ -237,13 +239,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NSSound(named: "Glass")?.play()
                 }
                 Task { await self.pushService.push(title: "⏰ 任务到期", body: todo.title) }
-            case .oneHour, .fifteenMin:
+            case .oneHour:
+                // 提前准备（prep-reminder-card spec）：低→仅刷新颜色；
+                // 中→倒计时自收卡；高→常驻卡 + compact 留徽章
+                switch todo.priority {
+                case .low:
+                    self.store.refreshCompactState()
+                case .medium, .high:
+                    self.store.presentPrep(todo)
+                }
+            case .fifteenMin:
+                // 临近接管：清除该项的提前准备徽章，避免与到期提醒重复
+                self.store.clearPrep(todo)
                 self.store.refreshCompactState()
                 // 提前 15min 档「震动」：触控板触觉反馈一次
                 // （F-04：中=橙色脉冲+震动；无 Force Touch 设备自动无感）
-                if level == .fifteenMin {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-                }
+                NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
             }
         }
         // 数据一变就重排提醒
@@ -820,6 +831,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("任务降落卡（模拟 F2 单任务）", #selector(debugNewTask)),
             ("批量识别（模拟会议纪要）", #selector(debugBatch)),
             ("到期提醒卡", #selector(debugReminder)),
+            ("提前准备卡·高（常驻+徽章）", #selector(debugPrepHigh)),
+            ("提前准备卡·中（倒计时自收）", #selector(debugPrepMedium)),
             ("glow①提前（橙慢呼吸 near）", #selector(debugGlowNear)),
             ("glow②临近（橙脉冲 urgent）", #selector(debugGlowWarning)),
             ("glow④过期（红强脉冲）", #selector(debugGlowOverdue)),
@@ -975,6 +988,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let todo = store.pendingTodos.first { $0.dueDate != nil } ?? store.pendingTodos.first
         guard let todo else { return }
         store.present(.reminder(todo: todo))
+    }
+
+    /// 高优先级提前准备卡：常驻不自动消失，收起后 compact 留徽章。
+    /// 注入一条 45 分钟后到期的高优先级日程（仍在提前准备窗口内）便于联调。
+    @objc private func debugPrepHigh() {
+        let todo = Todo(
+            title: "设计评审会准备", source: .manual, kind: .event, priority: .high,
+            dueDate: Date().addingTimeInterval(45 * 60)
+        )
+        store.add(todo)
+        store.presentPrep(todo)
+    }
+
+    /// 中优先级提前准备卡：~6s 倒计时后完全收回，不留徽章。
+    @objc private func debugPrepMedium() {
+        let todo = Todo(
+            title: "提交周报", source: .manual, kind: .reminder, priority: .medium,
+            dueDate: Date().addingTimeInterval(20 * 60)
+        )
+        store.add(todo)
+        store.presentPrep(todo)
     }
 
     // MARK: Debug —— glow 分档预览（直接置 compact 态看发光，数据变化后自动回落）

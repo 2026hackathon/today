@@ -34,12 +34,13 @@ struct IslandRootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    /// agent 徽章额外宽度：运行中 ⚙ + 等待 🔔 各约 40pt（都在左翼并排）
+    /// 左翼徽章额外宽度：agent 运行中 ⚙ + 等待 🔔 + 提前准备 ⏳ 各约 42pt（都在左翼并排）
     private var agentBadgeWidth: CGFloat {
         guard store.islandState.isCompact else { return 0 }
         var w: CGFloat = 0
         if store.activeAgentCount > 0 { w += 42 }
         if store.waitingAgentCount > 0 { w += 42 }
+        if store.hasPrepBadge { w += 42 }
         return w
     }
 
@@ -150,6 +151,9 @@ struct IslandRootView: View {
 
         case .agentLanded(let session):
             AgentLandedCard(session: session, onJump: onJumpToAgent)
+
+        case .prepReminder(let todo, let moreCount):
+            PrepReminderCard(todo: todo, moreCount: moreCount)
 
         case .expanded(let tab):
             if tab == .settings {

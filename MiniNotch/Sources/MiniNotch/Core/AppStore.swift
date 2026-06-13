@@ -419,6 +419,58 @@ final class AppStore: ObservableObject {
         refreshCompactState()
     }
 
+    // MARK: - 提前准备徽章（prep-reminder-card spec）
+    // 瞬态、不持久化：提前准备是当下窗口的事，重启自然清空。
+    // 仅高优先级 lead 触发后入集合 → compact 显示常驻徽章；中/低不入集合。
+
+    @Published private(set) var prepPendingTodoIDs: Set<UUID> = []
+
+    /// 有任意待准备项 → compact 显示提前准备徽章
+    var hasPrepBadge: Bool { !prepPendingTodoIDs.isEmpty }
+    var prepBadgeCount: Int { prepPendingTodoIDs.count }
+
+    /// lead（提前量）到点：高优先级入集合（留徽章），按输入态护栏决定是否弹卡。
+    /// 低优先级不应调此方法（AppDelegate 只对中/高调用）。聚合与 moreCount 在此集中处理。
+    func presentPrep(_ todo: Todo) {
+        if todo.priority == .high { prepPendingTodoIDs.insert(todo.id) }
+        switch islandState {
+        case .quickInput, .newTask, .batch: return   // 不抢占输入态（徽章已就位）
+        case .prepReminder: return                    // 已在展示 prep 卡，其余只进徽章不重复弹
+        default: break
+        }
+        // moreCount = 其余待准备（徽章中）项数：高优先级排除自身
+        let more = max(0, prepBadgeCount - (todo.priority == .high ? 1 : 0))
+        present(.prepReminder(todo: todo, moreCount: more))
+    }
+
+    /// 高优先级「知道了」/点外侧：收卡回落，id 仍在集合 → compact 留徽章
+    func acknowledgePrep(_ todo: Todo) { dismiss() }
+
+    /// 点击提前准备徽章：重新展开最紧近一项 prep 卡
+    func reopenPrep() {
+        prunePrepBadges()
+        let pending = todos.filter { prepPendingTodoIDs.contains($0.id) && !$0.isCompleted }
+        guard let next = pending.min(by: {
+            ($0.effectiveDue ?? .distantFuture) < ($1.effectiveDue ?? .distantFuture)
+        }) else { return }
+        present(.prepReminder(todo: next, moreCount: max(0, pending.count - 1)))
+    }
+
+    /// 提醒接管（fifteenMin/due/overdue）/ 完成 / 删除时清除徽章
+    func clearPrep(_ todo: Todo) { prepPendingTodoIDs.remove(todo.id) }
+
+    /// 自动清除兜底：仅保留「仍存在、未完成、未被 snooze 压住、且距有效截止 > finalWindow」的项
+    func prunePrepBadges() {
+        guard !prepPendingTodoIDs.isEmpty else { return }
+        let now = Date()
+        prepPendingTodoIDs = prepPendingTodoIDs.filter { id in
+            guard let t = todos.first(where: { $0.id == id }), !t.isCompleted else { return false }
+            if let snooze = t.snoozedUntil, snooze > now { return false }
+            guard let anchor = t.snoozedUntil ?? t.dueDate else { return false }
+            return anchor.timeIntervalSince(now) > Double(t.finalWindowMinutes * 60)
+        }
+    }
+
     // MARK: - 状态机操作
 
     /// 切换到事件态（卡片/展开/晨晚报）
@@ -439,6 +491,7 @@ final class AppStore: ObservableObject {
     /// 数据变化后刷新 compact 态（仅当前处于 compact 时生效，不打断卡片/展开态）
     func refreshCompactState() {
         expireCrownIfStale()
+        prunePrepBadges()   // 数据变化时兜底清除已失效的提前准备徽章
         guard islandState.isCompact else { return }
         let derived = derivedCompactState()
         if derived != islandState {
@@ -678,6 +731,7 @@ final class AppStore: ObservableObject {
         guard let i = todos.firstIndex(where: { $0.id == todo.id }) else { return }
         todos[i].completedAt = Date()
         completionFlash += 1
+        prepPendingTodoIDs.remove(todo.id)   // 完成即清除其提前准备徽章
         onTodoCompleted?(todos[i])
 
         // 提醒事项来源：回写 EventKit isCompleted（日历事件无完成语义，不回写）

@@ -55,6 +55,9 @@ enum IslandState: Equatable, Sendable {
     case messageLanded(message: Message, moreCount: Int)
     /// agent 一轮完成通知卡：倒计时自动收回，点击跳转对应终端 session
     case agentLanded(session: AgentSession)
+    /// 提前准备卡（lead/提前量到点）：按优先级分级——高常驻+留徽章 / 中倒计时自收。
+    /// moreCount = 同轮其余待准备数（>0 显示「还有 N 项要准备」）
+    case prepReminder(todo: Todo, moreCount: Int)
 
     // ── 展开态 ──
     case expanded(tab: PanelTab)
@@ -109,7 +112,7 @@ struct IslandGeometry: Equatable {
         case .newTask:
             // 比通知卡宽：要容下「优先级/时间/提前」三个 badge + 展开的选项 chip
             return .init(width: 460, height: nil, cornerRadius: DS.Radius.island)
-        case .reminder, .jiraLanded, .messageLanded, .agentLanded:
+        case .reminder, .jiraLanded, .messageLanded, .agentLanded, .prepReminder:
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)
         case .batch:
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)
