@@ -378,27 +378,32 @@ final class AgentSessionService {
         export const MiniNotchPlugin: Plugin = async ({ directory }) => {
           return {
             event: async ({ event }: any) => {
-              const p = event.properties ?? {}
-              const sid = p.sessionID ?? p.sessionId ?? p.info?.id ?? directory
-              // opencode 自动生成的 session 标题（session.updated/idle 的 info.title）
-              const name = (p.info?.title ?? "").slice(0, 60)
-              switch (event.type) {
-                case "session.status":
-                  if (p.status?.type === "busy") emit("UserPromptSubmit", sid, directory, "", name)
-                  break
-                case "session.updated":
-                  emit(last.get(sid) ?? "UserPromptSubmit", sid, directory, "", title)
-                  break
-                case "permission.updated":
-                  emit("Notification", sid, directory, "opencode 请求确认", name)
-                  break
-                case "permission.replied":
-                  emit("UserPromptSubmit", sid, directory, "", name)
-                  break
-                case "session.idle":
-                  emit("Stop", sid, directory, "", name)
-                  break
-              }
+              // 整体兜底：任一分支抛错都不应拖垮插件（否则 opencode 会停掉事件回调，
+              // 表现为「opencode 完全读不出来」）。
+              try {
+                const p = event.properties ?? {}
+                const sid = p.sessionID ?? p.sessionId ?? p.info?.id ?? directory
+                // opencode 自动生成的 session 标题（session.updated/idle 的 info.title）
+                const name = (p.info?.title ?? "").slice(0, 60)
+                switch (event.type) {
+                  case "session.status":
+                    if (p.status?.type === "busy") emit("UserPromptSubmit", sid, directory, "", name)
+                    break
+                  case "session.updated":
+                    // 仅用于把最新会话名记进 names 映射（emit 内部会记录 name）
+                    emit(last.get(sid) ?? "UserPromptSubmit", sid, directory, "", name)
+                    break
+                  case "permission.updated":
+                    emit("Notification", sid, directory, "opencode 请求确认", name)
+                    break
+                  case "permission.replied":
+                    emit("UserPromptSubmit", sid, directory, "", name)
+                    break
+                  case "session.idle":
+                    emit("Stop", sid, directory, "", name)
+                    break
+                }
+              } catch {}
             },
           }
         }

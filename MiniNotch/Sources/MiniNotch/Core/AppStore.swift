@@ -176,8 +176,12 @@ final class AppStore: ObservableObject {
             if mapped == .waiting { agentSessions[i].message = event.message }
             if let cwd = event.cwd, !cwd.isEmpty { agentSessions[i].cwd = cwd }
             if let term = event.terminal { agentSessions[i].terminal = term }
-            // 非空才覆盖，保留已有值（Stop 不带 prompt、UserPromptSubmit 不带 name/answer）
-            if let t = event.title, !t.isEmpty { agentSessions[i].title = t }
+            // 非空才覆盖，保留已有值（Stop 不带 prompt、UserPromptSubmit 不带 name/answer）。
+            // title（你的提问）只在首次为空时落地——保留「会话首条 prompt」作主题，
+            // 不被后续的「继续」「按你推荐的来」等无信息量的追问覆盖。
+            if let t = event.title, !t.isEmpty, (agentSessions[i].title ?? "").isEmpty {
+                agentSessions[i].title = t
+            }
             if let n = event.name, !n.isEmpty { agentSessions[i].name = n }
             if let a = event.answer, !a.isEmpty { agentSessions[i].answer = a }
             replied = agentSessions[i]
@@ -201,14 +205,12 @@ final class AppStore: ObservableObject {
         if becameReplied, let replied { onAgentReplied?(replied) }
     }
 
-    /// 陈旧清理：已完成/待确认 6h 无更新才清（兜底，正常靠 SessionEnd 移除）；
-    /// 运行中的会话超 30min 无任何 hook 事件视为已死/已完成（终端崩溃没发 Stop 等），
-    /// 否则会永远蓝着 active——真正在跑的 agent 会持续有 PreToolUse/PostToolUse 刷新。
+    /// 陈旧清理：任何状态超 30min 无任何 hook 事件即视为已死/已弃，移除。
+    /// 统一阈值（原 waiting/replied 用 6h，导致关掉终端后的「待确认」残留长达数小时、
+    /// 堆在 Agent 面板里）——Claude/opencode 真正活跃时持续有事件刷新 updatedAt，
+    /// 30min 静默基本等同会话已结束/终端已关。正常退出仍优先靠 SessionEnd 即时移除。
     func sweepStaleAgentSessions(now: Date = Date()) {
-        agentSessions.removeAll { s in
-            let idle = now.timeIntervalSince(s.updatedAt)
-            return s.state == .working ? idle > 30 * 60 : idle > 6 * 3600
-        }
+        agentSessions.removeAll { now.timeIntervalSince($0.updatedAt) > 30 * 60 }
     }
 
     /// Debug/测试：直接塞一个会话
