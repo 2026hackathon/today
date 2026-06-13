@@ -31,8 +31,9 @@ protocol AIService: AnyObject {
     func generateEveningReport(_ ctx: ReportContext) async throws -> String
     /// 一句话行动建议（Today 面板底部建议条，30 字内）
     func generateDailySuggestion(_ ctx: ReportContext) async throws -> String
-    /// 邮件 → 一句话提醒（批量；输入已隐私预处理）。返回与输入等长、按序对应的摘要。
-    func summarizeEmails(_ inputs: [EmailDigestInput]) async throws -> [String]
+    /// 邮件分析（批量；输入已隐私预处理）：每封给出重要级别 + ≤20 字一句话建议。
+    /// 返回与输入等长、按序对应。
+    func analyzeEmails(_ inputs: [EmailDigestInput]) async throws -> [EmailAnalysis]
 }
 
 // MARK: - Mock 实现（固定延迟 ~1.2s，永不失败 —— ai-pipeline spec）
@@ -293,10 +294,11 @@ final class MockAIService: AIService {
         return "建议: 上午先清超期项，会议间隙处理今日任务。"
     }
 
-    /// 规则化一句话（发件人 + 主题），永不失败、不出网（ai-pipeline spec）
-    func summarizeEmails(_ inputs: [EmailDigestInput]) async throws -> [String] {
+    /// 规则化分析（关键词判重要级别 + ≤20 字建议），永不失败、不出网（ai-pipeline spec）
+    func analyzeEmails(_ inputs: [EmailDigestInput]) async throws -> [EmailAnalysis] {
         try? await Task.sleep(for: .seconds(0.3))
-        return inputs.map(EmailSummary.rule)
+        return inputs.map { EmailAnalysis(importance: EmailHeuristics.importance($0),
+                                          suggestion: EmailSummary.suggestion($0)) }
     }
 
     // MARK: 格式化辅助
@@ -451,24 +453,31 @@ final class OpenAIChatAIService: AIService {
         return reply.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 邮件批量摘要：一次调用生成全部一句话提醒，按 index 对齐回填。
-    /// 任一项缺失 → 该项规则化兜底，保证返回与输入等长（ai-pipeline spec）。
-    func summarizeEmails(_ inputs: [EmailDigestInput]) async throws -> [String] {
+    /// 邮件批量分析：一次调用给出每封的重要级别 + ≤20 字建议，按 index 对齐回填。
+    /// 任一项缺失 → 规则化兜底，保证返回与输入等长（ai-pipeline spec）。
+    func analyzeEmails(_ inputs: [EmailDigestInput]) async throws -> [EmailAnalysis] {
         guard !inputs.isEmpty else { return [] }
         let listing = inputs.enumerated().map { i, e in
             "[\(i)] 来源:\(e.source.label) 发件人:\(e.sender ?? "未知")\n主题:\(e.subject)\n正文:\(e.bodyExcerpt)"
         }.joined(separator: "\n\n")
         let system = """
-        你是邮件提醒助手。为每封邮件生成一句话提醒（谁 + 要做的事/要点 + 可选时间），\
-        ≤1 句、不换行、不加引号，抓住对方期望我做的动作。\
-        只输出 JSON 对象：{"summaries": [{"index": 0, "summary": "..."}]}，\
+        你是邮件提醒助手。逐封分析邮件并输出：\
+        importance（high=需我尽快行动/老板或客户催办/明确截止，medium=一般待办，low=仅知会/通知类），\
+        suggestion（一句话行动建议，**20 个汉字以内**、不换行、不加引号，点明该做什么）。\
+        只输出 JSON 对象：{"results": [{"index": 0, "importance": "high|medium|low", "suggestion": "..."}]}，\
         index 与输入序号一致、覆盖全部邮件。只依据给定内容，不要臆造。
         """
         let reply = try await chat(system: system, userContent: [["type": "text", "text": listing]], jsonMode: true)
-        let byIndex = Self.decodeSummaries(reply)
+        let byIndex = Self.decodeAnalyses(reply)
         return inputs.indices.map { i in
-            let s = byIndex[i]?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (s?.isEmpty == false) ? s! : EmailSummary.rule(inputs[i])
+            guard let dto = byIndex[i] else {
+                return EmailAnalysis(importance: EmailHeuristics.importance(inputs[i]),
+                                     suggestion: EmailSummary.suggestion(inputs[i]))
+            }
+            let importance = MessageImportance(rawValue: dto.importance ?? "") ?? EmailHeuristics.importance(inputs[i])
+            let s = (dto.suggestion ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let suggestion = s.isEmpty ? EmailSummary.suggestion(inputs[i]) : EmailSummary.clamp(s)
+            return EmailAnalysis(importance: importance, suggestion: suggestion)
         }
     }
 
@@ -542,13 +551,15 @@ final class OpenAIChatAIService: AIService {
         let aiExplanation: String?
     }
 
-    private struct SummariesEnvelope: Decodable {
-        struct Item: Decodable { let index: Int; let summary: String }
-        let summaries: [Item]
+    struct EmailAnalysisDTO: Decodable {
+        let index: Int
+        let importance: String?
+        let suggestion: String?
     }
+    private struct AnalysesEnvelope: Decodable { let results: [EmailAnalysisDTO] }
 
-    /// 解析 {"summaries":[{"index","summary"}]} → [index: summary]（容错围栏/格式）
-    nonisolated private static func decodeSummaries(_ reply: String) -> [Int: String] {
+    /// 解析 {"results":[{"index","importance","suggestion"}]} → [index: DTO]（容错围栏/格式）
+    nonisolated private static func decodeAnalyses(_ reply: String) -> [Int: EmailAnalysisDTO] {
         var text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("```") {
             text = text
@@ -557,10 +568,10 @@ final class OpenAIChatAIService: AIService {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
         guard let data = text.data(using: .utf8),
-              let envelope = try? JSONDecoder().decode(SummariesEnvelope.self, from: data) else {
+              let envelope = try? JSONDecoder().decode(AnalysesEnvelope.self, from: data) else {
             return [:]
         }
-        return Dictionary(envelope.summaries.map { ($0.index, $0.summary) }, uniquingKeysWith: { a, _ in a })
+        return Dictionary(envelope.results.map { ($0.index, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
     nonisolated private static func decodeDrafts(_ reply: String, source: TodoSource) throws -> [TodoDraft] {
@@ -674,9 +685,9 @@ final class AnthropicAIService: AIService {
         throw AIServiceError.notImplemented
     }
 
-    func summarizeEmails(_ inputs: [EmailDigestInput]) async throws -> [String] {
+    func analyzeEmails(_ inputs: [EmailDigestInput]) async throws -> [EmailAnalysis] {
         guard !apiKey.isEmpty else { throw AIServiceError.notConfigured }
-        // TODO: B 接真实 LLM 调用（批量邮件 → 一句话提醒数组）
+        // TODO: B 接真实 LLM 调用（批量邮件 → 重要级别 + ≤20 字建议）
         throw AIServiceError.notImplemented
     }
 }

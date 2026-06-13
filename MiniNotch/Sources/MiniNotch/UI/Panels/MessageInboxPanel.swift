@@ -59,9 +59,17 @@ private struct MessageRow: View {
     private var processed: Bool { message.isProcessed }
     /// 未处理白、已处理灰（message-inbox spec）
     private var titleColor: Color { processed ? DS.Colors.text3 : DS.Colors.text1 }
+    /// 分级样式主色（已处理统一灰）
+    private var levelColor: Color { processed ? DS.Colors.text3 : DS.importanceColor(message.importance) }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
+            // 左侧分级竖条：重要红 / 一般蓝 / 次要灰（已处理转灰）
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(levelColor.opacity(processed ? 0.3 : 0.9))
+                .frame(width: 3)
+                .padding(.vertical, 1)
+
             // 完成圈：点击 = 标记已处理（不打开链接）
             PanelCheckCircle(action: { store.markProcessed(message) })
                 .opacity(processed ? 0.4 : 1)
@@ -73,6 +81,9 @@ private struct MessageRow: View {
                     .strikethrough(processed, color: DS.Colors.text3)
                     .lineLimit(2)
                 HStack(spacing: 6) {
+                    // 重要级别标签（分级样式）
+                    Text(message.importance.label)
+                        .dsTag(levelColor, bg: processed ? DS.Colors.surface1 : levelColor.opacity(0.14))
                     HStack(spacing: 3) {
                         Image(systemName: message.source.iconSymbol).font(.system(size: 8))
                         Text(message.source.label)

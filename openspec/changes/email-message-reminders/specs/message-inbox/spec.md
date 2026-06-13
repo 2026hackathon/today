@@ -43,3 +43,14 @@
 #### Scenario: 重复处理幂等
 - **WHEN** 对一条已处理消息再次触发完成或跳转
 - **THEN** 不报错，processedAt 不被重复刷新（跳转仍打开链接）
+
+### Requirement: 重要级别与分级样式
+Message SHALL 携带 AI 分析的重要级别 `importance`（high / medium / low）并持久化。消息行与降落通知卡 SHALL 按级别呈现不同样式：high 用警示红、medium 用强调蓝、low 用弱化灰；级别 SHALL 以标签文案（重要 / 一般 / 次要）与配色同时体现。已处理消息的级别样式 SHALL 统一弱化为灰，不与未处理项争夺注意力。
+
+#### Scenario: 重要邮件红色强调
+- **WHEN** 一条未处理消息 importance 为 high
+- **THEN** 其消息行级别竖条/标签与降落卡级别标签、倒计时条均用警示红
+
+#### Scenario: 已处理弱化
+- **WHEN** 一条 high 消息被标记已处理
+- **THEN** 其级别样式转为灰色弱化（不再红色强调）

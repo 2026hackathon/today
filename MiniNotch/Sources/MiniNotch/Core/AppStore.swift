@@ -719,6 +719,17 @@ final class AppStore: ObservableObject {
         messages[i].processedAt = Date()
     }
 
+    /// 邮箱应用密码 —— 走 Keychain，不落明文 settings.json（design D7）。
+    /// 计算属性：读取即查钥匙串，写入即存/删并通知 UI 刷新。
+    private static let emailPasswordAccount = "emailAppPassword"
+    var emailAppPassword: String {
+        get { Keychain.load(account: Self.emailPasswordAccount) ?? "" }
+        set {
+            objectWillChange.send()
+            Keychain.save(newValue, account: Self.emailPasswordAccount)
+        }
+    }
+
     // MARK: - 持久化
 
     private func persistTodos() {

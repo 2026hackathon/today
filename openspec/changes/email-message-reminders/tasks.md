@@ -39,14 +39,31 @@
 
 ## 7. 真实接入（RealEmailService / IMAP）
 
-- [ ] 7.1 引入 IMAP 客户端库（MailCore2 / Postal）到 `Package.swift`
-- [ ] 7.2 实现 `RealEmailService`：IMAP+应用密码登录，拉取近 N 封未读→Message；失败本轮静默跳过保留上次数据
-- [ ] 7.3 `AppDelegate` 装配按凭据齐全切 Real、任一为空回退 Mock，设置变更下轮生效
-- [ ] 7.4 邮箱密码读写封装并接入 Keychain（替代 settings.json 明文）
+- [x] 7.1 ~~引入 IMAP 客户端库~~ → 改为用 Network 框架手写最小 IMAPS（无第三方依赖，沿用项目手写网络层风格）
+- [x] 7.2 实现 `RealEmailService` + `IMAPConnection`：IMAPS(TLS) 登录→SELECT INBOX→UID SEARCH UNSEEN→逐封 FETCH(头+正文片段)，含轻量 RFC2047 解码；失败抛错由装配层静默跳过
+- [x] 7.3 `AppDelegate.currentEmailService()` 按 host/账号/应用密码三项齐全切 Real、任一为空回退 Mock，设置变更下轮生效
+- [x] 7.4 邮箱密码读写封装并接入 Keychain（`Keychain` helper + `AppStore.emailAppPassword` 计算属性；settings.json 不再含密码）；设置面板新增「邮件接入（IMAP）」配置区（主机/账号/应用密码 + 测试连接）
 
 ## 8. 联调与验证
 
 - [x] 8.1 `swift build` 通过，Mock 模式下「消息」页签与降落卡可演示
-- [ ] 8.2 验证白/灰态、完成与跳转两条路径均转已处理且幂等
-- [ ] 8.3 验证多条并发降落卡不丢失、不抢占输入态、首轮静默
-- [ ] 8.4 真实 IMAP 凭据下拉取真实邮件、来源/链接识别正确、失败静默降级
+- [ ] 8.2 验证白/灰态、完成与跳转两条路径均转已处理且幂等（待运行交互观察）
+- [ ] 8.3 验证多条并发降落卡不丢失、不抢占输入态、首轮静默（待运行交互观察）
+- [ ] 8.4 真实 IMAP 凭据下拉取真实邮件、来源/链接识别正确、失败静默降级（待真实邮箱凭据）
+
+## 9. 重要级别分析与分级样式（ai-pipeline / message-inbox / island-shell 增量）
+
+- [x] 9.1 `MessageImportance` 模型 + `Message.importance` 字段 + 持久化（向后兼容解码）
+- [x] 9.2 送 AI 前用代码过滤无效/噪音邮件（`EmailPreprocess.isNoise` 强化，Mock 与 Real 服务层均应用）
+- [x] 9.3 `AIService.analyzeEmails`：重要级别 + ≤20 字一句话建议（Mock 规则化 + OpenAI 批量 JSON + `EmailSummary.clamp` 硬截断保底）
+- [x] 9.4 分级样式：降落卡（级别标签 + 倒计时条配色）与消息行（左侧级别竖条 + 级别标签）按 high/medium/low 区分
+- [x] 9.5 验证：Mock 下重要级别区分、summary ≤20 字、无效邮件过滤均生效（runtime 已确认）
+
+## 10. O365 OAuth2 接入（IMAP 基础认证已被禁用，实测 "NO AUTHENTICATE failed."）
+
+- [x] 10.1 `MicrosoftOAuth`：OAuth2 设备码流程（复用公开 client ID，无需注册 Azure 应用/回调）+ refresh token 续期；refresh token 存 Keychain，access token 内存缓存
+- [x] 10.2 `IMAPConnection.authenticateXOAUTH2`：SASL XOAUTH2（`user=…^Aauth=Bearer <token>^A^A`），处理 "+" 错误质询避免挂起
+- [x] 10.3 `RealEmailService.Auth`（password / oauth token provider）；`AppDelegate.currentEmailService` 已登录走 OAuth、否则应用密码、再否则 Mock
+- [x] 10.4 设置面板「用 Microsoft 登录」行：设备码登录（自动开浏览器+复制代码）+ 已登录/退出 + 测试连接走 OAuth
+- [x] 10.5 真实 O365 账号验证（部分）：设备码登录 + refresh token 存 Keychain + XOAUTH2 **认证已被服务器接受**（"User is authenticated…"）。
+- [ ] 10.6 拉取真实邮件：被邮箱 **IMAP 协议禁用**挡住（服务器返回 "User is authenticated but not connected."）。需在 Exchange 启用 IMAP（OWA 自助或 IT `Set-CASMailbox -ImapEnabled $true`）；若无法启用则改走 Microsoft Graph（需带 Mail.Read 的 client ID）。

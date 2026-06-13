@@ -49,6 +49,9 @@ struct MessageLandedCard: View {
             Text("新消息 · \(message.source.label)")
                 .font(DS.Fonts.meta.weight(.medium))
                 .foregroundStyle(DS.Colors.text2)
+            // 重要级别标签（分级样式）：重要红 / 一般蓝 / 次要灰
+            Text(message.importance.label)
+                .dsTag(importanceColor, bg: importanceColor.opacity(0.14))
             Spacer(minLength: 0)
             Text(message.receivedAt.dsHHmm)
                 .font(DS.Fonts.tag)
@@ -94,7 +97,7 @@ struct MessageLandedCard: View {
     private var countdownBar: some View {
         GeometryReader { geo in
             Rectangle()
-                .fill(sourceColor.opacity(0.8))
+                .fill(importanceColor.opacity(0.85))
                 .frame(width: geo.size.width * remaining / Self.duration, height: 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -103,6 +106,8 @@ struct MessageLandedCard: View {
     }
 
     private var sourceColor: Color { DS.messageColor(message.source) }
+    /// 分级样式主色（重要红 / 一般蓝 / 次要灰）
+    private var importanceColor: Color { DS.importanceColor(message.importance) }
 
     // MARK: - 倒计时与收回
 

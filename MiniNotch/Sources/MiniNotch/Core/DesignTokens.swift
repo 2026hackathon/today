@@ -64,6 +64,15 @@ enum DS {
         }
     }
 
+    /// 邮件重要级别色（提醒卡/消息行分级样式）：重要红 / 一般蓝 / 次要灰
+    static func importanceColor(_ i: MessageImportance) -> Color {
+        switch i {
+        case .high: Colors.alert
+        case .medium: Colors.accent
+        case .low: Colors.text3
+        }
+    }
+
     static func priorityColor(_ p: Priority) -> Color {
         switch p {
         case .high: Colors.alert

@@ -519,13 +519,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return token.isEmpty ? nil : RealGitHubService(token: token)
     }
 
-    /// 邮件装配（integrations spec）：凭据齐全本应走 RealEmailService(IMAP)，
-    /// 真实现待 group 7；当前始终用 Mock，保证无凭证也能演示。
+    /// 邮件装配（integrations spec）：IMAP 主机/账号/应用密码三项齐全 → RealEmailService(IMAP)，
+    /// 任一为空回退 Mock（无凭证也能演示），设置变更下个轮询周期生效。
     private func currentEmailService() -> EmailService {
-        mockEmailService
+        // O365：已用 Microsoft 登录 → Graph（/me/messages），不依赖 IMAP 主机/开关
+        if MicrosoftOAuth.shared.isSignedIn {
+            return GraphEmailService()
+        }
+        // 否则回退 IMAP + 应用密码（Gmail 等仍支持 IMAP 基础认证的邮箱）
+        let s = store.settings
+        let password = store.emailAppPassword   // Keychain
+        guard !s.emailImapHost.isEmpty, !s.emailAddress.isEmpty, !password.isEmpty else {
+            return mockEmailService
+        }
+        return RealEmailService(host: s.emailImapHost, email: s.emailAddress, auth: .password(password))
     }
 
-    /// 拉取一轮邮件：来源识别/链接归一在服务层完成，这里调 AI 生成一句话再入库。
+    /// 拉取一轮邮件：来源识别/链接归一/隐私预处理在服务层完成（无效邮件已被代码过滤），
+    /// 这里调 AI 分析重要级别 + ≤20 字一句话建议再入库。
     /// 去重在 fetch 之后、AI 之前（避免对已知邮件重复打 LLM）；首轮静默不弹卡。
     private func syncEmail(notify: Bool) async {
         let service = currentEmailService()
@@ -533,11 +544,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let knownIds = Set(store.messages.map(\.messageId))
         let fresh = inputs.filter { !knownIds.contains($0.messageId) }
         guard !fresh.isEmpty else { emailBaselineSynced = true; return }
-        // AI 一句话提醒；无 Key/失败时 AIService 自身已降级，这里再兜一层规则化
-        let summaries = (try? await currentAIService().summarizeEmails(fresh)) ?? fresh.map(EmailSummary.rule)
-        let messages = zip(fresh, summaries).map { input, summary in
-            Message(messageId: input.messageId, summary: summary, source: input.source,
-                    link: input.link, receivedAt: input.receivedAt,
+        // AI 分析；无 Key/失败时 AIService 自身已降级，这里再兜一层规则化
+        let analyses = (try? await currentAIService().analyzeEmails(fresh))
+            ?? fresh.map { EmailAnalysis(importance: EmailHeuristics.importance($0),
+                                         suggestion: EmailSummary.suggestion($0)) }
+        let messages = zip(fresh, analyses).map { input, a in
+            Message(messageId: input.messageId, summary: a.suggestion, source: input.source,
+                    importance: a.importance, link: input.link, receivedAt: input.receivedAt,
                     sender: input.sender, rawSubject: input.subject)
         }
         store.addMessages(messages, notify: notify && emailBaselineSynced)

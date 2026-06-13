@@ -17,6 +17,7 @@ struct SettingsPanel: View {
                     apiSection
                     hotkeySection
                     integrationSection
+                    emailSection
                     reminderSection
                 }
                 .padding(.horizontal, 16)
@@ -108,6 +109,51 @@ struct SettingsPanel: View {
             SettingsRow(label: "Token") {
                 SettingsInputField(placeholder: "Bark Token", text: $store.settings.barkToken)
             }
+        }
+    }
+
+    // MARK: - 邮件接入（IMAP）
+
+    private var emailConfigured: Bool {
+        // O365 走 Graph：已登录即可（无需 IMAP 主机）；否则要 IMAP 主机+账号+应用密码
+        if MicrosoftOAuth.shared.isSignedIn { return true }
+        return !store.settings.emailImapHost.isEmpty
+            && !store.settings.emailAddress.isEmpty
+            && !store.emailAppPassword.isEmpty
+    }
+
+    private var emailSection: some View {
+        SettingsSection(label: "邮件接入（IMAP）") {
+            SettingsRow(label: "邮件") { SettingsStatusText(configured: emailConfigured) }
+            SettingsRow(label: "IMAP 主机") {
+                SettingsInputField(placeholder: "outlook.office365.com:993", text: $store.settings.emailImapHost)
+            }
+            SettingsRow(label: "账号") {
+                SettingsInputField(placeholder: "you@example.com", text: $store.settings.emailAddress)
+            }
+
+            SettingsCardDivider()
+
+            // O365 推荐：OAuth2 设备码登录（基础认证已被禁用）
+            MicrosoftSignInRow()
+
+            SettingsCardDivider()
+
+            // 备选：仍支持 IMAP 基础认证的邮箱（如 Gmail 应用密码）
+            SettingsRow(label: "应用密码") {
+                SettingsInputField(
+                    placeholder: "Gmail 等的 App Password",
+                    text: Binding(get: { store.emailAppPassword },
+                                  set: { store.emailAppPassword = $0 }),
+                    secure: true
+                )
+            }
+            SettingsRow(label: "存储") {
+                Text("凭据存于系统钥匙串 · 未配置则用 Mock 演示")
+                    .font(DS.Fonts.compactSide)
+                    .foregroundStyle(DS.Colors.text3)
+            }
+            EmailConnectionTestRow()
         }
     }
 
@@ -258,6 +304,125 @@ private struct JiraConnectionTestRow: View {
                     : "请求失败 HTTP \(code)，检查 URL")
             } catch {
                 state = .failure("网络错误：\(error.localizedDescription)")
+            }
+        }
+    }
+}
+
+// MARK: - Microsoft 登录行（O365 OAuth2 设备码：浏览器登录一次，token 存 Keychain）
+
+private struct MicrosoftSignInRow: View {
+    // 观察常驻单例：轮询在单例里跑，面板收起再开仍能看到最新状态
+    @ObservedObject private var oauth = MicrosoftOAuth.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Microsoft 登录")
+                    .font(DS.Fonts.button)
+                    .foregroundStyle(DS.Colors.text2)
+                Spacer(minLength: 8)
+                if oauth.signedIn {
+                    Text("已登录").font(DS.Fonts.meta).foregroundStyle(DS.Colors.success)
+                    Button("退出") { oauth.signOut() }
+                        .buttonStyle(.plain)
+                        .font(DS.Fonts.button)
+                        .foregroundStyle(DS.Colors.accent)
+                } else {
+                    // 始终可点：等待中再点 = 取消旧的、重新生成验证码
+                    Button(oauth.pendingUserCode != nil ? "重新生成代码" : "用 Microsoft 登录") {
+                        oauth.beginDeviceLogin()
+                    }
+                    .buttonStyle(.plain)
+                    .font(DS.Fonts.button)
+                    .foregroundStyle(DS.Colors.accent)
+                }
+            }
+            if let code = oauth.pendingUserCode {
+                Text("浏览器已打开，输入代码：\(code)（已复制）· 完成后稍候自动登录")
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.accent)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+            } else if let msg = oauth.errorMessage {
+                Text("✗ \(msg)").font(DS.Fonts.meta).foregroundStyle(DS.Colors.alert).lineLimit(2)
+            }
+        }
+    }
+}
+
+// MARK: - 邮件测试连接行（拉一次 IMAP，成功显示未读条数 / 失败显示原因）
+
+private struct EmailConnectionTestRow: View {
+    @EnvironmentObject var store: AppStore
+
+    private enum TestState: Equatable {
+        case idle, testing
+        case success(Int)
+        case failure(String)
+    }
+    @State private var state: TestState = .idle
+
+    var body: some View {
+        HStack(spacing: 8) {
+            switch state {
+            case .idle:
+                Spacer()
+            case .testing:
+                ProgressView().controlSize(.small)
+                Spacer()
+            case .success(let count):
+                Text("✓ 连接正常 · \(count) 封新邮件")
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.success)
+                Spacer(minLength: 8)
+            case .failure(let message):
+                Text("✗ \(message)")
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.alert)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 8)
+            }
+
+            Button { runTest() } label: {
+                Text(state == .testing ? "测试中…" : "测试连接")
+                    .font(DS.Fonts.button)
+                    .foregroundStyle(DS.Colors.accent)
+            }
+            .buttonStyle(.plain)
+            .disabled(state == .testing)
+        }
+    }
+
+    private func runTest() {
+        // 与 currentEmailService 一致：已 Microsoft 登录 → Graph；否则 IMAP + 应用密码
+        let service: EmailService
+        if MicrosoftOAuth.shared.isSignedIn {
+            service = GraphEmailService()
+        } else {
+            let host = store.settings.emailImapHost
+            let email = store.settings.emailAddress
+            let password = store.emailAppPassword
+            guard !host.isEmpty, !email.isEmpty, !password.isEmpty else {
+                state = .failure("请先用 Microsoft 登录，或填 IMAP 主机/账号/应用密码")
+                return
+            }
+            service = RealEmailService(host: host, email: email, auth: .password(password))
+        }
+        state = .testing
+        Task { @MainActor in
+            do {
+                let inputs = try await service.fetchNewMessages()
+                state = .success(inputs.count)
+            } catch let EmailServiceError.server(reason) {
+                // 已连上、TLS 成功，但服务器拒绝命令（多为认证被拒 / IMAP 未开）
+                NSLog("[EmailTest] server rejected: \(reason)")
+                state = .failure("服务器拒绝：\(reason)")
+            } catch {
+                // 连不上 / TLS / 网络层错误
+                NSLog("[EmailTest] transport error: \(error)")
+                state = .failure("连不上：\(error.localizedDescription)")
             }
         }
     }
