@@ -166,7 +166,11 @@ final class AppStore: ObservableObject {
 
     /// 跳转到 agent 所属终端 session（Agent 面板/卡片点击），AppDelegate 装配 → AgentSessionService.jumpTo
     var onAgentJump: ((AgentSession) -> Void)?
-    func jumpToAgent(_ session: AgentSession) { onAgentJump?(session) }
+    func jumpToAgent(_ session: AgentSession) {
+        onAgentJump?(session)
+        // 先激活目标 app，再收起面板——否则展开的灵动岛盖住目标，像「没反应」
+        dismiss()
+    }
 
     /// Agent 面板列表：需处理的（waiting/replied）在前，运行中在后，各按最近更新排
     var sortedAgentSessions: [AgentSession] {

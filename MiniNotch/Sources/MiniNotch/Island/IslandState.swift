@@ -16,15 +16,16 @@ enum PanelTab: String, CaseIterable, Sendable {
 
     /// 显示名：统一中文，与正文（今日任务/建议…）一致，避免中英混排。
     /// rawValue 保持稳定不动（仅作内部标识）
+    /// tab 显示名统一英文（产品指定）
     var title: String {
         switch self {
-        case .today: "Today"   // 保留英文品牌标签（产品指定）
-        case .calendar: "日历"
-        case .messages: "消息"
-        case .mentions: "提及"
-        case .inbox: "稍后"   // 今日焦点之外的待办积压（未来截止 + To Do Jira）
+        case .today: "Today"
+        case .calendar: "Calendar"
+        case .messages: "Messages"
+        case .mentions: "Mentions"
+        case .inbox: "Later"   // 今日焦点之外的待办积压（未来截止 + To Do Jira）
         case .agent: "Agent"
-        case .settings: "设置"
+        case .settings: "Settings"
         }
     }
 }
