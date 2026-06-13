@@ -29,10 +29,10 @@ struct InboxHubPanel: View {
 
     private var segmentBar: some View {
         HStack(spacing: 6) {
-            segButton("消息", count: store.unprocessedMessageCount, active: segment == .messages) {
+            segButton("Messages", count: store.unprocessedMessageCount, active: segment == .messages) {
                 segment = .messages
             }
-            segButton("提及", count: store.unreadMentions.count, active: segment == .mentions) {
+            segButton("Mentions", count: store.unreadMentions.count, active: segment == .mentions) {
                 segment = .mentions
             }
             Spacer()
