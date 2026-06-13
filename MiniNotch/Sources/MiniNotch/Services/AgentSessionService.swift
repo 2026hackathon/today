@@ -38,8 +38,12 @@ final class AgentSessionService {
             _ = installOpenCodePlugin()
         }
         ensureEventsFile()
-        // 首次启动从文件末尾开始读（不回放历史事件，避免崩溃前的陈旧状态复活）
-        readOffset = (try? FileManager.default.attributesOfItem(atPath: eventsFile.path)[.size] as? UInt64) ?? 0
+        // 首次启动从文件末尾开始读（不回放历史事件）。
+        // 注意：NSNumber 不能直接 as? UInt64（恒为 nil），必须经 NSNumber.uint64Value —
+        // 否则 readOffset=0 会每次启动回放整个历史文件，海量事件高频改 @Published 数组，
+        // 与 SwiftUI 渲染争用导致内存损坏崩溃。
+        let attrs = try? FileManager.default.attributesOfItem(atPath: eventsFile.path)
+        readOffset = (attrs?[.size] as? NSNumber)?.uint64Value ?? 0
         openWatcher()
     }
 
@@ -60,13 +64,16 @@ final class AgentSessionService {
             queue: .main
         )
         src.setEventHandler { [weak self] in
-            guard let self else { return }
-            let flags = self.source?.data ?? []
-            if flags.contains(.delete) || flags.contains(.rename) {
-                // 文件被轮转/删除 → 重开
-                self.reopenWatcher()
-            } else {
-                self.drainNewLines()
+            // queue: .main → 已在主线程；assumeIsolated 让 MainActor 隔离显式成立，
+            // 杜绝从非隔离 dispatch 块改 @MainActor 状态导致的数据竞争
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let flags = self.source?.data ?? []
+                if flags.contains(.delete) || flags.contains(.rename) {
+                    self.reopenWatcher() // 文件被轮转/删除 → 重开
+                } else {
+                    self.drainNewLines()
+                }
             }
         }
         src.setCancelHandler { [weak self] in
