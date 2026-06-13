@@ -782,10 +782,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 sound.volume = 0.5
                 sound.play()
             }
-            // 只在你不盯着该终端、且 island 处于收缩态时弹卡（不打扰）
-            let frontBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-            let watching = session.terminal?.bundleID != nil && session.terminal?.bundleID == frontBundle
-            if self.store.islandState.isCompact, !watching {
+            // 完成即弹降落卡（与 jira/新消息一致）：收缩态就弹，倒计时自动收回。
+            // 不再做「盯着终端就不弹」的抑制——那会让最常见的「在该终端跑完」场景看不到卡。
+            if self.store.islandState.isCompact {
                 self.store.present(.agentLanded(session: session))
             }
         }
