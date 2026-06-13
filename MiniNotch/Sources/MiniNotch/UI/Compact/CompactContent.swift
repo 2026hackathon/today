@@ -104,13 +104,13 @@ struct CompactContent: View {
         case .justCompleted:
             sideText("−1 完成", color: DS.Colors.text2)
         default: // .normal 及兜底
-            // 今日有定时 → 下一个截止；今日全无定时 → 提示未来最近截止；都没有 → 无截止
+            // 今日还有定时项 → 下一个截止时间；今日的提醒/会议都清空了 →
+            // 不再向前看「明天 / Next 周一」(用户指定:今天的都完成了就别提示明天)，
+            // 改用图标表达「今日日程已清空」
             if let due = store.todayNextDue {
                 sideText("Next \(due.dsHHmm)", color: DS.Colors.text2)
-            } else if let upcoming = store.nextDue {
-                sideText(Self.upcomingLabel(upcoming), color: DS.Colors.text3)
             } else {
-                sideText("无截止", color: DS.Colors.text3)
+                compactIcon("calendar.badge.checkmark", color: DS.Colors.success)
             }
         }
     }
@@ -131,11 +131,6 @@ struct CompactContent: View {
     /// urgent 态配色：到期前 15min 预警橙，已过期红（F-04 分级）
     private var urgentColor: Color {
         isOverdue ? DS.Colors.alert : DS.Colors.warning
-    }
-
-    /// 未来任务的提示文案：明天带时间（「明天 08:30」），更远用 dsShortLabel（周X / M/d）
-    private static func upcomingLabel(_ due: Date) -> String {
-        Calendar.current.isDateInTomorrow(due) ? "明天 \(due.dsHHmm)" : "Next \(due.dsShortLabel)"
     }
 
     // MARK: - 小构件
