@@ -923,7 +923,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await self?.currentAIService().parseQuickInput(text)
             },
             onJumpToAgent: { [weak self] session in
-                self?.agentService.jumpTo(session)
+                // 走 store.jumpToAgent：除了跳转(onAgentJump→jumpTo)，还会标记 seenAgentAt，
+                // 让该 session 从 waiting 计数与 Today agent 栏移除（直接调 agentService.jumpTo 会漏标记）
+                self?.store.jumpToAgent(session)
             },
             hitRegion: hitRegion
         )
