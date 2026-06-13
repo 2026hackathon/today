@@ -13,6 +13,8 @@ struct IslandRootView: View {
     let onParse: (String) async -> TodoDraft?
     /// agentLanded 卡点击跳转终端（AppDelegate 注入，走 AgentSessionService）
     var onJumpToAgent: (AgentSession) -> Void = { _ in }
+    /// 面板穿透命中区域：上报岛体当前壳体尺寸，让岛体之外的透明区点击穿透（AppDelegate 注入）
+    var hitRegion: IslandHitRegion? = nil
 
     @State private var isHovering = false
     @State private var hoverTask: Task<Void, Never>?
@@ -58,6 +60,10 @@ struct IslandRootView: View {
             })
             // 壳体窗口：高度是显式数值 → 弹簧可插值"拉长"；顶对齐保证只向下生长
             .frame(width: geo.width, height: shellHeight, alignment: .top)
+            // 上报壳体真实尺寸 → 面板按此裁剪命中范围，岛体外透明区点击穿透
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: IslandShellSizeKey.self, value: proxy.size)
+            })
             .background(NotchShape(cornerRadius: geo.cornerRadius).fill(DS.Colors.islandBG))
             .clipShape(NotchShape(cornerRadius: geo.cornerRadius))
             // ── 动效挂载（effects spec）──
@@ -92,6 +98,9 @@ struct IslandRootView: View {
             .onHover { handleHover($0) }
             .onPreferenceChange(IslandContentHeightKey.self) { newHeight in
                 Task { @MainActor in applyMeasuredHeight(newHeight) }
+            }
+            .onPreferenceChange(IslandShellSizeKey.self) { size in
+                Task { @MainActor in hitRegion?.islandSize = size }
             }
     }
 
@@ -251,6 +260,15 @@ private struct IslandContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+/// 壳体当前渲染尺寸上报（面板穿透命中用）：取较大者，盖住形变瞬间新旧并存
+private struct IslandShellSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        value = CGSize(width: max(value.width, next.width), height: max(value.height, next.height))
     }
 }
 

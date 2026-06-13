@@ -1,4 +1,49 @@
 import AppKit
+import SwiftUI
+
+/// 灵动岛当前可交互区域 —— 由 `IslandRootView` 实测壳体尺寸后写入，
+/// 供 `PassthroughHostingView` 在命中测试时把"岛体之外的透明区"放行给下方应用。
+/// `islandSize == nil` 表示尚未实测（启动首帧），命中测试回退为整窗捕获（安全侧）。
+final class IslandHitRegion {
+    var islandSize: CGSize?
+    init() {}
+}
+
+/// 穿透型 hosting view —— 面板固定为可容纳最大展开态的大窗，但只有岛体当前
+/// 实际渲染所覆盖的矩形接收点击，其余透明区域返回 nil 让点击穿透到下方应用。
+/// （island-shell spec：不打扰的窗口行为 —— 透明区点击穿透）
+final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
+    /// 岛体顶部居中之外再放宽的命中容差，避免贴边一两点像素点不到
+    private let hitSlop: CGFloat = 6
+
+    private let hitRegion: IslandHitRegion
+
+    init(rootView: Content, hitRegion: IslandHitRegion) {
+        self.hitRegion = hitRegion
+        super.init(rootView: rootView)
+    }
+
+    @MainActor @preconcurrency required init(rootView: Content) {
+        fatalError("use init(rootView:hitRegion:)")
+    }
+
+    @MainActor @preconcurrency required dynamic init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // 尚未实测尺寸 → 维持整窗捕获，绝不误穿透
+        guard let size = hitRegion.islandSize else { return super.hitTest(point) }
+        // 岛体顶部贴窗顶、水平居中（IslandRootView 用 alignment: .top）；
+        // hosting view 非 flipped，AppKit 左下原点 → 岛顶在 bounds.maxY
+        let w = size.width + hitSlop * 2
+        let h = size.height + hitSlop * 2
+        let islandRect = NSRect(x: bounds.midX - w / 2, y: bounds.maxY - h, width: w, height: h)
+        // 透明区放行：点击穿透到下方应用/桌面
+        guard islandRect.contains(point) else { return nil }
+        return super.hitTest(point)
+    }
+}
 
 /// 不抢焦点的悬浮窗口 —— Vibe Island / Boring Notch 这类应用的核心。
 ///

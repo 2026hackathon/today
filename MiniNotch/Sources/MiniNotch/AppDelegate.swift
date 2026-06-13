@@ -896,6 +896,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panelFrame = NotchGeometry.panelFrame(on: screen, panelSize: panelSize)
 
         let panel = NotchPanel(contentRect: panelFrame)
+        // 命中区域：岛体之外的透明区放行点击穿透到下方应用（island-shell spec）
+        let hitRegion = IslandHitRegion()
         let root = IslandRootView(
             notchSize: notchSize,
             onParse: { [weak self] text in
@@ -903,11 +905,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onJumpToAgent: { [weak self] session in
                 self?.agentService.jumpTo(session)
-            }
+            },
+            hitRegion: hitRegion
         )
         .environmentObject(store)
 
-        let hostingView = NSHostingView(rootView: root)
+        let hostingView = PassthroughHostingView(rootView: root, hitRegion: hitRegion)
         hostingView.frame = NSRect(origin: .zero, size: panelSize)
         panel.contentView = hostingView
 
