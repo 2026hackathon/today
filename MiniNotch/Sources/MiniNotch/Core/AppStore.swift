@@ -199,12 +199,13 @@ final class AppStore: ObservableObject {
         if becameReplied, let replied { onAgentReplied?(replied) }
     }
 
-    /// 陈旧清理：运行中的会话视为"开着"不清理（Agent tab 要展示所有打开的 session）；
-    /// 已完成/待确认的长时间(6h)无更新才清（兜底，正常靠 SessionEnd 移除）
+    /// 陈旧清理：已完成/待确认 6h 无更新才清（兜底，正常靠 SessionEnd 移除）；
+    /// 运行中的会话超 30min 无任何 hook 事件视为已死/已完成（终端崩溃没发 Stop 等），
+    /// 否则会永远蓝着 active——真正在跑的 agent 会持续有 PreToolUse/PostToolUse 刷新。
     func sweepStaleAgentSessions(now: Date = Date()) {
         agentSessions.removeAll { s in
-            guard s.state != .working else { return false } // 运行中 = 开着，永不清
-            return now.timeIntervalSince(s.updatedAt) > 6 * 3600
+            let idle = now.timeIntervalSince(s.updatedAt)
+            return s.state == .working ? idle > 30 * 60 : idle > 6 * 3600
         }
     }
 
