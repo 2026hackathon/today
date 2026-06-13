@@ -28,12 +28,21 @@ struct CompactContent: View {
     private var leftContent: some View {
         HStack(spacing: 6) {
             todoLeftContent
-            // agent 运行中徽章：叠加在 todo 内容右侧（独立于状态，agent-session spec）
+            // agent 徽章（Claude Code + opencode 汇总）：运行中 ⚙ + 等待确认 🔔 并排，
+            // 铃铛紧贴活动 session 右侧（用户指定布局，agent-session spec）
             if store.activeAgentCount > 0 {
                 AgentBadge(
                     systemName: "cpu",
                     count: store.activeAgentCount,
                     color: DS.Colors.accent,
+                    pulsing: true
+                )
+            }
+            if store.waitingAgentCount > 0 {
+                AgentBadge(
+                    systemName: "bell.fill",
+                    count: store.waitingAgentCount,
+                    color: DS.Colors.warning,
                     pulsing: true
                 )
             }
@@ -79,21 +88,7 @@ struct CompactContent: View {
 
     @ViewBuilder
     private var rightContent: some View {
-        // agent 等待你处理：优先于截止上下文（更 actionable，agent-session spec）
-        if store.waitingAgentCount > 0 {
-            AgentBadge(
-                systemName: "bell.fill",
-                count: store.waitingAgentCount,
-                color: DS.Colors.warning,
-                pulsing: true
-            )
-        } else {
-            todoRightContent
-        }
-    }
-
-    @ViewBuilder
-    private var todoRightContent: some View {
+        // 右翼回归 todo 上下文；agent 徽章统一放左翼（铃铛紧贴活动 session）
         switch state {
         case .idle:
             // 今日可动手的事清零 → 右翼绿色打钩（用户指定放这一侧）

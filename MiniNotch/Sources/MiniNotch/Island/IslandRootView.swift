@@ -21,13 +21,22 @@ struct IslandRootView: View {
     private var geo: IslandGeometry {
         IslandGeometry.geometry(
             for: store.islandState, notchSize: notchSize,
-            agentBadge: store.islandState.isCompact && store.hasAgentBadge
+            agentBadgeWidth: agentBadgeWidth
         )
     }
 
     var body: some View {
         islandBody
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// agent 徽章额外宽度：运行中 ⚙ + 等待 🔔 各约 40pt（都在左翼并排）
+    private var agentBadgeWidth: CGFloat {
+        guard store.islandState.isCompact else { return 0 }
+        var w: CGFloat = 0
+        if store.activeAgentCount > 0 { w += 42 }
+        if store.waitingAgentCount > 0 { w += 42 }
+        return w
     }
 
     /// 壳体当前应显示的高度：固定几何态直接用配置值，内容态用实测值

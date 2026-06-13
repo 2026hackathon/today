@@ -139,7 +139,8 @@ final class AgentSessionService {
         ensureHookScript()
         let home = FileManager.default.homeDirectoryForCurrentUser
         let settingsURL = home.appendingPathComponent(".claude/settings.json")
-        let cmd = "python3 \(hookScript.path)"
+        // 路径含空格（"Application Support"）→ 命令经 shell 执行必须加引号，否则被截断
+        let cmd = "python3 '\(hookScript.path)'"
 
         var root: [String: Any] = [:]
         if let data = try? Data(contentsOf: settingsURL),

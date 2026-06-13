@@ -78,13 +78,12 @@ struct IslandGeometry: Equatable {
     var height: CGFloat?
     var cornerRadius: CGFloat
 
-    /// - Parameter agentBadge: 收缩态有 agent 徽章时加宽，给左/右翼额外计数留位
-    static func geometry(for state: IslandState, notchSize: CGSize, agentBadge: Bool = false) -> IslandGeometry {
+    /// - Parameter agentBadgeWidth: 收缩态 agent 徽章需要的额外宽度（左翼并排的 ⚙/🔔，由计数决定）
+    static func geometry(for state: IslandState, notchSize: CGSize, agentBadgeWidth: CGFloat = 0) -> IslandGeometry {
         // compact 态宽度不小于真实刘海，保证视觉上完全盖住刘海
         let compactW = max(notchSize.width, 200)
         let compactH = max(notchSize.height, 32)
-        // agent 徽章占位：左翼 +图标计数、右翼 +图标计数，约需 +60pt
-        let badge: CGFloat = agentBadge ? 60 : 0
+        let badge = agentBadgeWidth
 
         switch state {
         case .idle:
