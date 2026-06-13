@@ -115,11 +115,8 @@ struct SettingsPanel: View {
     // MARK: - 邮件接入（IMAP）
 
     private var emailConfigured: Bool {
-        // 任一来源接入即算已配置（O365/Gmail OAuth 或 IMAP 应用密码）
-        if MicrosoftOAuth.shared.isSignedIn || GoogleOAuth.shared.isSignedIn { return true }
-        return !store.settings.emailImapHost.isEmpty
-            && !store.settings.emailAddress.isEmpty
-            && !store.emailAppPassword.isEmpty
+        // 任一来源接入即算已配置（O365/Gmail OAuth）。手动 IMAP+应用密码通道暂隐藏。
+        MicrosoftOAuth.shared.isSignedIn || GoogleOAuth.shared.isSignedIn
     }
 
     private var emailSection: some View {
@@ -131,31 +128,27 @@ struct SettingsPanel: View {
 
             SettingsCardDivider()
 
-            // Gmail：OAuth2 浏览器登录（走 IMAP XOAUTH2）
+            // Gmail：OAuth2 浏览器登录（底层走 imap.gmail.com + XOAUTH2）
             GoogleSignInRow()
 
-            SettingsCardDivider()
-
-            // 其它邮箱：IMAP + 应用密码（host 默认占位 O365，可改 imap.gmail.com 等）
-            SettingsRow(label: "IMAP 主机") {
-                SettingsInputField(placeholder: "imap.example.com:993", text: $store.settings.emailImapHost)
-            }
-            SettingsRow(label: "账号") {
-                SettingsInputField(placeholder: "you@example.com", text: $store.settings.emailAddress)
-            }
-            SettingsRow(label: "应用密码") {
-                SettingsInputField(
-                    placeholder: "Gmail 等的 App Password",
-                    text: Binding(get: { store.emailAppPassword },
-                                  set: { store.emailAppPassword = $0 }),
-                    secure: true
-                )
-            }
-            SettingsRow(label: "存储") {
-                Text("凭据存于系统钥匙串 · 未配置则用 Mock 演示")
-                    .font(DS.Fonts.compactSide)
-                    .foregroundStyle(DS.Colors.text3)
-            }
+            // ── 手动「IMAP + 应用密码」兜底通道暂隐藏（当前用不上；OAuth 已覆盖 O365/Gmail）──
+            // 恢复时取消注释下方字段，并恢复 AppDelegate.currentEmailServices /
+            // EmailConnectionTestRow 里对应的 .password 装配段。Gmail OAuth 不依赖这些字段。
+            // SettingsCardDivider()
+            // SettingsRow(label: "IMAP 主机") {
+            //     SettingsInputField(placeholder: "imap.example.com:993", text: $store.settings.emailImapHost)
+            // }
+            // SettingsRow(label: "账号") {
+            //     SettingsInputField(placeholder: "you@example.com", text: $store.settings.emailAddress)
+            // }
+            // SettingsRow(label: "应用密码") {
+            //     SettingsInputField(
+            //         placeholder: "Gmail 等的 App Password",
+            //         text: Binding(get: { store.emailAppPassword },
+            //                       set: { store.emailAppPassword = $0 }),
+            //         secure: true
+            //     )
+            // }
             EmailConnectionTestRow()
         }
     }
@@ -321,7 +314,7 @@ private struct MicrosoftSignInRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Microsoft 登录")
+                Text("Microsoft")
                     .font(DS.Fonts.button)
                     .foregroundStyle(DS.Colors.text2)
                 Spacer(minLength: 8)
@@ -333,7 +326,7 @@ private struct MicrosoftSignInRow: View {
                         .foregroundStyle(DS.Colors.accent)
                 } else {
                     // 始终可点：等待中再点 = 取消旧的、重新生成验证码
-                    Button(oauth.pendingUserCode != nil ? "重新生成代码" : "用 Microsoft 登录") {
+                    Button(oauth.pendingUserCode != nil ? "重新生成代码" : "授权") {
                         oauth.beginDeviceLogin()
                     }
                     .buttonStyle(.plain)
@@ -362,7 +355,7 @@ private struct GoogleSignInRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Gmail 登录")
+                Text("Gmail")
                     .font(DS.Fonts.button)
                     .foregroundStyle(DS.Colors.text2)
                 Spacer(minLength: 8)
@@ -372,7 +365,7 @@ private struct GoogleSignInRow: View {
                     Button("退出") { oauth.signOut() }
                         .buttonStyle(.plain).font(DS.Fonts.button).foregroundStyle(DS.Colors.accent)
                 } else {
-                    Button(oauth.waiting ? "授权中…" : "用 Google 登录") { oauth.beginSignIn() }
+                    Button(oauth.waiting ? "授权中…" : "授权") { oauth.beginSignIn() }
                         .buttonStyle(.plain).font(DS.Fonts.button).foregroundStyle(DS.Colors.accent)
                 }
             }
@@ -439,12 +432,13 @@ private struct EmailConnectionTestRow: View {
             services.append(RealEmailService(host: "imap.gmail.com", email: email,
                                              auth: .oauth { try await GoogleOAuth.shared.validAccessToken() }))
         }
-        let host = store.settings.emailImapHost, email = store.settings.emailAddress, password = store.emailAppPassword
-        if !host.isEmpty, !email.isEmpty, !password.isEmpty {
-            services.append(RealEmailService(host: host, email: email, auth: .password(password)))
-        }
+        // 手动「IMAP + 应用密码」兜底通道暂停用（恢复时取消注释，与 currentEmailServices 同步）
+        // let host = store.settings.emailImapHost, email = store.settings.emailAddress, password = store.emailAppPassword
+        // if !host.isEmpty, !email.isEmpty, !password.isEmpty, !AppDelegate.isOffice365IMAP(host) {
+        //     services.append(RealEmailService(host: host, email: email, auth: .password(password)))
+        // }
         guard !services.isEmpty else {
-            state = .failure("请先用 Microsoft / Google 登录，或填 IMAP 主机/账号/应用密码")
+            state = .failure("请先用 Microsoft / Gmail 登录")
             return
         }
         state = .testing

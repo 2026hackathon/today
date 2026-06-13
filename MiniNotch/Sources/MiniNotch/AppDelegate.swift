@@ -533,13 +533,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             services.append(RealEmailService(host: "imap.gmail.com", email: email,
                                              auth: .oauth { try await GoogleOAuth.shared.validAccessToken() }))
         }
-        // 其它邮箱：IMAP + 应用密码
-        let s = store.settings
-        let password = store.emailAppPassword   // Keychain
-        if !s.emailImapHost.isEmpty, !s.emailAddress.isEmpty, !password.isEmpty {
-            services.append(RealEmailService(host: s.emailImapHost, email: s.emailAddress, auth: .password(password)))
-        }
+        // ── 手动「IMAP + 应用密码」兜底通道暂停用（当前用不上；OAuth 已覆盖 O365/Gmail）──
+        // 恢复时取消注释下段，并恢复 SettingsPanel 的 IMAP 字段与测试连接对应段。
+        // Gmail OAuth 不走这里（它用上面的 imap.gmail.com + XOAUTH2，独立于这些设置字段）。
+        // let s = store.settings
+        // let password = store.emailAppPassword   // Keychain
+        // if !s.emailImapHost.isEmpty, !s.emailAddress.isEmpty, !password.isEmpty,
+        //    !Self.isOffice365IMAP(s.emailImapHost) {
+        //     services.append(RealEmailService(host: s.emailImapHost, email: s.emailAddress, auth: .password(password)))
+        // }
         return services.isEmpty ? [mockEmailService] : services
+    }
+
+    /// O365 IMAP 主机 —— 基础认证已被禁用，密码 IMAP 必失败，应跳过（走 Microsoft 登录/Graph）。
+    /// 手动 IMAP 通道恢复时复用此判断。
+    static func isOffice365IMAP(_ host: String) -> Bool {
+        host.lowercased().contains("office365.com")
     }
 
     /// 拉取一轮邮件：多来源各自 fetch（来源识别/链接归一/隐私预处理在服务层完成），
