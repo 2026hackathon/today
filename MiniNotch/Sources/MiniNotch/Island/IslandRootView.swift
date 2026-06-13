@@ -72,11 +72,11 @@ struct IslandRootView: View {
             // F-04 三档递进 glow：1h 微弱橙呼吸 → 15min 橙色脉冲 → 过期红色强脉冲
             .nearGlow(active: store.islandState == .near, cornerRadius: geo.cornerRadius)
             .warningGlow(
-                active: store.islandState == .urgent && store.overdueTodos.isEmpty,
+                active: store.islandState == .urgent && store.overdueTodos.isEmpty && !store.debugForceRedGlow,
                 cornerRadius: geo.cornerRadius
             )
             .urgentGlow(
-                active: store.islandState == .urgent && !store.overdueTodos.isEmpty,
+                active: store.islandState == .urgent && (!store.overdueTodos.isEmpty || store.debugForceRedGlow),
                 cornerRadius: geo.cornerRadius
             )
             .goldFlash(trigger: store.completionFlash, cornerRadius: geo.cornerRadius)

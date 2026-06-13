@@ -823,6 +823,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("任务降落卡（模拟 F2 单任务）", #selector(debugNewTask)),
             ("批量识别（模拟会议纪要）", #selector(debugBatch)),
             ("到期提醒卡", #selector(debugReminder)),
+            ("glow①提前（橙慢呼吸 near）", #selector(debugGlowNear)),
+            ("glow②临近（橙脉冲 urgent）", #selector(debugGlowWarning)),
+            ("glow④过期（红强脉冲）", #selector(debugGlowOverdue)),
+            ("glow·AI 解析（彩虹流光 3s）", #selector(debugGlowAI)),
             ("悬停预览", #selector(debugHover)),
             ("展开 Today", #selector(debugToday)),
             ("设置面板", #selector(debugSettings)),
@@ -972,6 +976,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let todo = store.pendingTodos.first { $0.dueDate != nil } ?? store.pendingTodos.first
         guard let todo else { return }
         store.present(.reminder(todo: todo))
+    }
+
+    // MARK: Debug —— glow 分档预览（直接置 compact 态看发光，数据变化后自动回落）
+    @objc private func debugGlowNear() {
+        store.debugForceRedGlow = false
+        store.present(.near)
+    }
+    @objc private func debugGlowWarning() {
+        store.debugForceRedGlow = false
+        store.present(.urgent)   // 无超期 → 橙色 warning 脉冲
+    }
+    @objc private func debugGlowOverdue() {
+        store.debugForceRedGlow = true
+        store.present(.urgent)   // 强制走红色 urgent 脉冲
+    }
+    @objc private func debugGlowAI() {
+        store.present(.aiWorking)            // 彩虹流光
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            self?.store.debugForceRedGlow = false
+            self?.store.dismiss()
+        }
     }
 
     @objc private func debugHover() { store.present(.hoverPreview) }

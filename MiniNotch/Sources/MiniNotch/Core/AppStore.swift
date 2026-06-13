@@ -52,6 +52,8 @@ final class AppStore: ObservableObject {
     @Published private(set) var islandState: IslandState = .normal
     /// AI 是否工作中（驱动 aiWorking 态 + 流光）
     @Published var isAIWorking = false { didSet { refreshCompactState() } }
+    /// Debug 预览：强制 urgent 走红色（过期）光，绕开"必须真有超期项"的条件。仅 Debug 菜单用。
+    @Published var debugForceRedGlow = false
     /// 今日全部完成后 compact 显示皇冠
     @Published private(set) var crownedToday = false
     /// 加冕日期：跨天自动失效（review-fixes #13）
