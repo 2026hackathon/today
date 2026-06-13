@@ -805,9 +805,12 @@ final class AppStore: ObservableObject {
         for (meeting, key) in fetched {
             // 全天事件/无时间提醒不给 dueDate：落「无固定时间」分区，不触发提醒、不计超期
             let dueDate = meeting.isAllDay ? nil : meeting.start
+            // 苹果来源 kind：提醒事项→提醒、日历事件→日程（驱动 kind 标签与默认提前量）
+            let kind: DraftKind = meeting.isReminder ? .reminder : .event
             if let i = todos.firstIndex(where: { $0.source == .calendar && $0.calendarEventId == key }) {
                 todos[i].title = meeting.title
                 todos[i].dueDate = dueDate
+                todos[i].kind = kind
                 // 提醒在外部（Apple 提醒事项）被勾掉 → 本地任务跟随完成。
                 // 单向同步：EventKit 未完成不清本地完成态（不复活规则优先）
                 if meeting.isCompleted, todos[i].completedAt == nil {
@@ -816,7 +819,7 @@ final class AppStore: ObservableObject {
             } else if !meeting.isCompleted {
                 // 静默入库：日历同步每 15min 一轮，不播降落动效/通知卡；
                 // 外部已完成的提醒不再生成任务（只在日历页签打勾展示）
-                todos.append(Todo(title: meeting.title, source: .calendar,
+                todos.append(Todo(title: meeting.title, source: .calendar, kind: kind,
                                   dueDate: dueDate, calendarEventId: key))
             }
         }

@@ -126,8 +126,31 @@ struct NewTaskCard: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+
+            // 提前提醒：仅在有截止时间时可设（无截止 → 提醒无意义，隐藏）
+            if edited.dueDate != nil {
+                Menu {
+                    Button("提前 5 分钟") { edited.reminderLeadMinutes = 5 }
+                    Button("提前 15 分钟") { edited.reminderLeadMinutes = 15 }
+                    Button("提前 30 分钟") { edited.reminderLeadMinutes = 30 }
+                    Button("提前 1 小时") { edited.reminderLeadMinutes = 60 }
+                    Button("不提前") { edited.reminderLeadMinutes = 0 }
+                } label: {
+                    metaBadge(Self.leadLabel(edited.reminderLeadMinutes ?? edited.kind.defaultLeadMinutes), isAlert: false)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            }
         }
         .padding(.bottom, 12)
+    }
+
+    /// 提前量 → 文案（nil/0 → 「准点提醒」）
+    static func leadLabel(_ minutes: Int?) -> String {
+        guard let m = minutes, m > 0 else { return "准点提醒" }
+        if m >= 60 { return m % 60 == 0 ? "提前 \(m / 60) 小时" : "提前 \(m) 分钟" }
+        return "提前 \(m) 分钟"
     }
 
     private func metaBadge(_ text: String, isAlert: Bool) -> some View {

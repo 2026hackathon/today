@@ -207,6 +207,12 @@ struct PersonalTodoRow: View {
                     .strikethrough(todo.isCompleted, color: DS.Colors.text3)
                 HStack(spacing: 6) {
                     PanelPriorityTag(priority: todo.priority)
+                    // kind 标签：日程/提醒才显示（纯任务不显，避免噪音）；
+                    // 苹果日历同步项据此区分「日程」「提醒」
+                    if todo.kind != .task {
+                        Text(todo.kind.label)
+                            .dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
+                    }
                     // 显示有效截止（snooze 后即新时间）；snooze 过的标个铃铛
                     if let due = todo.effectiveDue {
                         HStack(spacing: 3) {

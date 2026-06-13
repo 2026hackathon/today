@@ -16,6 +16,7 @@ struct EditTaskCard: View {
     @State private var priority: Priority
     @State private var hasDue: Bool
     @State private var due: Date
+    @State private var lead: Int?
     @FocusState private var titleFocused: Bool
 
     init(todo: Todo) {
@@ -23,6 +24,7 @@ struct EditTaskCard: View {
         _title = State(initialValue: todo.title)
         _priority = State(initialValue: todo.priority)
         _hasDue = State(initialValue: todo.dueDate != nil)
+        _lead = State(initialValue: todo.reminderLeadMinutes)
         // 无截止时给一个合理默认（今天 18:00），打开开关即用
         _due = State(initialValue: todo.dueDate
             ?? Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: Date()) ?? Date())
@@ -72,6 +74,33 @@ struct EditTaskCard: View {
                             .foregroundStyle(DS.Colors.text3)
                     }
                     Spacer()
+                }
+            }
+
+            // 提前提醒：仅有截止时间时可设
+            if hasDue {
+                fieldRow("提前") {
+                    Menu {
+                        Button("提前 5 分钟") { lead = 5 }
+                        Button("提前 15 分钟") { lead = 15 }
+                        Button("提前 30 分钟") { lead = 30 }
+                        Button("提前 1 小时") { lead = 60 }
+                        Button("不提前") { lead = 0 }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(NewTaskCard.leadLabel(lead ?? todo.kind.defaultLeadMinutes))
+                            Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).opacity(0.5)
+                        }
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(DS.Colors.text2)
+                        .padding(.horizontal, 8)
+                        .frame(height: 22)
+                        .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: 4))
+                        .contentShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
                 }
             }
 
@@ -172,6 +201,7 @@ struct EditTaskCard: View {
         updated.title = trimmedTitle
         updated.priority = priority
         updated.dueDate = hasDue ? due : nil
+        updated.reminderLeadMinutes = hasDue ? lead : nil
         store.update(updated)
         store.dismiss()
     }
