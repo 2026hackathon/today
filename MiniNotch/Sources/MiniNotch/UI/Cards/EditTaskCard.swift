@@ -77,30 +77,14 @@ struct EditTaskCard: View {
                 }
             }
 
-            // 提前提醒：仅有截止时间时可设
+            // 提前提醒：仅有截止时间时可设（chips，不用 Menu——非激活面板里 Menu 不渲染）
             if hasDue {
                 fieldRow("提前") {
-                    Menu {
-                        Button("提前 5 分钟") { lead = 5 }
-                        Button("提前 15 分钟") { lead = 15 }
-                        Button("提前 30 分钟") { lead = 30 }
-                        Button("提前 1 小时") { lead = 60 }
-                        Button("不提前") { lead = 0 }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Text(NewTaskCard.leadLabel(lead ?? todo.kind.defaultLeadMinutes))
-                            Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).opacity(0.5)
+                    HStack(spacing: 4) {
+                        ForEach([0, 5, 15, 30, 60], id: \.self) { m in
+                            leadChip(m)
                         }
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(DS.Colors.text2)
-                        .padding(.horizontal, 8)
-                        .frame(height: 22)
-                        .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: 4))
-                        .contentShape(RoundedRectangle(cornerRadius: 4))
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
                 }
             }
 
@@ -142,6 +126,20 @@ struct EditTaskCard: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 6)
+    }
+
+    private func leadChip(_ m: Int) -> some View {
+        let isSel = (lead ?? todo.kind.defaultLeadMinutes) == m
+        return Button { lead = m } label: {
+            Text(NewTaskCard.leadChip(m))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isSel ? DS.Colors.text1 : DS.Colors.text2)
+                .padding(.horizontal, 8)
+                .frame(height: 22)
+                .background(isSel ? DS.Colors.accentSoft : DS.Colors.surface1,
+                           in: RoundedRectangle(cornerRadius: 4))
+        }
+        .buttonStyle(.plain)
     }
 
     private func priorityChip(_ p: Priority) -> some View {

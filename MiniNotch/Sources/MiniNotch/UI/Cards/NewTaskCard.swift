@@ -13,6 +13,7 @@ struct NewTaskCard: View {
     /// 可编辑副本（保存时以此为准）
     @State private var edited: TodoDraft
     @State private var titleHovered = false
+    @State private var editingField: EditField?
     @FocusState private var titleFocused: Bool
 
     init(draft: TodoDraft) {
@@ -100,50 +101,78 @@ struct NewTaskCard: View {
             .padding(.bottom, 10)
     }
 
-    // MARK: - meta 徽章行（点击修改优先级 / 时间）
+    // MARK: - meta 徽章行（点 badge → 下方展开可选 chip）
+    // 用自绘 Button 而非 SwiftUI Menu —— Menu 在非激活的 accessory NSPanel 里不渲染标签
+
+    private enum EditField { case priority, time, lead }
 
     private var metaRow: some View {
-        HStack(spacing: 6) {
-            Menu {
-                ForEach(Priority.allCases, id: \.self) { p in
-                    Button("\(p.label)优先级") { edited.priority = p }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                badge(.priority, text: "\(edited.priority.label)优先级", isAlert: edited.priority == .high)
+                badge(.time, text: edited.dueDate?.dsShortLabel ?? "无截止")
+                // 提前提醒：仅在有截止时间时可设（无截止 → 提醒无意义，隐藏）
+                if edited.dueDate != nil {
+                    badge(.lead, text: Self.leadLabel(edited.reminderLeadMinutes ?? edited.kind.defaultLeadMinutes))
                 }
-            } label: {
-                metaBadge("\(edited.priority.label)优先级", isAlert: edited.priority == .high)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-
-            Menu {
-                Button("今晚 18:00") { edited.dueDate = Self.todayAt(hour: 18) }
-                Button("明天 09:00") { edited.dueDate = Self.tomorrowAt(hour: 9) }
-                Button("周五") { edited.dueDate = Self.nextFriday() }
-                Button("无截止") { edited.dueDate = nil }
-            } label: {
-                metaBadge(edited.dueDate?.dsShortLabel ?? "无截止", isAlert: false)
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-
-            // 提前提醒：仅在有截止时间时可设（无截止 → 提醒无意义，隐藏）
-            if edited.dueDate != nil {
-                Menu {
-                    Button("提前 5 分钟") { edited.reminderLeadMinutes = 5 }
-                    Button("提前 15 分钟") { edited.reminderLeadMinutes = 15 }
-                    Button("提前 30 分钟") { edited.reminderLeadMinutes = 30 }
-                    Button("提前 1 小时") { edited.reminderLeadMinutes = 60 }
-                    Button("不提前") { edited.reminderLeadMinutes = 0 }
-                } label: {
-                    metaBadge(Self.leadLabel(edited.reminderLeadMinutes ?? edited.kind.defaultLeadMinutes), isAlert: false)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
+            if let f = editingField {
+                optionRow(for: f)
             }
         }
         .padding(.bottom, 12)
+    }
+
+    private func badge(_ field: EditField, text: String, isAlert: Bool = false) -> some View {
+        Button {
+            store.cardHeld = true
+            withAnimation(.easeOut(duration: 0.15)) {
+                editingField = (editingField == field) ? nil : field
+            }
+        } label: {
+            metaBadge(text, isAlert: isAlert)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func optionRow(for field: EditField) -> some View {
+        HStack(spacing: 6) {
+            switch field {
+            case .priority:
+                ForEach(Priority.allCases, id: \.self) { p in
+                    optionChip(p.label, selected: edited.priority == p) { edited.priority = p }
+                }
+            case .time:
+                optionChip("今晚", selected: false) { edited.dueDate = Self.todayAt(hour: 18) }
+                optionChip("明早", selected: false) { edited.dueDate = Self.tomorrowAt(hour: 9) }
+                optionChip("周五", selected: false) { edited.dueDate = Self.nextFriday() }
+                optionChip("无", selected: edited.dueDate == nil) { edited.dueDate = nil }
+            case .lead:
+                ForEach([0, 5, 15, 30, 60], id: \.self) { m in
+                    optionChip(Self.leadChip(m),
+                               selected: (edited.reminderLeadMinutes ?? edited.kind.defaultLeadMinutes) == m) {
+                        edited.reminderLeadMinutes = m
+                    }
+                }
+            }
+        }
+    }
+
+    private func optionChip(_ text: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            withAnimation(.easeOut(duration: 0.15)) { editingField = nil }
+        } label: {
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(selected ? DS.Colors.text1 : DS.Colors.text2)
+                .padding(.horizontal, 9)
+                .frame(height: 24)
+                .background(selected ? DS.Colors.accentSoft : DS.Colors.surface1,
+                           in: RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
     }
 
     /// 提前量 → 文案（nil/0 → 「准点提醒」）
@@ -151,6 +180,12 @@ struct NewTaskCard: View {
         guard let m = minutes, m > 0 else { return "准点提醒" }
         if m >= 60 { return m % 60 == 0 ? "提前 \(m / 60) 小时" : "提前 \(m) 分钟" }
         return "提前 \(m) 分钟"
+    }
+
+    /// 提前量 → 短 chip 文案
+    static func leadChip(_ minutes: Int) -> String {
+        guard minutes > 0 else { return "准点" }
+        return minutes >= 60 ? "\(minutes / 60)小时" : "\(minutes)分"
     }
 
     private func metaBadge(_ text: String, isAlert: Bool) -> some View {
