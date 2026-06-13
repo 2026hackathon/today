@@ -33,6 +33,9 @@ final class AgentSessionService {
 
     func start() {
         ensureHookScript()
+        // 自动把 hook 注册进 ~/.claude/settings.json（幂等：已装则不重写、不备份）。
+        // 没有这步，Claude Code 不会触发 hook，事件文件永不增长、监控不生效。
+        installClaudeCodeHook()
         // 已安装的 opencode 插件随代码更新（拿到新的 env 捕获等）；未装则不动
         if FileManager.default.fileExists(atPath: openCodePlugin.path) {
             _ = installOpenCodePlugin()
@@ -191,17 +194,16 @@ final class AgentSessionService {
         let cmd = "python3 '\(hookScript.path)'"
 
         var root: [String: Any] = [:]
+        var originalData: Data?
         if let data = try? Data(contentsOf: settingsURL),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             root = obj
-            // 备份（仅在原文件存在时）
-            let backup = settingsURL.deletingPathExtension()
-                .appendingPathExtension("mininotch-bak.json")
-            try? data.write(to: backup)
+            originalData = data
         }
 
         var hooks = root["hooks"] as? [String: Any] ?? [:]
         let events = ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "SubagentStop", "SessionEnd"]
+        var changed = false
         for ev in events {
             // 跳过已含本脚本的事件（幂等）
             let existing = hooks[ev] as? [[String: Any]] ?? []
@@ -211,8 +213,18 @@ final class AgentSessionService {
             if already { continue }
             let entry: [String: Any] = ["hooks": [["type": "command", "command": cmd]]]
             hooks[ev] = existing + [entry]
+            changed = true
         }
+        // 全部已安装：不重写文件、不堆备份（每次 App 启动都会调用，必须幂等无副作用）
+        if !changed { return "Claude Code Hook 已安装（无需变更）。" }
         root["hooks"] = hooks
+
+        // 仅在确实要改写时备份原文件
+        if let originalData {
+            let backup = settingsURL.deletingPathExtension()
+                .appendingPathExtension("mininotch-bak.json")
+            try? originalData.write(to: backup)
+        }
 
         do {
             try FileManager.default.createDirectory(
