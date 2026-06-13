@@ -13,9 +13,11 @@ struct MessageInboxPanel: View {
     @EnvironmentObject var store: AppStore
     @State private var showProcessed = false
 
-    /// 未处理在上（按时间倒序），已处理收进底部折叠区
-    private var pending: [Message] { store.sortedMessages.filter { !$0.isProcessed } }
-    private var processed: [Message] { store.sortedMessages.filter { $0.isProcessed } }
+    /// 未处理在上（按天分组、最近 3 天），已处理收进底部折叠区（同样按天分组、最近 3 天）
+    private var pendingByDay: [(day: Date, messages: [Message])] { store.pendingMessagesByDay }
+    private var processedByDay: [(day: Date, messages: [Message])] { store.processedMessagesByDay }
+    /// 折叠头展示的已处理条数（与下方展示范围一致：最近 3 天）
+    private var processedShownCount: Int { processedByDay.reduce(0) { $0 + $1.messages.count } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -38,11 +40,14 @@ struct MessageInboxPanel: View {
                 .frame(maxWidth: .infinity, minHeight: 320)
             }
 
-            ForEach(pending) { message in
-                MessageRow(message: message)
+            ForEach(pendingByDay, id: \.day) { group in
+                dayHeader(group.day)
+                ForEach(group.messages) { message in
+                    MessageRow(message: message)
+                }
             }
 
-            if !processed.isEmpty {
+            if processedShownCount > 0 {
                 processedFold
             }
         }
@@ -50,6 +55,16 @@ struct MessageInboxPanel: View {
         .padding(.top, 8)
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // 收件日组头：今天 / 昨天 / M/d
+    private func dayHeader(_ day: Date) -> some View {
+        Text(day.dsDayHeader)
+            .font(DS.Fonts.meta)
+            .foregroundStyle(DS.Colors.text3)
+            .padding(.horizontal, 2)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
     }
 
     // 已处理折叠（与 Today「已完成」一致）：默认收起，点开看历史
@@ -60,7 +75,7 @@ struct MessageInboxPanel: View {
             } label: {
                 HStack(spacing: 6) {
                     Text(showProcessed ? "▾" : "▸")
-                    Text("已处理 (\(processed.count))")
+                    Text("已处理 (\(processedShownCount))")
                 }
                 .font(DS.Fonts.meta)
                 .foregroundStyle(DS.Colors.text3)
@@ -71,8 +86,11 @@ struct MessageInboxPanel: View {
             .padding(.bottom, 4)
 
             if showProcessed {
-                ForEach(processed) { message in
-                    MessageRow(message: message)
+                ForEach(processedByDay, id: \.day) { group in
+                    dayHeader(group.day)
+                    ForEach(group.messages) { message in
+                        MessageRow(message: message)
+                    }
                 }
             }
         }
@@ -80,7 +98,7 @@ struct MessageInboxPanel: View {
 
     private var headline: String {
         let unread = store.unprocessedMessageCount
-        return unread > 0 ? "\(unread) 条未处理消息" : "消息已清空"
+        return unread > 0 ? "\(unread) 条未读邮件" : "消息已清空"
     }
 }
 
@@ -136,7 +154,7 @@ private struct MessageRow: View {
                             .font(DS.Fonts.meta)
                             .foregroundStyle(DS.Colors.text3)
                     }
-                    Text(message.receivedAt.dsShortLabel)
+                    Text(message.receivedAt.dsHHmm)
                         .font(DS.Fonts.meta)
                         .foregroundStyle(DS.Colors.text3)
                 }

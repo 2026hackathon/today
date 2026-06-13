@@ -305,4 +305,13 @@ extension Date {
         let comps = Calendar.current.dateComponents([.hour, .minute], from: self)
         return String(format: "%02d:%02d", comps.hour ?? 0, comps.minute ?? 0)
     }
+
+    /// 收件日分组组头：今天→「今天」、昨天→「昨天」、更早→「M/d」
+    var dsDayHeader: String {
+        let cal = Calendar.current
+        if cal.isDateInToday(self) { return "今天" }
+        if cal.isDateInYesterday(self) { return "昨天" }
+        let comps = cal.dateComponents([.month, .day], from: self)
+        return "\(comps.month ?? 1)/\(comps.day ?? 1)"
+    }
 }

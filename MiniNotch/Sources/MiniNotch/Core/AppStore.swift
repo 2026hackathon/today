@@ -945,6 +945,27 @@ final class AppStore: ObservableObject {
     /// 消息列表按接收时间倒序（消息页签消费）
     var sortedMessages: [Message] { messages.sorted { $0.receivedAt > $1.receivedAt } }
 
+    /// 未处理邮件按收件自然天分组：组间按天倒序、组内按 receivedAt 倒序，仅保留最近 3 个收件日
+    var pendingMessagesByDay: [(day: Date, messages: [Message])] {
+        Self.groupByDay(messages.filter { !$0.isProcessed })
+    }
+
+    /// 已处理邮件按收件自然天分组：规则同 pendingMessagesByDay
+    var processedMessagesByDay: [(day: Date, messages: [Message])] {
+        Self.groupByDay(messages.filter { $0.isProcessed })
+    }
+
+    /// 按 startOfDay(receivedAt) 分组，组间日期倒序、组内 receivedAt 倒序，取最近 3 个收件日
+    private static func groupByDay(_ msgs: [Message]) -> [(day: Date, messages: [Message])] {
+        let cal = Calendar.current
+        let grouped = Dictionary(grouping: msgs) { cal.startOfDay(for: $0.receivedAt) }
+        return grouped
+            .map { (day: $0.key, messages: $0.value.sorted { $0.receivedAt > $1.receivedAt }) }
+            .sorted { $0.day > $1.day }
+            .prefix(3)
+            .map { $0 }
+    }
+
     /// 未处理消息数（消息页签角标）
     var unprocessedMessageCount: Int { messages.lazy.filter { !$0.isProcessed }.count }
 
