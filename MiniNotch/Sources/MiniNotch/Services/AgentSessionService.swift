@@ -232,9 +232,13 @@ final class AgentSessionService {
     func jumpTo(_ session: AgentSession) {
         let t = session.terminal
 
-        // 1) tmux：选中那个 pane（跨进程经 tmux server 生效）
+        // 1) tmux：选中那个 pane（跨进程经 tmux server 生效），再激活宿主终端
         if let pane = t?.tmuxPane, !pane.isEmpty {
             runShell("tmux select-window -t '\(pane)' \\; select-pane -t '\(pane)'")
+            if let bundle = t?.bundleID ?? t?.program.flatMap(Self.bundleID(forProgram:)) {
+                activateApp(bundleID: bundle)
+            }
+            return
         }
 
         // 2) iTerm2：ITERM_SESSION_ID = wNtNpN:UUID，按 UUID 选中那个 session
@@ -262,15 +266,11 @@ final class AgentSessionService {
         }
 
         // 3) 激活终端 App（Warp / Terminal / 其它无 pane API 的）
-        if let bundle = t?.bundleID, !bundle.isEmpty,
-           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first {
-            app.activate(options: [.activateAllWindows])
-            return
+        if let bundle = t?.bundleID, !bundle.isEmpty {
+            activateApp(bundleID: bundle); return
         }
-        if let program = t?.program, let bundle = Self.bundleID(forProgram: program),
-           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first {
-            app.activate(options: [.activateAllWindows])
-            return
+        if let program = t?.program, let bundle = Self.bundleID(forProgram: program) {
+            activateApp(bundleID: bundle); return
         }
 
         // 4) 兜底：打开工作目录（Finder）
@@ -279,8 +279,20 @@ final class AgentSessionService {
         }
     }
 
+    /// 把指定 bundle 的 App 带到前台。accessory 应用用 NSWorkspace.openApplication
+    /// 比 NSRunningApplication.activate 可靠（后者在后台 app 里常激活不动）。
+    private func activateApp(bundleID: String) {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            NSLog("[Agent] app not found: \(bundleID)")
+            return
+        }
+        let cfg = NSWorkspace.OpenConfiguration()
+        cfg.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: cfg)
+    }
+
     /// TERM_PROGRAM → bundle id（拿不到 __CFBundleIdentifier 时的兜底映射）
-    private static func bundleID(forProgram program: String) -> String? {
+    nonisolated private static func bundleID(forProgram program: String) -> String? {
         switch program {
         case "WarpTerminal": "dev.warp.Warp-Stable"
         case "iTerm.app": "com.googlecode.iterm2"
