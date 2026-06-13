@@ -124,7 +124,7 @@ struct AgentSessionRow: View {
     private var icon: String {
         switch session.state {
         case .working: "cpu"
-        case .waiting: "bell.fill"
+        case .waiting: "bell.badge.fill"  // 与刘海待处理徽章一致
         case .replied: "checkmark.seal.fill"
         case .ended: "xmark.circle"
         }
