@@ -11,8 +11,10 @@ cd MiniNotch
 swift run        # 跑起来：刘海出现黑岛，菜单栏出现图标
 ```
 
-菜单栏图标 → **Debug 状态** 子菜单可手动触发全部 15 个 island 状态（联调 + Demo 兜底）。
+菜单栏图标 → **Debug 状态** 子菜单可手动触发全部 island 状态（联调 + Demo 兜底）。
 先把每个状态点一遍，你就理解整个产品了。
+
+> **Agent 会话监控**（Claude Code / opencode 状态上刘海）配置见 [AGENT-SESSION-SETUP.md](./AGENT-SESSION-SETUP.md)。
 
 ## 架构 60 秒版
 
