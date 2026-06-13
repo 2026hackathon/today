@@ -606,8 +606,7 @@ struct PanelTabBar: View {
             }
             Spacer(minLength: 8)
             if current != .settings {
-                // 创建组：贴图识别（兼容 CleanShot/微信等外部截图工具）+ 手动新建
-                PanelIconButton(symbol: "doc.on.clipboard") { store.pasteScreenshot() }
+                // 新建：手动输入 / ⌥Space 语音 / ⌘V 贴图识别（贴图功能已并入快速录入框）
                 PanelIconButton(symbol: "plus") { store.present(.quickInput) }
                 // 系统组：刷新（同步 Jira/日历）+ 设置
                 PanelRefreshButton()

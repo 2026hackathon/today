@@ -32,6 +32,8 @@ protocol CaptureService: AnyObject {
     /// 从剪贴板读图识别（兼容 CleanShot/微信等外部截图工具）。
     /// 找到图片 → 走与 F2 相同的 onTodoCapture 管线并返回 true；剪贴板无图返回 false
     func captureFromPasteboard() -> Bool
+    /// 已拿到 PNG 字节（如快速录入里 ⌘V 贴的图）：落盘后走与 F2 相同的 onTodoCapture 管线
+    func recognize(pngData png: Data)
     /// 全局语音热键（⌥Space）：弹出快速录入并自动开始语音
     var onVoiceCapture: (() -> Void)? { get set }
 }
@@ -147,22 +149,37 @@ final class HotkeyCaptureService: CaptureService {
     func captureFromPasteboard() -> Bool {
         // NSImage(pasteboard:) 能吃 PNG/TIFF 位图，也能吃被复制的图片文件
         guard let image = NSImage(pasteboard: .general),
-              let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]), !png.isEmpty
+              let png = Self.pngData(from: image)
         else {
             return false
         }
+        recognize(pngData: png)
+        return true
+    }
+
+    /// 已拿到 PNG 字节（如快速录入里 ⌘V 贴的图）：落盘后走与 F2 截图相同的 AI 流水线
+    func recognize(pngData png: Data) {
+        guard !png.isEmpty else { return }
         let filename = Self.filenameFormatter.string(from: Date()) + "-paste.png"
         let fileURL = Persistence.screenshotsDir.appendingPathComponent(filename)
         do {
             try png.write(to: fileURL)
         } catch {
-            NSLog("[Capture] 剪贴板图片落盘失败: \(error)")
-            return false
+            NSLog("[Capture] 贴图落盘失败: \(error)")
+            return
         }
         onTodoCapture?(png, fileURL.path)
-        return true
+    }
+
+    /// NSImage → PNG 字节（位图重编码）。失败返回 nil。
+    static func pngData(from image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]), !png.isEmpty
+        else {
+            return nil
+        }
+        return png
     }
 
     private static let filenameFormatter: DateFormatter = {

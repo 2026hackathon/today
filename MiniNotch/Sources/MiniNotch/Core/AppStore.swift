@@ -92,6 +92,12 @@ final class AppStore: ObservableObject {
         settings.tabOrder = arr.map(\.rawValue)
     }
 
+    /// 快速录入里 ⌘V 贴图后回车：直接拿 PNG 走截图 AI 流水线（AppDelegate 装配）
+    var onRecognizeImage: ((Data) -> Void)?
+
+    /// 识别已贴入快速录入框的截图
+    func recognizeImage(_ data: Data) { onRecognizeImage?(data) }
+
     /// ⌥Space 语音速记：QuickInputCard onAppear 读到 true 即自动开始聆听，用后自清
     @Published var quickInputAutoVoice = false
 

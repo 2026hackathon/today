@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
 
 // ============================================================
 // QuickInputCard —— ⌘N 手动新建（AI 自动解析）。
 // 对应 prototype.html STATES.quickinput。
 // 输入停顿 0.6s 后自动调 onParse；可「跳过 AI」纯手动创建。
+// ⌘V 贴图：剪贴板有图就吃进输入框，回车走截图 AI 识别流水线（合并原剪贴板贴图功能）。
 // ============================================================
 
 struct QuickInputCard: View {
@@ -24,6 +26,11 @@ struct QuickInputCard: View {
     @State private var manualDue: Date?
     @State private var manualPriority: Priority = .medium
     @State private var parseTask: Task<Void, Never>?
+    /// ⌘V 贴入的截图（缩略图预览用）与其 PNG 字节（送 AI 识别用）
+    @State private var pastedImage: NSImage?
+    @State private var pastedPNG: Data?
+    /// ⌘V 本地按键监听（捕获剪贴板图片，纯文本放行给输入框）
+    @State private var pasteMonitor: Any?
     @FocusState private var focused: Bool
     @StateObject private var dictation = SpeechDictation()
 
@@ -35,17 +42,22 @@ struct QuickInputCard: View {
 
             inputRow
 
-            if !skipAI {
-                if phase == .parsing {
-                    statusRow
+            if let img = pastedImage {
+                // 贴了图：只展示截图缩略图，回车走 AI 识图（不再走文本解析/手动表单）
+                imageAttachment(img)
+            } else {
+                if !skipAI {
+                    if phase == .parsing {
+                        statusRow
+                    }
+                    if case .parsed(let draft) = phase {
+                        preview(draft)
+                    }
                 }
-                if case .parsed(let draft) = phase {
-                    preview(draft)
+                // 手动模式（跳过 AI / 尚无解析结果）：提供手动 截止/优先级 选择
+                if skipAI || (phase != .parsing && !isParsed) {
+                    manualControls
                 }
-            }
-            // 手动模式（跳过 AI / 尚无解析结果）：提供手动 截止/优先级 选择
-            if skipAI || (phase != .parsing && !isParsed) {
-                manualControls
             }
 
             actions
@@ -54,13 +66,97 @@ struct QuickInputCard: View {
         .padding(.bottom, 6)
         .onAppear {
             focused = true
+            installPasteMonitor()
             // ⌥Space 语音速记进入：自动开始聆听（消费一次标志）
             if store.quickInputAutoVoice {
                 store.quickInputAutoVoice = false
                 dictation.toggle { spoken in text = spoken }
             }
         }
-        .onDisappear { parseTask?.cancel(); dictation.stop() }
+        .onDisappear {
+            parseTask?.cancel()
+            dictation.stop()
+            if let m = pasteMonitor { NSEvent.removeMonitor(m); pasteMonitor = nil }
+        }
+    }
+
+    // MARK: - ⌘V 贴图
+
+    /// 装本地按键监听：⌘V 时若剪贴板有图就吃进输入框并吞掉事件；
+    /// 纯文本（无图）放行，让输入框正常粘贴文字。
+    private func installPasteMonitor() {
+        guard pasteMonitor == nil else { return }
+        pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // 先取出 Sendable 基本量（NSEvent 非 Sendable，不能跨进 MainActor 闭包）
+            guard event.modifierFlags.contains(.command),
+                  event.charactersIgnoringModifiers == "v" else { return event }
+            // 本地 keyDown 在主线程派发 → assumeIsolated 安全跳回 MainActor
+            let handled = MainActor.assumeIsolated { capturePastedImage() }
+            return handled ? nil : event   // 处理了就吞掉，避免输入框再粘贴
+        }
+    }
+
+    /// 剪贴板有图就吃进输入框，返回是否已处理（处理则吞掉 ⌘V，纯文本放行）
+    private func capturePastedImage() -> Bool {
+        guard let image = NSImage(pasteboard: .general),
+              let png = Self.pngData(from: image)
+        else { return false }
+        parseTask?.cancel()
+        phase = .idle
+        pastedImage = image
+        pastedPNG = png
+        store.quickInputNotice = nil
+        return true
+    }
+
+    /// NSImage → PNG 字节（位图重编码）。失败返回 nil。
+    private static func pngData(from image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]), !png.isEmpty
+        else {
+            return nil
+        }
+        return png
+    }
+
+    /// 已贴入的截图缩略图 + 移除按钮
+    private func imageAttachment(_ image: NSImage) -> some View {
+        HStack(spacing: 10) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.s))
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.s)
+                        .stroke(DS.Colors.border, lineWidth: 1)
+                )
+            VStack(alignment: .leading, spacing: 2) {
+                Text("已粘贴截图")
+                    .font(DS.Fonts.button)
+                    .foregroundStyle(DS.Colors.text1)
+                Text("回车开始 AI 识图，自动创建待办")
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.text3)
+            }
+            Spacer()
+            Button {
+                pastedImage = nil
+                pastedPNG = nil
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(DS.Colors.text3)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 14)
+        .overlay(alignment: .top) {
+            Rectangle().fill(DS.Colors.border).frame(height: 1)
+        }
+        .padding(.top, 12)
     }
 
     private var isParsed: Bool {
@@ -159,7 +255,7 @@ struct QuickInputCard: View {
             Text("›")
                 .font(.system(size: 14, design: .monospaced))
                 .foregroundStyle(DS.Colors.text3)
-            TextField(dictation.isListening ? "正在聆听…" : "输入或说一句任务，AI 自动解析", text: $text)
+            TextField(dictation.isListening ? "正在聆听…" : "输入任务、或 ⌘V 粘贴截图，AI 自动解析", text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .foregroundStyle(DS.Colors.text1)
@@ -202,7 +298,8 @@ struct QuickInputCard: View {
     /// 输入停顿 0.6s 后触发 AI 解析（防抖）
     private func scheduleParse(_ input: String) {
         parseTask?.cancel()
-        guard !skipAI else { return }
+        // 贴图模式下文本只是备注，不触发文本解析
+        guard pastedImage == nil, !skipAI else { return }
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             phase = .idle
@@ -352,15 +449,15 @@ struct QuickInputCard: View {
                 phase = .idle
             }
             .buttonStyle(DSGhostButtonStyle(fullWidth: false))
-            .disabled(skipAI)
-            .opacity(skipAI ? 0.4 : 1)
+            .disabled(skipAI || pastedImage != nil)
+            .opacity(skipAI || pastedImage != nil ? 0.4 : 1)
 
             Spacer()
 
             Button("取消") { store.dismiss() }
                 .buttonStyle(DSGhostButtonStyle(fullWidth: false))
 
-            Button("创建") { create() }
+            Button(pastedImage != nil ? "识图创建" : "创建") { create() }
                 .buttonStyle(DSPrimaryButtonStyle(fullWidth: false))
                 .disabled(createDisabled)
                 .opacity(createDisabled ? 0.4 : 1)
@@ -373,13 +470,20 @@ struct QuickInputCard: View {
     }
 
     private var createDisabled: Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        pastedPNG == nil && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func create() {
+        parseTask?.cancel()
+        // 贴了图：走与 F2 截图相同的 AI 识别流水线（识别完落 newTask/批量卡）。
+        // 先回落 compact，让 isAIWorking 驱动识图流光；识别成功/失败由流水线接管呈现。
+        if let png = pastedPNG {
+            store.recognizeImage(png)
+            store.dismiss()
+            return
+        }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        parseTask?.cancel()
         if !skipAI, case .parsed(let draft) = phase {
             store.add(draft.toTodo())
         } else {

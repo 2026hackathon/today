@@ -267,6 +267,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // 快速录入框 ⌘V 贴图后回车：拿到 PNG 直接走与截图相同的识别流水线
+        store.onRecognizeImage = { [weak self] png in
+            self?.captureService.recognize(pngData: png)
+        }
+
         // ⌥Space 全局语音速记：弹快速录入并自动开始聆听
         captureService.onVoiceCapture = { [weak self] in
             self?.store.presentVoiceInput()
