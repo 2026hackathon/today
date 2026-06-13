@@ -519,30 +519,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return token.isEmpty ? nil : RealGitHubService(token: token)
     }
 
-    /// 邮件装配（integrations spec）：IMAP 主机/账号/应用密码三项齐全 → RealEmailService(IMAP)，
-    /// 任一为空回退 Mock（无凭证也能演示），设置变更下个轮询周期生效。
-    private func currentEmailService() -> EmailService {
+    /// 邮件装配（integrations spec）：可同时接入多个来源——O365(Graph) + Gmail(IMAP XOAUTH2)
+    /// + 其它 IMAP(应用密码)。都未配置时回退 Mock（无凭证也能演示）。
+    private func currentEmailServices() -> [EmailService] {
+        var services: [EmailService] = []
         // O365：已用 Microsoft 登录 → Graph（/me/messages），不依赖 IMAP 主机/开关
         if MicrosoftOAuth.shared.isSignedIn {
-            return GraphEmailService()
+            services.append(GraphEmailService())
         }
-        // 否则回退 IMAP + 应用密码（Gmail 等仍支持 IMAP 基础认证的邮箱）
+        // Gmail：已用 Google 登录 → imap.gmail.com + XOAUTH2
+        if GoogleOAuth.shared.isSignedIn, !GoogleOAuth.shared.accountEmail.isEmpty {
+            let email = GoogleOAuth.shared.accountEmail
+            services.append(RealEmailService(host: "imap.gmail.com", email: email,
+                                             auth: .oauth { try await GoogleOAuth.shared.validAccessToken() }))
+        }
+        // 其它邮箱：IMAP + 应用密码
         let s = store.settings
         let password = store.emailAppPassword   // Keychain
-        guard !s.emailImapHost.isEmpty, !s.emailAddress.isEmpty, !password.isEmpty else {
-            return mockEmailService
+        if !s.emailImapHost.isEmpty, !s.emailAddress.isEmpty, !password.isEmpty {
+            services.append(RealEmailService(host: s.emailImapHost, email: s.emailAddress, auth: .password(password)))
         }
-        return RealEmailService(host: s.emailImapHost, email: s.emailAddress, auth: .password(password))
+        return services.isEmpty ? [mockEmailService] : services
     }
 
-    /// 拉取一轮邮件：来源识别/链接归一/隐私预处理在服务层完成（无效邮件已被代码过滤），
-    /// 这里调 AI 分析重要级别 + ≤20 字一句话建议再入库。
-    /// 去重在 fetch 之后、AI 之前（避免对已知邮件重复打 LLM）；首轮静默不弹卡。
+    /// 拉取一轮邮件：多来源各自 fetch（来源识别/链接归一/隐私预处理在服务层完成），
+    /// 跨来源按 messageId 去重，再调 AI 分析重要级别 + ≤20 字一句话建议入库。
+    /// 去重在 AI 之前（避免对已知邮件重复打 LLM）；首轮静默不弹卡。
     private func syncEmail(notify: Bool) async {
-        let service = currentEmailService()
-        guard let inputs = try? await service.fetchNewMessages(), !inputs.isEmpty else { return }
+        var inputs: [EmailDigestInput] = []
+        for service in currentEmailServices() {
+            if let got = try? await service.fetchNewMessages() { inputs.append(contentsOf: got) }
+        }
+        guard !inputs.isEmpty else { return }
         let knownIds = Set(store.messages.map(\.messageId))
-        let fresh = inputs.filter { !knownIds.contains($0.messageId) }
+        var seen = Set<String>()
+        let fresh = inputs.filter { !knownIds.contains($0.messageId) && seen.insert($0.messageId).inserted }
         guard !fresh.isEmpty else { emailBaselineSynced = true; return }
         // AI 分析；无 Key/失败时 AIService 自身已降级，这里再兜一层规则化
         let analyses = (try? await currentAIService().analyzeEmails(fresh))

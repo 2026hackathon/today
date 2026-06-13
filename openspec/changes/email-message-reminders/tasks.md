@@ -67,3 +67,11 @@
 - [x] 10.4 设置面板「用 Microsoft 登录」行：设备码登录（自动开浏览器+复制代码）+ 已登录/退出 + 测试连接走 OAuth
 - [x] 10.5 真实 O365 账号验证（部分）：设备码登录 + refresh token 存 Keychain + XOAUTH2 **认证已被服务器接受**（"User is authenticated…"）。
 - [ ] 10.6 拉取真实邮件：被邮箱 **IMAP 协议禁用**挡住（服务器返回 "User is authenticated but not connected."）。需在 Exchange 启用 IMAP（OWA 自助或 IT `Set-CASMailbox -ImapEnabled $true`）；若无法启用则改走 Microsoft Graph（需带 Mail.Read 的 client ID）。
+
+## 11. Gmail OAuth 接入 + 多账号（email-google-oauth）
+
+- [x] 11.1 `GoogleOAuth`：授权码 + PKCE + 本地回环(NWListener) 流程，复用 Thunderbird 公开 Google client；refresh token 入 Keychain、Gmail 地址入 UserDefaults
+- [x] 11.2 Gmail 拉信复用 IMAPConnection.authenticateXOAUTH2（imap.gmail.com:993 + Google token）
+- [x] 11.3 多账号：`currentEmailServices()` 同时聚合 O365(Graph) + Gmail(IMAP XOAUTH2) + 其它 IMAP(应用密码)，syncEmail 跨来源按 messageId 去重后汇入消息
+- [x] 11.4 设置面板「Gmail 登录」行（用 Google 登录 / 已登录:邮箱 / 退出）；测试连接覆盖所有已接入来源
+- [ ] 11.5 真实 Gmail 账号验证：Google 登录成功 + 测试连接拉到真实未读（待用户实测）

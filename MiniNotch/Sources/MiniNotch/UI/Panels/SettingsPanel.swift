@@ -115,31 +115,34 @@ struct SettingsPanel: View {
     // MARK: - 邮件接入（IMAP）
 
     private var emailConfigured: Bool {
-        // O365 走 Graph：已登录即可（无需 IMAP 主机）；否则要 IMAP 主机+账号+应用密码
-        if MicrosoftOAuth.shared.isSignedIn { return true }
+        // 任一来源接入即算已配置（O365/Gmail OAuth 或 IMAP 应用密码）
+        if MicrosoftOAuth.shared.isSignedIn || GoogleOAuth.shared.isSignedIn { return true }
         return !store.settings.emailImapHost.isEmpty
             && !store.settings.emailAddress.isEmpty
             && !store.emailAppPassword.isEmpty
     }
 
     private var emailSection: some View {
-        SettingsSection(label: "邮件接入（IMAP）") {
+        SettingsSection(label: "邮件接入") {
             SettingsRow(label: "邮件") { SettingsStatusText(configured: emailConfigured) }
-            SettingsRow(label: "IMAP 主机") {
-                SettingsInputField(placeholder: "outlook.office365.com:993", text: $store.settings.emailImapHost)
-            }
-            SettingsRow(label: "账号") {
-                SettingsInputField(placeholder: "you@example.com", text: $store.settings.emailAddress)
-            }
 
-            SettingsCardDivider()
-
-            // O365 推荐：OAuth2 设备码登录（基础认证已被禁用）
+            // O365：OAuth2 设备码登录（IMAP 基础认证已被禁用 → 走 Graph）
             MicrosoftSignInRow()
 
             SettingsCardDivider()
 
-            // 备选：仍支持 IMAP 基础认证的邮箱（如 Gmail 应用密码）
+            // Gmail：OAuth2 浏览器登录（走 IMAP XOAUTH2）
+            GoogleSignInRow()
+
+            SettingsCardDivider()
+
+            // 其它邮箱：IMAP + 应用密码（host 默认占位 O365，可改 imap.gmail.com 等）
+            SettingsRow(label: "IMAP 主机") {
+                SettingsInputField(placeholder: "imap.example.com:993", text: $store.settings.emailImapHost)
+            }
+            SettingsRow(label: "账号") {
+                SettingsInputField(placeholder: "you@example.com", text: $store.settings.emailAddress)
+            }
             SettingsRow(label: "应用密码") {
                 SettingsInputField(
                     placeholder: "Gmail 等的 App Password",
@@ -351,6 +354,38 @@ private struct MicrosoftSignInRow: View {
     }
 }
 
+// MARK: - Google 登录行（Gmail OAuth：浏览器授权一次 → IMAP XOAUTH2）
+
+private struct GoogleSignInRow: View {
+    @ObservedObject private var oauth = GoogleOAuth.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Gmail 登录")
+                    .font(DS.Fonts.button)
+                    .foregroundStyle(DS.Colors.text2)
+                Spacer(minLength: 8)
+                if oauth.signedIn {
+                    Text(oauth.accountEmail.isEmpty ? "已登录" : oauth.accountEmail)
+                        .font(DS.Fonts.meta).foregroundStyle(DS.Colors.success).lineLimit(1)
+                    Button("退出") { oauth.signOut() }
+                        .buttonStyle(.plain).font(DS.Fonts.button).foregroundStyle(DS.Colors.accent)
+                } else {
+                    Button(oauth.waiting ? "授权中…" : "用 Google 登录") { oauth.beginSignIn() }
+                        .buttonStyle(.plain).font(DS.Fonts.button).foregroundStyle(DS.Colors.accent)
+                }
+            }
+            if oauth.waiting {
+                Text("浏览器已打开 Google 授权页，完成后自动登录…")
+                    .font(DS.Fonts.meta).foregroundStyle(DS.Colors.accent).lineLimit(2)
+            } else if let msg = oauth.errorMessage {
+                Text("✗ \(msg)").font(DS.Fonts.meta).foregroundStyle(DS.Colors.alert).lineLimit(2)
+            }
+        }
+    }
+}
+
 // MARK: - 邮件测试连接行（拉一次 IMAP，成功显示未读条数 / 失败显示原因）
 
 private struct EmailConnectionTestRow: View {
@@ -396,34 +431,37 @@ private struct EmailConnectionTestRow: View {
     }
 
     private func runTest() {
-        // 与 currentEmailService 一致：已 Microsoft 登录 → Graph；否则 IMAP + 应用密码
-        let service: EmailService
-        if MicrosoftOAuth.shared.isSignedIn {
-            service = GraphEmailService()
-        } else {
-            let host = store.settings.emailImapHost
-            let email = store.settings.emailAddress
-            let password = store.emailAppPassword
-            guard !host.isEmpty, !email.isEmpty, !password.isEmpty else {
-                state = .failure("请先用 Microsoft 登录，或填 IMAP 主机/账号/应用密码")
-                return
-            }
-            service = RealEmailService(host: host, email: email, auth: .password(password))
+        // 测试所有已接入来源：O365(Graph) + Gmail(IMAP XOAUTH2) + 其它 IMAP(应用密码)
+        var services: [EmailService] = []
+        if MicrosoftOAuth.shared.isSignedIn { services.append(GraphEmailService()) }
+        if GoogleOAuth.shared.isSignedIn, !GoogleOAuth.shared.accountEmail.isEmpty {
+            let email = GoogleOAuth.shared.accountEmail
+            services.append(RealEmailService(host: "imap.gmail.com", email: email,
+                                             auth: .oauth { try await GoogleOAuth.shared.validAccessToken() }))
+        }
+        let host = store.settings.emailImapHost, email = store.settings.emailAddress, password = store.emailAppPassword
+        if !host.isEmpty, !email.isEmpty, !password.isEmpty {
+            services.append(RealEmailService(host: host, email: email, auth: .password(password)))
+        }
+        guard !services.isEmpty else {
+            state = .failure("请先用 Microsoft / Google 登录，或填 IMAP 主机/账号/应用密码")
+            return
         }
         state = .testing
         Task { @MainActor in
-            do {
-                let inputs = try await service.fetchNewMessages()
-                state = .success(inputs.count)
-            } catch let EmailServiceError.server(reason) {
-                // 已连上、TLS 成功，但服务器拒绝命令（多为认证被拒 / IMAP 未开）
-                NSLog("[EmailTest] server rejected: \(reason)")
-                state = .failure("服务器拒绝：\(reason)")
-            } catch {
-                // 连不上 / TLS / 网络层错误
-                NSLog("[EmailTest] transport error: \(error)")
-                state = .failure("连不上：\(error.localizedDescription)")
+            var total = 0
+            for service in services {
+                do {
+                    total += try await service.fetchNewMessages().count
+                } catch let EmailServiceError.server(reason) {
+                    NSLog("[EmailTest] server rejected: \(reason)")
+                    state = .failure("服务器拒绝：\(reason)"); return
+                } catch {
+                    NSLog("[EmailTest] transport error: \(error)")
+                    state = .failure("连不上：\(error.localizedDescription)"); return
+                }
             }
+            state = .success(total)
         }
     }
 }
