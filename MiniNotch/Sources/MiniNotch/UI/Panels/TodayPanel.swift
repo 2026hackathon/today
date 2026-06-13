@@ -188,8 +188,9 @@ struct PersonalTodoRow: View {
             if todo.isCompleted {
                 Button { store.uncomplete(todo) } label: {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.system(size: 11))
                         .foregroundStyle(DS.Colors.success)
+                        .frame(width: 16, height: 16)
                         .contentShape(Rectangle().inset(by: -5))
                 }
                 .buttonStyle(.plain)
@@ -589,8 +590,9 @@ struct MeetingRow: View {
         if isCompleted {
             Button { store.toggleMeetingCompleted(meeting) } label: {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16))
+                    .font(.system(size: 11))
                     .foregroundStyle(DS.Colors.success)
+                    .frame(width: 16, height: 16)
                     .contentShape(Rectangle().inset(by: -5))
             }
             .buttonStyle(.plain)

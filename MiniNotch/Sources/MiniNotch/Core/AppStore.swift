@@ -666,13 +666,15 @@ final class AppStore: ObservableObject {
         refreshCompactState()
     }
 
-    /// 完成(✓)可用性（later-into-calendar）：
+    /// 完成(✓)可用性（later-into-calendar / calendar-complete-untimed）：
     /// ① 苹果来源 `.calendar` 项均可完成（事件本地完成 / 提醒回写）——这些 todo 仅当天项生成；
-    /// ② 本地自定义任务且截止今天或已超期。未来/无截止本地任务、Jira/GitHub 不可完成。
+    /// ② 本地自定义任务：截止今天、已超期或无固定时间（无截止）均可完成。
+    /// 仅未来截止的本地任务、Jira/GitHub 不可完成。
     func canComplete(_ todo: Todo) -> Bool {
         if isExternal(todo) { return false }
         if todo.source == .calendar { return true }
-        guard let anchor = todo.effectiveDue else { return false }
+        // 无固定时间（无截止）的本地任务也可完成；仅未来截止不可完成（显示小点）
+        guard let anchor = todo.effectiveDue else { return true }
         return todo.isOverdue || Calendar.current.isDateInToday(anchor)
     }
 
