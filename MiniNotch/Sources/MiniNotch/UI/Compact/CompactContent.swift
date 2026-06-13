@@ -55,9 +55,9 @@ struct CompactContent: View {
             switch state {
             case .idle:
                 // 左翼维持「清单 + 今日总数」（含只读 ticket，与面板口径一致）；
-                // "做完了"的打钩放右翼（用户指定布局）。idle 低存在感 → 暗灰
-                compactIcon("list.bullet", color: DS.Colors.text3)
-                countText("\(store.todayFocusCount)", color: DS.Colors.text3)
+                // "做完了"的打钩放右翼（用户指定布局）。统一亮白，与 normal 一致
+                compactIcon("list.bullet", color: DS.Colors.text1)
+                countText("\(store.todayFocusCount)", color: DS.Colors.text1)
             case .near:
                 // 提前 1h 档：弱脉冲（F-04 动效分级）
                 SoftPulseIcon(systemName: "clock.fill", color: DS.Colors.text2)
