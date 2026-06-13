@@ -131,19 +131,16 @@ private struct DateSection: View {
     }
 
     private var header: some View {
-        HStack(spacing: 9) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(relativeLabel)
-                    .font(DS.Fonts.button)
-                    .foregroundStyle(isToday ? DS.Colors.accent : DS.Colors.text1)
-                Text(fullLabel)
-                    .font(DS.Fonts.tag)
-                    .foregroundStyle(DS.Colors.text3)
-            }
-            Spacer(minLength: 0)
-            Text("\(meetings.count) 项")
+        // 单行扫读：相对日期（今天/明天/周X）作锚点 + 具体日期次级灰字；
+        // 去掉「N 项」计数（用户能数清，标了是噪音 —— design-taste §9.F）
+        HStack(spacing: 6) {
+            Text(relativeLabel)
+                .font(DS.Fonts.button)
+                .foregroundStyle(isToday ? DS.Colors.accent : DS.Colors.text1)
+            Text(fullLabel)
                 .font(DS.Fonts.tag)
                 .foregroundStyle(DS.Colors.text3)
+            Spacer(minLength: 0)
         }
         .padding(.bottom, 4)
     }

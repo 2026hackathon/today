@@ -118,6 +118,9 @@ struct IslandRootView: View {
         case .quickInput:
             QuickInputCard(onParse: onParse)
 
+        case .editTask(let todo):
+            EditTaskCard(todo: todo).id(todo.id)
+
         case .jiraLanded(let todo, let moreCount):
             JiraLandedCard(todo: todo, moreCount: moreCount)
 

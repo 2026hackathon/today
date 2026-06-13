@@ -31,6 +31,7 @@ enum IslandState: Equatable, Sendable {
     case reminder(todo: Todo)           // 到期提醒卡
     case batch(drafts: [TodoDraft])     // 批量识别卡
     case quickInput                     // ⌘N 手动新建
+    case editTask(todo: Todo)           // 编辑已有个人任务（标题/时间/优先级）
     /// 新 Jira 分配通知卡：纯通知无操作，倒计时后自动收入岛体
     /// moreCount = 同轮其余新分配数（>0 显示「等 N 条」）
     case jiraLanded(todo: Todo, moreCount: Int)
@@ -87,7 +88,7 @@ struct IslandGeometry: Equatable {
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)
         case .batch:
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)
-        case .quickInput:
+        case .quickInput, .editTask:
             return .init(width: 480, height: nil, cornerRadius: DS.Radius.island)
         case .expanded, .morningReport, .eveningReport:
             return .init(width: 460, height: 540, cornerRadius: DS.Radius.island)

@@ -146,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] state in
                 guard let self else { return }
                 let needsKeyboard: Bool = switch state {
-                case .quickInput, .expanded(tab: .settings): true
+                case .quickInput, .editTask, .expanded(tab: .settings): true
                 default: false
                 }
                 if needsKeyboard {

@@ -165,6 +165,7 @@ struct TaskRow: View {
 struct PersonalTodoRow: View {
     let todo: Todo
     let onComplete: () -> Void
+    @EnvironmentObject var store: AppStore
     @State private var hovering = false
 
     var body: some View {
@@ -204,6 +205,21 @@ struct PersonalTodoRow: View {
         .padding(8)
         .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
         .onHover { hovering = $0 }
+        // 右键：编辑（开编辑卡）/ 快速改优先级（无需进卡）/ 删除
+        .contextMenu {
+            Button("编辑…") { store.present(.editTask(todo: todo)) }
+            Menu("优先级") {
+                ForEach(Priority.allCases, id: \.self) { p in
+                    Button {
+                        var t = todo; t.priority = p; store.update(t)
+                    } label: {
+                        Label(p.label, systemImage: todo.priority == p ? "checkmark" : "")
+                    }
+                }
+            }
+            Divider()
+            Button("删除", role: .destructive) { store.delete(todo) }
+        }
     }
 
     /// 来源小图标（manual 不显示，对齐 prototype；jira 走独立分组）
@@ -361,34 +377,40 @@ struct MeetingRow: View {
         return meeting.start.timeIntervalSinceNow <= 30 * 60
     }
 
+    /// 全天事件（00:00 起、23:59+ 止）：节假日/纪念日，不显示时间区间
+    private var isAllDay: Bool {
+        let cal = Calendar.current
+        let s = cal.dateComponents([.hour, .minute], from: meeting.start)
+        let e = cal.dateComponents([.hour, .minute], from: meeting.end)
+        return s.hour == 0 && s.minute == 0 && e.hour == 23 && (e.minute ?? 0) >= 59
+    }
+
+    /// 时间轨文案：全天 → 「全天」；否则起始时间（agenda 扫读只需起点，省宽给标题）
+    private var timeLabel: String {
+        isAllDay ? "全天" : PanelFormat.hm(meeting.start)
+    }
+
+    /// 时间颜色编码状态：进行中绿 / 快到了蓝 / 其余常规
+    private var timeColor: Color {
+        if isCompleted { return DS.Colors.text3 }
+        if isOngoing { return DS.Colors.success }
+        if isImminent { return DS.Colors.accent }
+        return DS.Colors.text1
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
-            if isCompleted {
-                // 完成小图标：对应任务在「今日任务」中被勾掉
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DS.Colors.success)
-            } else if meeting.isReminder || isImminent {
-                Image(systemName: "bell.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(DS.Colors.accent)
-            } else {
-                Circle().fill(dotColor).frame(width: 6, height: 6)
-                    // 进行中：绿点带呼吸光晕
-                    .shadow(
-                        color: isOngoing ? DS.Colors.success.opacity(glowPulse ? 0.9 : 0.35) : .clear,
-                        radius: glowPulse ? 4 : 2
-                    )
-            }
-            if !meeting.isReminder || meeting.start != meeting.end {
-                Text("\(PanelFormat.hm(meeting.start))-\(PanelFormat.hm(meeting.end))")
-                    .font(DS.Fonts.compactSide)
-                    .foregroundStyle(DS.Colors.text1)
-            } else {
-                Text(PanelFormat.hm(meeting.start))
-                    .font(DS.Fonts.compactSide)
-                    .foregroundStyle(DS.Colors.text1)
-            }
+        HStack(spacing: 8) {
+            // 状态字形区：仅真实状态才占位（进行中/快到了/已完成/提醒），
+            // 普通事件留空 —— 去掉装饰性灰点，同时用空位保证标题左对齐
+            statusGlyph
+                .frame(width: 12)
+
+            // 时间轨：等宽左对齐，所有行标题对齐到同一条竖线
+            Text(timeLabel)
+                .font(DS.Fonts.compactSide)
+                .foregroundStyle(timeColor)
+                .frame(width: 44, alignment: .leading)
+
             Text(meeting.title)
                 .font(DS.Fonts.todoTitle)
                 .foregroundStyle(isCompleted ? DS.Colors.text3 : .white)
@@ -446,6 +468,26 @@ struct MeetingRow: View {
         }
         .onHover { hovering = $0 }
         .opacity(isCompleted || meeting.status == .ended ? 0.65 : 1)
+    }
+
+    /// 状态字形：只在有真实语义时渲染，普通事件返回空占位（标题靠空位对齐）
+    @ViewBuilder
+    private var statusGlyph: some View {
+        if isCompleted {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(DS.Colors.success)
+        } else if isOngoing {
+            // 进行中：绿点呼吸光晕
+            Circle().fill(DS.Colors.success).frame(width: 6, height: 6)
+                .shadow(color: DS.Colors.success.opacity(glowPulse ? 0.9 : 0.35), radius: glowPulse ? 4 : 2)
+        } else if meeting.isReminder || isImminent {
+            Image(systemName: "bell.fill")
+                .font(.system(size: 9))
+                .foregroundStyle(DS.Colors.accent)
+        } else {
+            Color.clear.frame(width: 6, height: 6)
+        }
     }
 }
 
