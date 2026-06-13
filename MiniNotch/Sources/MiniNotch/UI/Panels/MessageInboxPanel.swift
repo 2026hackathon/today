@@ -11,6 +11,11 @@ import SwiftUI
 
 struct MessageInboxPanel: View {
     @EnvironmentObject var store: AppStore
+    @State private var showProcessed = false
+
+    /// 未处理在上（按时间倒序），已处理收进底部折叠区
+    private var pending: [Message] { store.sortedMessages.filter { !$0.isProcessed } }
+    private var processed: [Message] { store.sortedMessages.filter { $0.isProcessed } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -33,14 +38,44 @@ struct MessageInboxPanel: View {
                 .frame(maxWidth: .infinity, minHeight: 320)
             }
 
-            ForEach(store.sortedMessages) { message in
+            ForEach(pending) { message in
                 MessageRow(message: message)
+            }
+
+            if !processed.isEmpty {
+                processedFold
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // 已处理折叠（与 Today「已完成」一致）：默认收起，点开看历史
+    private var processedFold: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(IslandAnimation.spring) { showProcessed.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(showProcessed ? "▾" : "▸")
+                    Text("已处理 (\(processed.count))")
+                }
+                .font(DS.Fonts.meta)
+                .foregroundStyle(DS.Colors.text3)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 2)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+
+            if showProcessed {
+                ForEach(processed) { message in
+                    MessageRow(message: message)
+                }
+            }
+        }
     }
 
     private var headline: String {
