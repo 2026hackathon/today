@@ -4,3 +4,8 @@ MiniNotch/dist/
 .swiftpm/
 xcuserdata/
 .idea/
+
+# npx skills add 安装的本地设计 skill（个人用，不入库）
+.agents/
+.claude/skills/
+skills-lock.json
