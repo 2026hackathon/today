@@ -27,12 +27,15 @@ protocol CalendarService: AnyObject {
     /// 提醒事项完成态回写 EventKit（completed=false 用于撤销完成，
     /// today-tasks-schedule-reminders spec）
     func setReminderCompleted(identifier: String, completed: Bool) async throws
+    /// 提醒事项 snooze：把新的截止时间回写到 EKReminder（Apple 提醒事项也跟着改）
+    func setReminderDue(identifier: String, due: Date) async throws
 }
 
 /// 协议默认扩展：便捷方法 fetchTodayMeetings() 委托给 fetchMeetings(in: .today)；
 /// setReminderCompleted 默认空操作（Mock 无真实提醒可回写）
 @MainActor
 extension CalendarService {
+    func setReminderDue(identifier: String, due: Date) async throws {}
     func fetchTodayMeetings() async throws -> [Meeting] {
         try await fetchMeetings(in: .today)
     }
@@ -297,6 +300,19 @@ final class EventKitCalendarService: CalendarService {
         reminder.isCompleted = completed
         try eventStore.save(reminder, commit: true)
         NSLog("[Calendar] setReminderCompleted: \(reminder.title ?? identifier) → \(completed)")
+    }
+
+    /// 提醒 snooze 回写：按标识找到 EKReminder，改 dueDateComponents（保留原有日历/优先级）。
+    func setReminderDue(identifier: String, due: Date) async throws {
+        guard let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
+            NSLog("[Calendar] setReminderDue: \(identifier) not found")
+            return
+        }
+        reminder.dueDateComponents = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute], from: due
+        )
+        try eventStore.save(reminder, commit: true)
+        NSLog("[Calendar] setReminderDue: \(reminder.title ?? identifier) → \(due)")
     }
 
     /// EKReminder → Meeting 映射（due 在 range 内才保留——已完成提醒按完成时间拉取，

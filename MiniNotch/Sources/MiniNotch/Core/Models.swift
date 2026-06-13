@@ -172,6 +172,9 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         return anchor < Date()
     }
 
+    /// 有效截止 = snoozedUntil ?? dueDate：UI 一律显示这个，snooze 后展示的就是新时间
+    var effectiveDue: Date? { snoozedUntil ?? dueDate }
+
     /// "3 SP" / "0.5 SP"（整数去掉小数点）
     var storyPointsLabel: String? {
         guard let sp = storyPoints else { return nil }

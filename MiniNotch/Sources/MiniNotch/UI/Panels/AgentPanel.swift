@@ -23,11 +23,7 @@ struct AgentPanel: View {
                 emptyState
             } else {
                 ForEach(store.sortedAgentSessions) { session in
-                    AgentSessionRow(
-                        session: session,
-                        onJump: { store.jumpToAgent(session) },
-                        onAcknowledge: { store.acknowledgeAgentSession(session.id) }
-                    )
+                    AgentSessionRow(session: session, onJump: { store.jumpToAgent(session) })
                 }
             }
         }
@@ -69,22 +65,15 @@ struct AgentPanel: View {
 struct AgentSessionRow: View {
     let session: AgentSession
     let onJump: () -> Void
-    /// 标记已处理 → 从 Today/Agent 栏移除（仅需处理的会话提供）
-    var onAcknowledge: () -> Void = {}
     @State private var hovering = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            // 需处理（已完成/等待确认）→ 圆圈，点一下标记已处理从列表消失；
-            // 运行中 → 状态图标（不可勾，还在跑）
-            if session.state.needsAttention {
-                PanelCheckCircle(action: onAcknowledge)
-            } else {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(color)
-                    .frame(width: 16, height: 16)
-            }
+            // 状态图标（不用完成圆圈——点过即跳转并从 Today 隐藏）
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 16, height: 16)
 
             VStack(alignment: .leading, spacing: 4) {
                 // 主行：会话名（custom-title / session.title），没有则 agent 名

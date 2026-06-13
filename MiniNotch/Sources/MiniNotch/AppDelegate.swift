@@ -280,6 +280,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // 提醒事项 snooze → 新截止时间回写 EventKit（Apple 提醒事项同步）
+        store.onReminderSnoozed = { [weak self] identifier, due in
+            Task { @MainActor in
+                guard let service = self?.currentCalendarService() else { return }
+                try? await service.setReminderDue(identifier: identifier, due: due)
+            }
+        }
+
         // ── 日历三层同步（apple-calendar-integration spec）──
         // Layer 1: 事件驱动（EKEventStoreChanged → 即时刷新）—— 权限授予后才挂接
         // Layer 3: 前台刷新（展开面板时立即拉一次）

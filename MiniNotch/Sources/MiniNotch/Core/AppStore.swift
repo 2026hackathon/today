@@ -83,6 +83,8 @@ final class AppStore: ObservableObject {
     }
     /// 提醒事项任务完成/撤销 → EventKit 回写（calendarItemIdentifier, 完成态），AppDelegate 装配
     var onReminderCompletionChanged: ((String, Bool) -> Void)?
+    /// 提醒事项 snooze → 把新截止时间回写 EventKit（calendarItemIdentifier, 新时间），AppDelegate 装配
+    var onReminderSnoozed: ((String, Date) -> Void)?
     /// agent 一轮完成（转入 replied）→ 提示音 + 完成通知卡，AppDelegate 装配（声音/前台判断属 AppKit）
     var onAgentReplied: ((AgentSession) -> Void)?
 
@@ -587,6 +589,10 @@ final class AppStore: ObservableObject {
         guard let i = todos.firstIndex(where: { $0.id == todo.id }) else { return }
         todos[i].snoozedUntil = date
         todos[i].snoozeCount += 1
+        // 来源是 Apple 提醒事项 → 把新时间回写 EventKit，提醒事项 App 也同步
+        if let rid = reminderEventId(of: todos[i]) {
+            onReminderSnoozed?(rid, date)
+        }
         dismiss()
     }
 

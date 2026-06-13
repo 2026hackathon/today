@@ -101,11 +101,7 @@ struct TodayPanel: View {
             if !store.attentionAgentSessions.isEmpty {
                 PanelMiniDividerLabel(text: "Agent")
                 ForEach(store.attentionAgentSessions) { session in
-                    AgentSessionRow(
-                        session: session,
-                        onJump: { store.jumpToAgent(session) },
-                        onAcknowledge: { store.acknowledgeAgentSession(session.id) }
-                    )
+                    AgentSessionRow(session: session, onJump: { store.jumpToAgent(session) })
                 }
             }
             // 外部只读项沉底（Jira/GitHub 不可完成，不挡可操作任务）
@@ -191,10 +187,16 @@ struct PersonalTodoRow: View {
                     .foregroundStyle(DS.Colors.text1)
                 HStack(spacing: 6) {
                     PanelPriorityTag(priority: todo.priority)
-                    if let due = todo.dueDate {
-                        Text(PanelFormat.due(due))
-                            .font(DS.Fonts.meta)
-                            .foregroundStyle(todo.isOverdue ? DS.Colors.alert : DS.Colors.text3)
+                    // 显示有效截止（snooze 后即新时间）；snooze 过的标个铃铛
+                    if let due = todo.effectiveDue {
+                        HStack(spacing: 3) {
+                            if todo.snoozedUntil != nil {
+                                Image(systemName: "bell.fill").font(.system(size: 8))
+                            }
+                            Text(PanelFormat.due(due))
+                        }
+                        .font(DS.Fonts.meta)
+                        .foregroundStyle(todo.isOverdue ? DS.Colors.alert : DS.Colors.text3)
                     }
                     ForEach(todo.tags, id: \.self) { tag in
                         HStack(spacing: 3) {
