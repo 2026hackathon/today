@@ -40,7 +40,17 @@ final class GoogleOAuth: ObservableObject {
 
     private init() {
         signedIn = Keychain.load(account: Self.refreshAccount) != nil
-        accountEmail = UserDefaults.standard.string(forKey: Self.emailKey) ?? ""
+        // 邮箱地址存 Keychain（与 refresh token 同域）。此前曾出现：以裸二进制 vs .app bundle
+        // 启动时 UserDefaults 落到不同域 → accountEmail 读空 → Gmail 服务静默不装配。改存 Keychain
+        // 后与启动方式解耦。旧版存在 UserDefaults，首次命中即迁移进 Keychain。
+        if let saved = Keychain.load(account: Self.emailAccount), !saved.isEmpty {
+            accountEmail = saved
+        } else if let legacy = UserDefaults.standard.string(forKey: Self.emailKey), !legacy.isEmpty {
+            accountEmail = legacy
+            Keychain.save(legacy, account: Self.emailAccount)
+        } else {
+            accountEmail = ""
+        }
     }
 
     // Thunderbird 的公开 Google OAuth client（installed/desktop 型，支持回环重定向；
@@ -51,6 +61,9 @@ final class GoogleOAuth: ObservableObject {
     private let scope = "https://mail.google.com/ https://www.googleapis.com/auth/userinfo.email"
 
     private static let refreshAccount = "googleRefreshToken"
+    /// 邮箱地址的 Keychain account（与 refresh token 同存 Keychain，不随启动方式切换 UserDefaults 域）
+    private static let emailAccount = "googleAccountEmail"
+    /// 旧版把邮箱地址存 UserDefaults 的 key —— 仅用于一次性迁移到 Keychain
     private static let emailKey = "googleAccountEmail"
 
     private var accessToken: String?
@@ -62,7 +75,8 @@ final class GoogleOAuth: ObservableObject {
     func signOut() {
         flowTask?.cancel()
         Keychain.delete(account: Self.refreshAccount)
-        UserDefaults.standard.removeObject(forKey: Self.emailKey)
+        Keychain.delete(account: Self.emailAccount)
+        UserDefaults.standard.removeObject(forKey: Self.emailKey)  // 清旧版残留
         accessToken = nil; accessExpiry = nil
         signedIn = false; accountEmail = ""; waiting = false; errorMessage = nil
     }
@@ -103,7 +117,7 @@ final class GoogleOAuth: ObservableObject {
                 let email = try await fetchEmail(accessToken: tokens.access)
 
                 Keychain.save(tokens.refresh ?? "", account: Self.refreshAccount)
-                UserDefaults.standard.set(email, forKey: Self.emailKey)
+                Keychain.save(email, account: Self.emailAccount)
                 cache(token: tokens.access, expiresIn: tokens.expiresIn)
                 accountEmail = email
                 signedIn = true
