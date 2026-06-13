@@ -7,8 +7,8 @@ import Foundation
 // 接真实现步骤（C）：
 // 1. RealJiraService 用 settings.jiraBaseURL / jiraEmail / jiraAPIToken
 //    请求 /rest/api/3/search?jql=assignee=currentUser() AND statusCategory!=Done。
-// 2. 响应 issues[] → 映射 Todo（source .jira，jiraKey/jiraURL/jiraStatus）。
-// 3. AppDelegate 装配处换 RealJiraService，60s 轮询调 store.mergeJiraTodos(_:)。
+// 2. 响应 issues[] → 映射 WorkItem（source .jira，key/url/status/statusCategory）。
+// 3. AppDelegate 装配处换 RealJiraService，60s 轮询调 store.mergeJiraWorkItems(_:)。
 //    保留 MockJiraService（Demo 兜底 + 「现场分配」演示）。
 // ============================================================
 

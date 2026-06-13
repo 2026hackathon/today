@@ -74,19 +74,20 @@ struct TouchdownRipple: View {
 
 // MARK: - 便捷封装
 
-/// 绑定 `ripple: TodoSource?`：置为非 nil 时在 overlay 中心播放对应来源色涟漪，
-/// 播放完毕自动清回 nil（调用方无需手动管理生命周期）。
+/// 绑定 `ripple: Color?`：置为非 nil 时在 overlay 中心播放该色涟漪，播放完毕自动清回 nil
+/// （调用方无需手动管理生命周期）。颜色由调用方按来源给定——个人任务用 DS.sourceColor，
+/// 外部工单用 DS.workItemColor——所以涟漪不再绑死 TodoSource，工单落地也能着色。
 struct TouchdownModifier: ViewModifier {
-    @Binding var ripple: TodoSource?
+    @Binding var ripple: Color?
 
     func body(content: Content) -> some View {
         content.overlay {
-            if let source = ripple {
-                TouchdownRipple(color: DS.sourceColor(source)) {
+            if let color = ripple {
+                TouchdownRipple(color: color) {
                     ripple = nil
                 }
-                // source 变化（连续降落不同来源任务）时重新播放
-                .id(source)
+                // 颜色变化（连续降落不同来源）时重新播放
+                .id(color)
             }
         }
     }
@@ -95,10 +96,10 @@ struct TouchdownModifier: ViewModifier {
 extension View {
     /// Touchdown 涟漪便捷接入：
     ///
-    ///   @State private var ripple: TodoSource? = nil
-    ///   card.touchdownRipple(source: $ripple)
-    ///   // 触发：ripple = .screenshot   （播完自动清回 nil）
-    func touchdownRipple(source: Binding<TodoSource?>) -> some View {
-        modifier(TouchdownModifier(ripple: source))
+    ///   @State private var ripple: Color? = nil
+    ///   card.touchdownRipple(color: $ripple)
+    ///   // 触发：ripple = DS.sourceColor(.screenshot)   （播完自动清回 nil）
+    func touchdownRipple(color: Binding<Color?>) -> some View {
+        modifier(TouchdownModifier(ripple: color))
     }
 }

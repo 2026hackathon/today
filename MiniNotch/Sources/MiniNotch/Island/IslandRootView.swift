@@ -61,7 +61,7 @@ struct IslandRootView: View {
             .background(NotchShape(cornerRadius: geo.cornerRadius).fill(DS.Colors.islandBG))
             .clipShape(NotchShape(cornerRadius: geo.cornerRadius))
             // ── 动效挂载（effects spec）──
-            .touchdownRipple(source: $store.landedSource)
+            .touchdownRipple(color: $store.landedRippleColor)
             .overlay {
                 if store.settings.effectsEnabled {
                     ConfettiBurst(trigger: store.completionFlash)

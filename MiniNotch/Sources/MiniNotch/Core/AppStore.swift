@@ -378,7 +378,8 @@ final class AppStore: ObservableObject {
     // MARK: - 动效触发器（UI 绑定，effects 模块消费）
 
     /// 新任务降落 → Touchdown 涟漪颜色来源（TouchdownModifier 播完自动清回 nil）
-    @Published var landedSource: TodoSource?
+    /// Touchdown 涟漪色：个人任务落地用来源色，工单（Jira/GitHub）落地用工单来源色；播完自清
+    @Published var landedRippleColor: Color?
     /// 完成计数器：递增一次 = 播一次金色高光 + 撒花
     @Published private(set) var completionFlash = 0
 
@@ -598,7 +599,7 @@ final class AppStore: ObservableObject {
         todos.append(todo)
         onTodoLanded?(todo)
         if settings.effectsEnabled {
-            landedSource = todo.source
+            landedRippleColor = DS.sourceColor(todo.source)
         }
         refreshCompactState()
     }
@@ -865,6 +866,7 @@ final class AppStore: ObservableObject {
         refreshCompactState()
         // 新分配通知卡：不打断展开态/其他卡片态（静默入库）
         if notify, let first = landed.first, islandState.isCompact {
+            if settings.effectsEnabled { landedRippleColor = DS.workItemColor(first.source) }
             present(.jiraLanded(item: first, moreCount: landed.count - 1))
         }
     }

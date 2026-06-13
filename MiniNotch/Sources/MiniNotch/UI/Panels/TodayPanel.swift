@@ -963,10 +963,12 @@ struct PanelPriorityTag: View {
     let priority: Priority
 
     var body: some View {
+        // 高=红（响），中=较亮灰（默认），低=较暗灰（弱）——用亮度梯度区分，不引入会与
+        // agent 橙 / Jira 蓝撞语义的新色相（priorityColor 已按此定义，这里接上即可）。
         if priority == .high {
             Text(priority.label).dsTag(DS.Colors.alert, bg: DS.Colors.alertSoft)
         } else {
-            Text(priority.label).dsTag()
+            Text(priority.label).dsTag(DS.priorityColor(priority))
         }
     }
 }
