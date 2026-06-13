@@ -79,9 +79,9 @@ struct TodayPanel: View {
             // 2. 今日任务：有时间按时间排 → 细分隔线 → 无固定时间按优先级排
             PanelSectionTitle(
                 title: "今日任务",
-                count: store.todayTimedTodos.count + store.todayUntimedTodos.count + store.todayExternalTodos.count
+                count: store.todayTimedTodos.count + store.todayUntimedTodos.count + store.activeWorkItems.count
             )
-            if store.todayTimedTodos.isEmpty && store.todayUntimedTodos.isEmpty && store.todayExternalTodos.isEmpty {
+            if store.todayTimedTodos.isEmpty && store.todayUntimedTodos.isEmpty && store.activeWorkItems.isEmpty {
                 Text("今天没有要处理的任务")
                     .font(DS.Fonts.meta)
                     .foregroundStyle(DS.Colors.text3)
@@ -107,14 +107,14 @@ struct TodayPanel: View {
                     AgentSessionRow(session: session, onJump: { store.jumpToAgent(session) })
                 }
             }
-            // 外部只读项沉底（Jira/GitHub 不可完成，不挡可操作任务）
-            if !store.todayExternalTodos.isEmpty {
+            // 工作项沉底（Jira/GitHub 只读不可完成，不挡可操作任务）
+            if !store.activeWorkItems.isEmpty {
                 if !store.todayTimedTodos.isEmpty || !store.todayUntimedTodos.isEmpty
                     || !store.sortedAgentSessions.isEmpty {
-                    PanelMiniDividerLabel(text: "Jira · GitHub")
+                    PanelMiniDividerLabel(text: "工作项")
                 }
-                ForEach(store.todayExternalTodos) { todo in
-                    TaskRow(todo: todo)
+                ForEach(store.activeWorkItems) { item in
+                    WorkItemRow(item: item)
                 }
             }
 
@@ -158,18 +158,14 @@ struct TodayPanel: View {
     }
 }
 
-// MARK: - 统一任务行（按来源分发：Jira 只读跳转，其余可完成）
+// MARK: - 统一任务行（Todo 现已全是个人来源；外部工单走 WorkItemRow）
 
 struct TaskRow: View {
     let todo: Todo
     @EnvironmentObject var store: AppStore
 
     var body: some View {
-        if todo.source == .jira || todo.source == .github {
-            JiraTodoRow(todo: todo) // 外部只读 ticket 行（Jira/GitHub 共用）
-        } else {
-            PersonalTodoRow(todo: todo) { store.complete(todo) }
-        }
+        PersonalTodoRow(todo: todo) { store.complete(todo) }
     }
 }
 
@@ -294,7 +290,7 @@ struct PersonalTodoRow: View {
         switch source {
         case .screenshot: "camera.fill"
         case .calendar: "calendar"
-        case .manual, .jira, .github: nil
+        case .manual: nil
         }
     }
 }
@@ -367,44 +363,41 @@ struct ScreenshotThumb: View {
     }
 }
 
-// MARK: - Jira 行
+// MARK: - 工作项行（Jira ticket / GitHub PR，只读跳转）
 
-struct JiraTodoRow: View {
-    let todo: Todo
+struct WorkItemRow: View {
+    let item: WorkItem
     @State private var hovering = false
 
     var body: some View {
         // 图标垂直居中：行高随标题换行变化，顶对齐会让图标吊在左上角
         HStack(alignment: .center, spacing: 10) {
-            // Jira 是只读集成（PRD Out of Scope：不改 Jira 状态），
-            // 不提供完成操作，用静态图标占住完成圈的位置保持对齐
-            BrandIcon(brand: todo.source == .github ? .github : .jira, size: 11)
+            // 只读集成（不改外部状态），用静态品牌图标占住完成圈位置保持对齐
+            BrandIcon(brand: item.source == .github ? .github : .jira, size: 11)
                 .frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    if let key = todo.jiraKey {
-                        Text(key)
-                            .font(DS.Fonts.compactSide.weight(.semibold))
-                            .foregroundStyle(DS.Colors.accent)
-                            .onTapGesture { openJira() }
-                    }
-                    Text(todo.title)
+                    Text(item.key)
+                        .font(DS.Fonts.compactSide.weight(.semibold))
+                        .foregroundStyle(DS.Colors.accent)
+                        .onTapGesture { open() }
+                    Text(item.title)
                         .font(DS.Fonts.todoTitle)
                         .foregroundStyle(DS.Colors.text1)
                 }
                 HStack(spacing: 6) {
-                    PanelPriorityTag(priority: todo.priority)
-                    if let status = todo.jiraStatus {
+                    PanelPriorityTag(priority: item.priority)
+                    if let status = item.status {
                         if status == "In Progress" {
                             Text(status).dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
                         } else {
                             Text(status).dsTag()
                         }
                     }
-                    if let sp = todo.storyPointsLabel {
+                    if let sp = item.storyPointsLabel {
                         Text(sp).dsTag()
                     }
-                    if let assigner = todo.jiraAssigner {
+                    if let assigner = item.assigner {
                         HStack(spacing: 3) {
                             Image(systemName: "person.fill").font(.system(size: 8))
                             Text(assigner)
@@ -420,18 +413,18 @@ struct JiraTodoRow: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(DS.Colors.text3)
                 .opacity(hovering ? 1 : 0)
-                .onTapGesture { openJira() }
+                .onTapGesture { open() }
         }
         .padding(8)
         .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
-        // 整行可点：Jira 行只读，唯一动作就是跳转，不必让用户瞄准小字
+        // 整行可点：工作项只读，唯一动作就是跳转，不必让用户瞄准小字
         .contentShape(RoundedRectangle(cornerRadius: DS.Radius.m))
-        .onTapGesture { openJira() }
+        .onTapGesture { open() }
         .onHover { hovering = $0 }
     }
 
-    private func openJira() {
-        guard let url = todo.jiraURL else { return }
+    private func open() {
+        guard let url = item.url else { return }
         NSWorkspace.shared.open(url)
     }
 }

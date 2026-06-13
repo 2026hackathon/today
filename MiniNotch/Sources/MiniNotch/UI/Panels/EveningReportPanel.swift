@@ -176,9 +176,8 @@ struct EveningReportPanel: View {
         if todo.snoozeCount >= 2 {
             reasons.append("已延期 \(todo.snoozeCount) 次")
         }
-        let key = todo.jiraKey.map { "\($0) " } ?? ""
         let suffix = reasons.isEmpty ? "" : "（\(reasons.joined(separator: "，"))）"
-        return "\(key)\(todo.title)\(suffix)"
+        return "\(todo.title)\(suffix)"
     }
 
     // MARK: - 按钮行

@@ -23,7 +23,7 @@ enum JiraServiceError: Error {
 @MainActor
 protocol JiraService: AnyObject {
     /// 拉取指派给当前用户且未完成的 tickets（真实现轮询周期 60s，integrations spec）
-    func fetchAssignedTickets() async throws -> [Todo]
+    func fetchAssignedTickets() async throws -> [WorkItem]
 }
 
 // MARK: - Mock 实现（3 条演示 ticket，integrations spec）
@@ -32,13 +32,13 @@ protocol JiraService: AnyObject {
 final class MockJiraService: JiraService {
 
     /// Demo「现场分配」开关：置 true 后，下一次 fetch 起额外返回 MD-1077。
-    /// AppStore.mergeJiraTodos 按 jiraKey 去重，重复返回不会产生重复 todo。
+    /// AppStore.mergeWorkItems 按 key 去重，重复返回不会产生重复工作项。
     var extraTicketArmed = false
     private var extraTicketReleased = false
 
     init() {}
 
-    func fetchAssignedTickets() async throws -> [Todo] {
+    func fetchAssignedTickets() async throws -> [WorkItem] {
         try? await Task.sleep(for: .seconds(0.3)) // 模拟网络
         if extraTicketArmed {
             extraTicketArmed = false
@@ -58,17 +58,17 @@ final class MockJiraService: JiraService {
     private static func ticket(
         key: String, title: String, status: String, priority: Priority,
         assigner: String? = nil, points: Double? = nil
-    ) -> Todo {
-        Todo(
+    ) -> WorkItem {
+        WorkItem(
+            key: key,
             title: title,
             source: .jira,
-            priority: priority,
-            jiraKey: key,
-            jiraURL: URL(string: "https://example.atlassian.net/browse/\(key)"),
-            jiraStatus: status,
-            jiraStatusCategory: status == "In Progress" ? "indeterminate" : "new",
-            jiraAssigner: assigner,
-            storyPoints: points
+            status: status,
+            statusCategory: status == "In Progress" ? "indeterminate" : "new",
+            assigner: assigner,
+            storyPoints: points,
+            url: URL(string: "https://example.atlassian.net/browse/\(key)"),
+            priority: priority
         )
     }
 }
@@ -92,7 +92,7 @@ final class RealJiraService: JiraService {
         self.apiToken = apiToken
     }
 
-    func fetchAssignedTickets() async throws -> [Todo] {
+    func fetchAssignedTickets() async throws -> [WorkItem] {
         guard !baseURL.isEmpty, !email.isEmpty, !apiToken.isEmpty else {
             throw JiraServiceError.notConfigured
         }
@@ -109,17 +109,16 @@ final class RealJiraService: JiraService {
         }
 
         return issues.map { issue in
-            Todo(
+            WorkItem(
+                key: issue.key,
                 title: issue.fields.summary,
                 source: .jira,
-                priority: Self.mapPriority(issue.fields.priority?.name),
-                dueDate: issue.fields.duedate.flatMap(Self.parseDueDate),
-                jiraKey: issue.key,
-                jiraURL: URL(string: "\(baseURL)/browse/\(issue.key)"),
-                jiraStatus: issue.fields.status.name,
-                jiraStatusCategory: issue.fields.status.statusCategory?.key,
-                jiraAssigner: Self.extractAssigner(from: issue.changelog),
-                storyPoints: issue.fields.storyPoints
+                status: issue.fields.status.name,
+                statusCategory: issue.fields.status.statusCategory?.key,
+                assigner: Self.extractAssigner(from: issue.changelog),
+                storyPoints: issue.fields.storyPoints,
+                url: URL(string: "\(baseURL)/browse/\(issue.key)"),
+                priority: Self.mapPriority(issue.fields.priority?.name)
             )
         }
     }

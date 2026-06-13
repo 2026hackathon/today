@@ -12,6 +12,8 @@ final class AppStore: ObservableObject {
     // MARK: - 数据
 
     @Published private(set) var todos: [Todo] = [] { didSet { persistTodos() } }
+    /// 外部工单（Jira ticket / GitHub PR）——只读、轮询替换，独立于个人 Todo（work-item spec）
+    @Published private(set) var workItems: [WorkItem] = [] { didSet { Persistence.save(workItems, to: "workItems.json") } }
     @Published private(set) var meetings: [Meeting] = [] { didSet { Persistence.save(meetings, to: "meetings.json") } }
     /// 邮件提炼的一句话提醒消息（message-inbox spec），持久化 messages.json
     @Published private(set) var messages: [Message] = [] { didSet { Persistence.save(messages, to: "messages.json") } }
@@ -381,7 +383,11 @@ final class AppStore: ObservableObject {
     init() {
         // 首次启动从空开始，不种演示数据；演示数据只通过
         // Debug 菜单「重置演示数据」显式载入（Demo 兜底）
-        todos = Persistence.load([Todo].self, from: "todos.json") ?? []
+        // 旧版本曾把 Jira/GitHub 当 Todo 落盘（source .jira/.github + jiraKey，现已抽成 WorkItem）。
+        // 删掉这些枚举值后，旧记录解码会把 source 回退成 .manual 变“幽灵任务”，
+        // 故在解码前按原始 JSON 剔除（source 为 jira/github 或含 jiraKey 的条目）。
+        todos = Self.loadTodosDroppingLegacyExternal()
+        workItems = Persistence.load([WorkItem].self, from: "workItems.json") ?? []
         meetings = Persistence.load([Meeting].self, from: "meetings.json") ?? []
         // 清洗历史落盘消息：① 去掉演示邮件（Mock 固定数据）② 去掉 Jira/Confluence 通知
         // （已在 Mentions 页签呈现，不重复）③ 去掉非真人自动通知（产品更新/营销/系统告警/邀请等，
@@ -432,9 +438,8 @@ final class AppStore: ObservableObject {
 
     private func derivedCompactState() -> IslandState {
         if isAIWorking { return .aiWorking }
-        if crownedToday && pendingTodos.allSatisfy({ $0.source == .jira }) { return .celebrate }
-        // compact 以「今日可动手的事」为准：个人的事做完 → 打钩清空态。
-        // 明天的任务、只读的 Jira/GitHub ticket 都不在刘海上挂数字
+        // 个人可动手的事清零即可加冕/打钩——只读工作项（Jira/GitHub）不算「可动手」，不阻塞
+        if crownedToday && todayActionableCount == 0 { return .celebrate }
         guard todayActionableCount > 0 else { return .idle }
 
         // 逐任务按各自 AI 提前量判定高亮：会议（提前量大）更早进入 near/urgent，
@@ -442,7 +447,7 @@ final class AppStore: ObservableObject {
         let endOfToday = Calendar.current.date(
             byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!
         var level = 0 // 0 normal · 1 near · 2 urgent
-        for todo in pendingTodos where !Self.readOnlySources.contains(todo.source) {
+        for todo in pendingTodos {
             if let snooze = todo.snoozedUntil, snooze > Date() { continue }
             guard let anchor = todo.snoozedUntil ?? todo.dueDate, anchor < endOfToday else { continue }
             let interval = anchor.timeIntervalSinceNow
@@ -468,9 +473,6 @@ final class AppStore: ObservableObject {
     /// 最近一个截止时间（未完成，未被 snooze 压住）
     var nextDue: Date? {
         pendingTodos.compactMap { todo -> Date? in
-            // 与 overdueTodos 口径一致：非活跃 Jira 的陈年 duedate 不驱动紧急色
-            // （否则 compact 红色 urgent 而面板里无任何超期项，review-fixes #10）
-            if todo.source == .jira, !isActiveJira(todo) { return nil }
             if let snooze = todo.snoozedUntil, snooze > Date() { return nil }
             return todo.dueDate
         }.min()
@@ -498,9 +500,8 @@ final class AppStore: ObservableObject {
         }
     }
 
-    /// 三大分组（Inbox / 旧视图仍在用）
-    var personalTodos: [Todo] { sorted(pendingTodos.filter { $0.source != .jira }) }
-    var jiraTodos: [Todo] { sorted(pendingTodos.filter { $0.source == .jira }) }
+    /// 个人待办（Todo 现已全是个人来源——外部工单见 workItems）
+    var personalTodos: [Todo] { sorted(pendingTodos) }
     var todayMeetings: [Meeting] {
         meetings
             .filter { Calendar.current.isDateInToday($0.start) }
@@ -519,40 +520,18 @@ final class AppStore: ObservableObject {
 
     // MARK: - 今日焦点派生（today-focus-redesign spec）
     // Today 只回答「我今天要关注什么」：按时间相关性筛选，来源只是行内标识。
+    // 外部工单（Jira/GitHub）已抽成 WorkItem，见下方 activeWorkItems / inboxWorkItems。
 
-    /// Jira 活跃状态兜底名单（仅 jiraStatusCategory 缺失的旧数据走这里）。
-    /// status.name 随站点语言本地化（中文站是「待办」），不能作为主判断。
-    private static let jiraInactiveStatuses: Set<String> = [
-        "to do", "todo", "open", "backlog", "done", "cancelled", "canceled", "closed",
-    ]
-
-    /// Jira 活跃 = statusCategory 为 In Progress 类（用户正在做的才算今天的事）。
-    /// statusCategory.key 是机器值（new / indeterminate / done），不随站点语言变化。
-    private func isActiveJira(_ todo: Todo) -> Bool {
-        guard todo.source == .jira else { return false }
-        if let category = todo.jiraStatusCategory {
-            return category == "indeterminate"
-        }
-        let status = (todo.jiraStatus ?? "").lowercased()
-        return !Self.jiraInactiveStatuses.contains(status)
-    }
-
-    /// 已超期：个人来源全部计入；Jira 仅活跃状态计入（陈年 To Do 的过期 duedate 是噪音）
+    /// 已超期：截止已过的未完成个人任务（外部工单不计入超期）
     var overdueTodos: [Todo] {
-        sorted(pendingTodos.filter { $0.isOverdue && ($0.source != .jira || isActiveJira($0)) })
+        sorted(pendingTodos.filter { $0.isOverdue })
     }
 
-    /// 外部只读来源（Jira/GitHub）——不可点击完成，今日任务里沉底展示
-    private func isExternal(_ todo: Todo) -> Bool {
-        todo.source == .jira || todo.source == .github
-    }
-
-    /// 今日任务·有时间：可完成的个人任务，今天截止未超期（含 Snooze 今天到点），按时间排。
-    /// 外部只读项不在此列——可点击完成的排最上（today-focus 布局约定）
+    /// 今日任务·有时间：可完成的个人任务，今天截止未超期（含 Snooze 今天到点），按时间排
     var todayTimedTodos: [Todo] {
         pendingTodos
             .filter { todo in
-                guard !isExternal(todo), !todo.isOverdue else { return false }
+                guard !todo.isOverdue else { return false }
                 let anchor = todo.snoozedUntil ?? todo.dueDate
                 guard let anchor else { return false }
                 return Calendar.current.isDateInToday(anchor)
@@ -564,49 +543,38 @@ final class AppStore: ObservableObject {
     var todayUntimedTodos: [Todo] {
         let overdueIDs = Set(overdueTodos.map(\.id))
         return sorted(pendingTodos.filter { todo in
-            guard !isExternal(todo), !overdueIDs.contains(todo.id) else { return false }
+            guard !overdueIDs.contains(todo.id) else { return false }
             return todo.dueDate == nil
         })
     }
 
-    /// 今日任务·外部只读（沉底）：活跃 Jira + GitHub PR（待 review/已指派即「当下要处理」）
-    var todayExternalTodos: [Todo] {
-        let overdueIDs = Set(overdueTodos.map(\.id))
-        return sorted(pendingTodos.filter { todo in
-            guard !overdueIDs.contains(todo.id) else { return false }
-            if todo.source == .jira { return isActiveJira(todo) }
-            return todo.source == .github
-        })
+    // MARK: - WorkItem 派生（work-item spec）
+
+    /// 活跃工作项（进 Today「工作项」分组）：Jira In Progress 类 + GitHub 待 review/已指派
+    var activeWorkItems: [WorkItem] {
+        workItems.filter(\.isActive).sorted { $0.priority.sortRank < $1.priority.sortRank }
     }
 
-    /// Inbox（Later 页签）：仅外部来源待办（To Do 状态 Jira / 未进焦点的 GitHub）。
-    /// later-into-calendar：个人任务不再进 Later，统一收敛到 Calendar 页签时间线。
-    var inboxTodos: [Todo] {
-        let focusIDs = Set((overdueTodos + todayTimedTodos + todayUntimedTodos + todayExternalTodos).map(\.id))
-        return sorted(pendingTodos.filter { !focusIDs.contains($0.id) && isExternal($0) })
+    /// 非活跃工作项（进 Later/Inbox）：To Do/Backlog 等
+    var inboxWorkItems: [WorkItem] {
+        workItems.filter { !$0.isActive }.sorted { $0.priority.sortRank < $1.priority.sortRank }
     }
 
     /// Calendar 页签承载的本地个人任务（later-into-calendar）：本地创建（含已完成）。
-    /// 排除外部来源（Jira/GitHub）与 `.calendar` 来源——后者已作为 Meeting 展示，避免重复。
-    /// 已完成的保留展示（删除线、不隐藏）；有截止按 dueDate 归入对应日期，无截止落「无固定时间」。
+    /// 排除 `.calendar` 来源——后者已作为 Meeting 展示，避免重复。
     var calendarPersonalTodos: [Todo] {
-        sorted(todos.filter { !isExternal($0) && $0.source != .calendar })
+        sorted(todos.filter { $0.source != .calendar })
     }
 
-    /// 今日焦点数（Today 面板问候语用，与面板列表一致，含只读 ticket）
+    /// 今日焦点数（Today 面板问候语用，与面板列表一致，含活跃工作项）
     var todayFocusCount: Int {
-        overdueTodos.count + todayTimedTodos.count + todayUntimedTodos.count + todayExternalTodos.count
+        overdueTodos.count + todayTimedTodos.count + todayUntimedTodos.count + activeWorkItems.count
     }
 
-    /// 只读外部源：app 内不可完成，不应阻塞刘海打钩/庆祝
-    private static let readOnlySources: Set<TodoSource> = [.jira, .github]
-
-    /// 今日「可动手」数（compact 计数与打钩判定用）：排除只读 ticket——
-    /// In Progress 的 Jira 会挂很多天，个人的事做完了刘海就该打钩
+    /// 今日「可动手」数（compact 计数与打钩判定用）：只算个人任务——
+    /// 工作项只读会挂很多天，个人的事做完了刘海就该打钩
     var todayActionableCount: Int {
-        (overdueTodos + todayTimedTodos + todayUntimedTodos)
-            .filter { !Self.readOnlySources.contains($0.source) }
-            .count
+        overdueTodos.count + todayTimedTodos.count + todayUntimedTodos.count
     }
     var completedToday: [Todo] {
         todos.filter {
@@ -616,7 +584,8 @@ final class AppStore: ObservableObject {
     }
 
     var reportContext: ReportContext {
-        ReportContext(pendingTodos: pendingTodos, completedToday: completedToday, meetings: todayMeetings)
+        ReportContext(pendingTodos: pendingTodos, workItems: workItems,
+                      completedToday: completedToday, meetings: todayMeetings)
     }
 
     // MARK: - Todo CRUD
@@ -671,7 +640,6 @@ final class AppStore: ObservableObject {
     /// ② 本地自定义任务：截止今天、已超期或无固定时间（无截止）均可完成。
     /// 仅未来截止的本地任务、Jira/GitHub 不可完成。
     func canComplete(_ todo: Todo) -> Bool {
-        if isExternal(todo) { return false }
         if todo.source == .calendar { return true }
         // 无固定时间（无截止）的本地任务也可完成；仅未来截止不可完成（显示小点）
         guard let anchor = todo.effectiveDue else { return true }
@@ -693,8 +661,8 @@ final class AppStore: ObservableObject {
         if todo.isCompleted { uncomplete(todo) } else { complete(todo) }
     }
 
-    /// 删除可用性：本地任务 + 苹果来源（事件/提醒）可删；Jira/GitHub 只读不可删。
-    func canDelete(_ todo: Todo) -> Bool { !isExternal(todo) }
+    /// 删除可用性：Todo 现已全是本地/苹果来源，均可删（外部工单是 WorkItem，不走这里）。
+    func canDelete(_ todo: Todo) -> Bool { true }
 
     func complete(_ todo: Todo) {
         guard let i = todos.firstIndex(where: { $0.id == todo.id }) else { return }
@@ -713,8 +681,8 @@ final class AppStore: ObservableObject {
             todos.append(next)
         }
 
-        // Jira 是只读集成不可完成，庆祝以「个人 Todo 清零」为准
-        if pendingTodos.allSatisfy({ $0.source == .jira }) {
+        // 工作项是只读集成不可完成，庆祝以「个人 Todo 清零」为准
+        if pendingTodos.isEmpty {
             // 完成今日全部 → 全屏庆祝 + 皇冠（effects spec）
             crownedToday = true
             crownedDate = Date()
@@ -867,48 +835,39 @@ final class AppStore: ObservableObject {
         return todos.contains { $0.source == .calendar && $0.calendarEventId == key && $0.isCompleted }
     }
 
-    /// 外部 ticket 源同步（Jira / GitHub PR 共用）：按 jiraKey 合并 + 按来源镜像清理。
+    /// 外部工单源同步（Jira / GitHub PR 共用）：按 key upsert + 按来源镜像清理（work-item spec）。
     /// - Parameters:
     ///   - source: 本批数据的来源，清理只作用于该来源（github 不会清 jira）
     ///   - notify: true 且 island 处于 compact 态时，新分配弹通知卡
     ///     （jira-landed-card spec）；启动后首轮同步传 false 避免初始全量误报。
-    ///   - prune: 镜像清理（jira-sync-prune spec）——本地未完成的同来源 todo
-    ///     若 key 不在本次结果中则移除（被转走/关闭/合并）。要求 fetched 是
-    ///     完整拉取结果；Debug 的 Mock 注入传 false，避免清掉真实数据。
-    func mergeExternalTodos(_ fetched: [Todo], source: TodoSource, notify: Bool = true, prune: Bool = true) {
+    ///   - prune: 镜像清理——本地同来源工作项若 key 不在本次结果中则移除
+    ///     （被转走/关闭/合并）。要求 fetched 完整；Debug Mock 注入传 false。
+    func mergeWorkItems(_ fetched: [WorkItem], source: WorkItemSource, notify: Bool = true, prune: Bool = true) {
         if prune {
-            let fetchedKeys = Set(fetched.compactMap(\.jiraKey))
-            todos.removeAll { todo in
-                guard todo.source == source, !todo.isCompleted, let key = todo.jiraKey else { return false }
-                return !fetchedKeys.contains(key)
+            let fetchedKeys = Set(fetched.map(\.key))
+            workItems.removeAll { $0.source == source && !fetchedKeys.contains($0.key) }
+        }
+        let knownKeys = Set(workItems.map(\.key))
+        var landed: [WorkItem] = []
+        for item in fetched {
+            if let i = workItems.firstIndex(where: { $0.key == item.key }) {
+                // 外部源只读集成，服务器是唯一真相：整条以本次拉取为准
+                workItems[i] = item
+            } else if !knownKeys.contains(item.key) {
+                workItems.append(item)
+                landed.append(item)
             }
         }
-        let knownKeys = Set(todos.compactMap(\.jiraKey))
-        var landed: [Todo] = []
-        for ticket in fetched where ticket.jiraKey != nil {
-            if let i = todos.firstIndex(where: { $0.jiraKey == ticket.jiraKey }) {
-                // 外部源只读集成，服务器是唯一真相：派生字段以本次拉取为准
-                todos[i].jiraStatus = ticket.jiraStatus
-                todos[i].jiraStatusCategory = ticket.jiraStatusCategory
-                todos[i].title = ticket.title
-                todos[i].priority = ticket.priority
-                todos[i].dueDate = ticket.dueDate
-                todos[i].jiraAssigner = ticket.jiraAssigner
-                todos[i].storyPoints = ticket.storyPoints
-            } else if !knownKeys.contains(ticket.jiraKey!) {
-                add(ticket)
-                landed.append(ticket)
-            }
-        }
-        // 新分配通知卡：不打断展开态/其他卡片态（静默入库，涟漪仍播放）
+        refreshCompactState()
+        // 新分配通知卡：不打断展开态/其他卡片态（静默入库）
         if notify, let first = landed.first, islandState.isCompact {
-            present(.jiraLanded(todo: first, moreCount: landed.count - 1))
+            present(.jiraLanded(item: first, moreCount: landed.count - 1))
         }
     }
 
-    /// 兼容包装：既有调用方（轮询/刷新/Debug）继续可用
-    func mergeJiraTodos(_ fetched: [Todo], notify: Bool = true, prune: Bool = true) {
-        mergeExternalTodos(fetched, source: .jira, notify: notify, prune: prune)
+    /// 兼容包装：Jira 轮询/刷新/Debug 调用
+    func mergeJiraWorkItems(_ fetched: [WorkItem], notify: Bool = true, prune: Bool = true) {
+        mergeWorkItems(fetched, source: .jira, notify: notify, prune: prune)
     }
 
     // MARK: - 消息（message-inbox spec）
@@ -965,10 +924,31 @@ final class AppStore: ObservableObject {
         Persistence.save(todos, to: "todos.json")
     }
 
+    /// 解码 todos.json，但在解码前剔除旧版遗留的外部工单记录（source jira/github 或含 jiraKey）。
+    /// 否则删掉枚举值后这些项会回退成 .manual 变“幽灵任务”。外部工单由轮询重建为 WorkItem。
+    static func loadTodosDroppingLegacyExternal() -> [Todo] {
+        let url = Persistence.baseDir.appendingPathComponent("todos.json")
+        guard let data = try? Data(contentsOf: url),
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        else {
+            return Persistence.load([Todo].self, from: "todos.json") ?? []
+        }
+        let cleaned = raw.filter { dict in
+            if let src = dict["source"] as? String, src == "jira" || src == "github" { return false }
+            if dict["jiraKey"] is String { return false }
+            return true
+        }
+        guard let reData = try? JSONSerialization.data(withJSONObject: cleaned) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode([Todo].self, from: reData)) ?? []
+    }
+
     /// 重置为演示数据（Debug 菜单 / Demo 翻车兜底）
     func resetDemoData() {
         crownedToday = false
         todos = Self.demoTodos()
+        workItems = Self.demoWorkItems()
         meetings = Self.demoMeetings()
         UserDefaults.standard.removeObject(forKey: "calendarInitialSyncCompleted")
         dismiss()
@@ -986,15 +966,21 @@ final class AppStore: ObservableObject {
             Todo(title: "买生日礼物", source: .manual, priority: .medium, dueDate: friday),
             Todo(title: "健身打卡", source: .manual, priority: .low, tags: ["每天"]),
             Todo(title: "整理本周会议纪要", source: .manual, priority: .low, dueDate: friday),
-            Todo(title: "修复登录 bug", source: .jira, priority: .high,
-                 jiraKey: "MD-1024", jiraURL: URL(string: "https://example.atlassian.net/browse/MD-1024"),
-                 jiraStatus: "In Progress"),
-            Todo(title: "优化首页加载", source: .jira, priority: .medium,
-                 jiraKey: "MD-1031", jiraURL: URL(string: "https://example.atlassian.net/browse/MD-1031"),
-                 jiraStatus: "To Do"),
-            Todo(title: "用户反馈调研", source: .jira, priority: .low,
-                 jiraKey: "MD-1042", jiraURL: URL(string: "https://example.atlassian.net/browse/MD-1042"),
-                 jiraStatus: "To Do"),
+        ]
+    }
+
+    /// 演示工作项（Debug 重置时与 demoTodos 一起载入，对应原 demo 里的 Jira 条目）
+    static func demoWorkItems() -> [WorkItem] {
+        [
+            WorkItem(key: "MD-1024", title: "修复登录 bug", source: .jira,
+                     status: "In Progress", statusCategory: "indeterminate",
+                     url: URL(string: "https://example.atlassian.net/browse/MD-1024"), priority: .high),
+            WorkItem(key: "MD-1031", title: "优化首页加载", source: .jira,
+                     status: "To Do", statusCategory: "new",
+                     url: URL(string: "https://example.atlassian.net/browse/MD-1031"), priority: .medium),
+            WorkItem(key: "MD-1042", title: "用户反馈调研", source: .jira,
+                     status: "To Do", statusCategory: "new",
+                     url: URL(string: "https://example.atlassian.net/browse/MD-1042"), priority: .low),
         ]
     }
 

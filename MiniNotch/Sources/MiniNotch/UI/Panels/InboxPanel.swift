@@ -10,19 +10,19 @@ import SwiftUI
 struct InboxPanel: View {
     @EnvironmentObject var store: AppStore
 
-    private var jira: [Todo] { store.inboxTodos.filter { $0.source == .jira } }
-    private var github: [Todo] { store.inboxTodos.filter { $0.source == .github } }
+    private var jira: [WorkItem] { store.inboxWorkItems.filter { $0.source == .jira } }
+    private var github: [WorkItem] { store.inboxWorkItems.filter { $0.source == .github } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("待处理的外部事项 \(store.inboxTodos.count) 项")
+            Text("待处理的外部事项 \(store.inboxWorkItems.count) 项")
                 .font(DS.Fonts.button)
                 .foregroundStyle(DS.Colors.text2)
                 .padding(.horizontal, 2)
                 .padding(.top, 4)
                 .padding(.bottom, 12)
 
-            if store.inboxTodos.isEmpty {
+            if store.inboxWorkItems.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "tray")
                         .font(.system(size: 24))
@@ -39,8 +39,8 @@ struct InboxPanel: View {
 
             if !jira.isEmpty {
                 PanelSectionTitle(title: "Jira Tickets", count: jira.count)
-                ForEach(jira) { todo in
-                    TaskRow(todo: todo)
+                ForEach(jira) { item in
+                    WorkItemRow(item: item)
                 }
             }
 
@@ -50,8 +50,8 @@ struct InboxPanel: View {
 
             if !github.isEmpty {
                 PanelSectionTitle(title: "GitHub", count: github.count)
-                ForEach(github) { todo in
-                    TaskRow(todo: todo)
+                ForEach(github) { item in
+                    WorkItemRow(item: item)
                 }
             }
         }

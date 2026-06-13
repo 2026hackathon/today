@@ -2,16 +2,16 @@ import AppKit
 import SwiftUI
 
 // ============================================================
-// JiraLandedCard —— 外部 ticket 新分配通知卡（jira-landed-card spec）。
-// Jira ticket 与 GitHub PR 共用，文案/图标/颜色按 todo.source 区分。
-// 与 NewTaskCard 的区别：纯通知，ticket 已自动入库，无需任何操作。
+// JiraLandedCard —— 外部工单新分配通知卡（jira-landed-card spec）。
+// Jira ticket 与 GitHub PR 共用，文案/图标/颜色按 item.source 区分。
+// 与 NewTaskCard 的区别：纯通知，工单已自动入库，无需任何操作。
 //   - 底部倒计时进度条（5s），走完播放「收入灵动岛」动效后回落
 //   - 悬停暂停倒计时
-//   - 点击卡片任意位置 → 浏览器打开 ticket（并立即收回）
+//   - 点击卡片任意位置 → 浏览器打开工单（并立即收回）
 // ============================================================
 
 struct JiraLandedCard: View {
-    let todo: Todo
+    let item: WorkItem
     /// 同轮其余新分配数（>0 显示「等 N 条新分配」）
     let moreCount: Int
     @EnvironmentObject var store: AppStore
@@ -22,6 +22,8 @@ struct JiraLandedCard: View {
     @State private var remaining = JiraLandedCard.duration
     @State private var hovering = false
     @State private var collecting = false
+
+    private var isGitHub: Bool { item.source == .github }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -40,19 +42,19 @@ struct JiraLandedCard: View {
         .contentShape(Rectangle())
         .onTapGesture { openAndCollect() }
         .onHover { hovering = $0 }
-        .task(id: todo.id) { await runCountdown() }
+        .task(id: item.id) { await runCountdown() }
     }
 
     // MARK: - 子视图
 
     private var header: some View {
         HStack(spacing: 8) {
-            BrandIcon(brand: todo.source == .github ? .github : .jira, size: 13, color: sourceColor)
-            Text(todo.source == .github ? "新 PR 待处理" : "新 Jira 分配")
+            BrandIcon(brand: isGitHub ? .github : .jira, size: 13, color: sourceColor)
+            Text(isGitHub ? "新 PR 待处理" : "新 Jira 分配")
                 .font(DS.Fonts.meta.weight(.medium))
                 .foregroundStyle(DS.Colors.text2)
             Spacer(minLength: 0)
-            if let status = todo.jiraStatus {
+            if let status = item.status {
                 Text(status).dsTag()
             }
         }
@@ -65,12 +67,10 @@ struct JiraLandedCard: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let key = todo.jiraKey {
-                Text(key)
-                    .font(DS.Fonts.compactSide.weight(.semibold))
-                    .foregroundStyle(DS.Colors.accent)
-            }
-            Text(todo.title)
+            Text(item.key)
+                .font(DS.Fonts.compactSide.weight(.semibold))
+                .foregroundStyle(DS.Colors.accent)
+            Text(item.title)
                 .font(DS.Fonts.cardTitle)
                 .foregroundStyle(DS.Colors.text1)
                 .lineLimit(2)
@@ -80,25 +80,20 @@ struct JiraLandedCard: View {
 
     private var metaRow: some View {
         HStack(spacing: 6) {
-            PanelPriorityTag(priority: todo.priority)
-            if let sp = todo.storyPointsLabel {
+            PanelPriorityTag(priority: item.priority)
+            if let sp = item.storyPointsLabel {
                 Text(sp).dsTag()
             }
-            if let assigner = todo.jiraAssigner {
+            if let assigner = item.assigner {
                 HStack(spacing: 3) {
                     Image(systemName: "person.fill").font(.system(size: 8))
-                    Text(todo.source == .github ? "\(assigner) 发起" : "\(assigner) 指派")
+                    Text(isGitHub ? "\(assigner) 发起" : "\(assigner) 指派")
                 }
                 .font(DS.Fonts.meta)
                 .foregroundStyle(DS.Colors.text2)
             }
-            if let due = todo.dueDate {
-                Text(PanelFormat.due(due))
-                    .font(DS.Fonts.meta)
-                    .foregroundStyle(DS.Colors.text3)
-            }
             if moreCount > 0 {
-                Text(todo.source == .github ? "等 \(moreCount + 1) 个新 PR" : "等 \(moreCount + 1) 条新分配")
+                Text(isGitHub ? "等 \(moreCount + 1) 个新 PR" : "等 \(moreCount + 1) 条新分配")
                     .dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
             }
             Spacer(minLength: 0)
@@ -123,7 +118,7 @@ struct JiraLandedCard: View {
     }
 
     /// 来源色（Jira 蓝 / GitHub 紫，与 Touchdown 涟漪同色）
-    private var sourceColor: Color { DS.sourceColor(todo.source) }
+    private var sourceColor: Color { DS.workItemColor(item.source) }
 
     // MARK: - 倒计时与收回
 
@@ -139,7 +134,7 @@ struct JiraLandedCard: View {
     }
 
     private func openAndCollect() {
-        if let url = todo.jiraURL {
+        if let url = item.url {
             NSWorkspace.shared.open(url)
         }
         Task { await collect() }
@@ -150,7 +145,7 @@ struct JiraLandedCard: View {
         withAnimation(.easeIn(duration: 0.22)) { collecting = true }
         try? await Task.sleep(for: .milliseconds(220))
         // 倒计时期间状态可能已被其他事件抢占（如到期提醒），只在仍是本卡时回落
-        if case .jiraLanded(let current, _) = store.islandState, current.id == todo.id {
+        if case .jiraLanded(let current, _) = store.islandState, current.id == item.id {
             store.dismiss()
         }
     }

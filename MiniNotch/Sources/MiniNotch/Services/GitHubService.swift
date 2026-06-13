@@ -5,8 +5,8 @@ import Foundation
 // Owner: C
 //
 // PR 与 Jira ticket 同构：外部只读、轮询镜像、新分配通知。
-// 复用 Todo 的 ticket 字段：jiraKey="repo#123"、jiraURL=PR 页面、
-// jiraStatus="待 Review"/"已指派"/"Draft"、jiraAssigner=PR 作者。
+// 产出 WorkItem：key="repo#123"、url=PR 页面、
+// status="待 Review"/"已指派"/"Draft"、assigner=PR 作者。
 // ============================================================
 
 enum GitHubServiceError: Error {
@@ -17,7 +17,7 @@ enum GitHubServiceError: Error {
 @MainActor
 protocol GitHubService: AnyObject {
     /// 拉取需要我处理的 open PR（待我 review + 指派给我），按 URL 去重
-    func fetchMyPullRequests() async throws -> [Todo]
+    func fetchMyPullRequests() async throws -> [WorkItem]
 }
 
 // MARK: - Mock（Demo 兜底 + 「模拟 PR 新分配」）
@@ -31,7 +31,7 @@ final class MockGitHubService: GitHubService {
 
     init() {}
 
-    func fetchMyPullRequests() async throws -> [Todo] {
+    func fetchMyPullRequests() async throws -> [WorkItem] {
         try? await Task.sleep(for: .seconds(0.3))
         if extraPRArmed {
             extraPRArmed = false
@@ -47,15 +47,16 @@ final class MockGitHubService: GitHubService {
         return prs
     }
 
-    private static func pr(repo: String, number: Int, title: String, author: String, status: String, draft: Bool = false) -> Todo {
-        Todo(
+    private static func pr(repo: String, number: Int, title: String, author: String, status: String, draft: Bool = false) -> WorkItem {
+        WorkItem(
+            key: "\(repo)#\(number)",
             title: title,
             source: .github,
+            status: status,
+            assigner: author,
+            url: URL(string: "https://github.com/2026hackathon/\(repo)/pull/\(number)"),
             priority: draft ? .low : .medium,
-            jiraKey: "\(repo)#\(number)",
-            jiraURL: URL(string: "https://github.com/2026hackathon/\(repo)/pull/\(number)"),
-            jiraStatus: status,
-            jiraAssigner: author
+            isDraft: draft
         )
     }
 }
@@ -72,7 +73,7 @@ final class RealGitHubService: GitHubService {
         self.token = token
     }
 
-    func fetchMyPullRequests() async throws -> [Todo] {
+    func fetchMyPullRequests() async throws -> [WorkItem] {
         guard !token.isEmpty else { throw GitHubServiceError.notConfigured }
 
         // Search API 不支持 OR，两个查询合并去重：
@@ -81,16 +82,16 @@ final class RealGitHubService: GitHubService {
         let assigned = try await search(query: "is:pr is:open assignee:@me", status: "已指派")
 
         var seen = Set<String>()
-        var result: [Todo] = []
+        var result: [WorkItem] = []
         for pr in reviewRequested + assigned {
-            guard let key = pr.jiraKey, !seen.contains(key) else { continue }
-            seen.insert(key)
+            guard !seen.contains(pr.key) else { continue }
+            seen.insert(pr.key)
             result.append(pr)
         }
         return result
     }
 
-    private func search(query: String, status: String) async throws -> [Todo] {
+    private func search(query: String, status: String) async throws -> [WorkItem] {
         var components = URLComponents(string: "https://api.github.com/search/issues")
         components?.queryItems = [
             URLQueryItem(name: "q", value: query),
@@ -117,14 +118,15 @@ final class RealGitHubService: GitHubService {
             // repository_url = https://api.github.com/repos/owner/repo → 取 repo 名
             let repo = item.repositoryURL.split(separator: "/").last.map(String.init) ?? "?"
             let isDraft = item.draft ?? false
-            return Todo(
+            return WorkItem(
+                key: "\(repo)#\(item.number)",
                 title: item.title,
                 source: .github,
+                status: isDraft ? "Draft" : status,
+                assigner: item.user?.login,
+                url: URL(string: item.htmlURL),
                 priority: isDraft ? .low : .medium,
-                jiraKey: "\(repo)#\(item.number)",
-                jiraURL: URL(string: item.htmlURL),
-                jiraStatus: isDraft ? "Draft" : status,
-                jiraAssigner: item.user?.login
+                isDraft: isDraft
             )
         }
     }

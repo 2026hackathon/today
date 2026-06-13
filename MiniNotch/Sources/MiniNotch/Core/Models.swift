@@ -52,18 +52,102 @@ enum DraftKind: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// 任务来源 —— 决定 Touchdown 动效的涟漪颜色（见 DesignTokens.sourceColor）
+/// 任务来源 —— 决定 Touchdown 动效的涟漪颜色（见 DesignTokens.sourceColor）。
+/// 外部工单（Jira/GitHub）已抽出为独立的 `WorkItem`，不再是 Todo 来源。
 enum TodoSource: String, Codable, CaseIterable, Sendable {
-    case screenshot, jira, manual, calendar, github
+    case screenshot, manual, calendar
 
     var label: String {
         switch self {
         case .screenshot: "截图"
-        case .jira: "Jira"
         case .manual: "手动"
         case .calendar: "日历"
+        }
+    }
+}
+
+// MARK: - WorkItem（外部工单：Jira ticket / GitHub PR）
+
+/// 工作项来源（决定品牌图标/配色与跳转）
+enum WorkItemSource: String, Codable, CaseIterable, Sendable {
+    case jira, github
+
+    var label: String {
+        switch self {
+        case .jira: "Jira"
         case .github: "GitHub"
         }
+    }
+}
+
+/// 外部系统派给我、本地只读、状态由外部驱动的工作项。
+/// 与 `Todo` 的根本区别：不能在 app 内完成、整体由轮询替换、有外部生命周期。
+struct WorkItem: Identifiable, Codable, Equatable, Sendable {
+    /// 稳定标识：Jira issueKey（MD-123）/ GitHub「repo#number」—— 去重与 upsert 键
+    var key: String
+    var title: String
+    var source: WorkItemSource
+    /// 展示状态名（随站点语言本地化）：In Progress / To Do / 待 Review / Draft …
+    var status: String?
+    /// Jira statusCategory.key（new/indeterminate/done），机器值不随语言变化，活跃判断用它
+    var statusCategory: String?
+    /// 指派人（Jira: changelog 最近指派者；GitHub: PR 作者）
+    var assigner: String?
+    var storyPoints: Double?
+    var url: URL?
+    var priority: Priority = .medium
+    var updatedAt: Date = Date()
+    /// GitHub draft PR 标记（Jira 恒 false）
+    var isDraft: Bool = false
+
+    var id: String { key }
+
+    /// "3 SP" / "0.5 SP"（整数去小数点）
+    var storyPointsLabel: String? {
+        guard let sp = storyPoints else { return nil }
+        return sp == sp.rounded() ? "\(Int(sp)) SP" : "\(sp) SP"
+    }
+
+    /// 非活跃状态兜底名单（仅 statusCategory 缺失的旧/异常数据走这里）
+    private static let inactiveStatuses: Set<String> = [
+        "to do", "todo", "open", "backlog", "done", "cancelled", "canceled", "closed",
+    ]
+
+    /// 活跃 = 用户正在处理：Jira statusCategory 为 indeterminate（In Progress 类）；
+    /// GitHub PR 待 review/已指派即活跃。缺 statusCategory 时回退 status 名称黑名单。
+    var isActive: Bool {
+        if let category = statusCategory { return category == "indeterminate" }
+        if source == .github { return !isDraft }
+        let s = (status ?? "").lowercased()
+        return !Self.inactiveStatuses.contains(s)
+    }
+
+    init(
+        key: String, title: String, source: WorkItemSource,
+        status: String? = nil, statusCategory: String? = nil, assigner: String? = nil,
+        storyPoints: Double? = nil, url: URL? = nil, priority: Priority = .medium,
+        updatedAt: Date = Date(), isDraft: Bool = false
+    ) {
+        self.key = key; self.title = title; self.source = source
+        self.status = status; self.statusCategory = statusCategory; self.assigner = assigner
+        self.storyPoints = storyPoints; self.url = url; self.priority = priority
+        self.updatedAt = updatedAt; self.isDraft = isDraft
+    }
+
+    /// 向后兼容解码（与 Todo 同理）：逐字段 decodeIfPresent，缺失取默认
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = (try? c.decodeIfPresent(String.self, forKey: .key)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        source = (try? c.decodeIfPresent(WorkItemSource.self, forKey: .source)) ?? .jira
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
+        statusCategory = try? c.decodeIfPresent(String.self, forKey: .statusCategory)
+        assigner = try? c.decodeIfPresent(String.self, forKey: .assigner)
+        storyPoints = try? c.decodeIfPresent(Double.self, forKey: .storyPoints)
+        url = try? c.decodeIfPresent(URL.self, forKey: .url)
+        priority = (try? c.decodeIfPresent(Priority.self, forKey: .priority)) ?? .medium
+        updatedAt = (try? c.decodeIfPresent(Date.self, forKey: .updatedAt)) ?? Date()
+        isDraft = (try? c.decodeIfPresent(Bool.self, forKey: .isDraft)) ?? false
     }
 }
 
@@ -152,16 +236,6 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
     var snoozeCount = 0
     /// 原始截图文件路径（截图来源时有值）
     var screenshotPath: String?
-    var jiraKey: String?
-    var jiraURL: URL?
-    var jiraStatus: String?
-    /// Jira statusCategory.key（"new" / "indeterminate" / "done"），
-    /// 机器值不随站点语言变化 —— 活跃判断用它，status.name 仅展示
-    var jiraStatusCategory: String?
-    /// 最近一次把 ticket 指派给我的人（来自 changelog，可能是自己）
-    var jiraAssigner: String?
-    /// Story Points（Jira custom field，wonder 站点为 customfield_10025）
-    var storyPoints: Double?
     /// AI 紧急度判断依据，如「检测到『今晚之前』关键词」
     var aiExplanation: String?
     var tags: [String] = []
@@ -200,20 +274,11 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
     /// 有效截止 = snoozedUntil ?? dueDate：UI 一律显示这个，snooze 后展示的就是新时间
     var effectiveDue: Date? { snoozedUntil ?? dueDate }
 
-    /// "3 SP" / "0.5 SP"（整数去掉小数点）
-    var storyPointsLabel: String? {
-        guard let sp = storyPoints else { return nil }
-        return sp == sp.rounded() ? "\(Int(sp)) SP" : "\(sp) SP"
-    }
-
     init(
         id: UUID = UUID(), title: String, note: String? = nil,
         source: TodoSource = .manual, kind: DraftKind = .task, priority: Priority = .medium,
         dueDate: Date? = nil, createdAt: Date = Date(), completedAt: Date? = nil,
         snoozedUntil: Date? = nil, snoozeCount: Int = 0, screenshotPath: String? = nil,
-        jiraKey: String? = nil, jiraURL: URL? = nil, jiraStatus: String? = nil,
-        jiraStatusCategory: String? = nil,
-        jiraAssigner: String? = nil, storyPoints: Double? = nil,
         aiExplanation: String? = nil, tags: [String] = [],
         calendarEventId: String? = nil, reminderLeadMinutes: Int? = nil
     ) {
@@ -222,9 +287,6 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         self.dueDate = dueDate; self.createdAt = createdAt; self.completedAt = completedAt
         self.snoozedUntil = snoozedUntil; self.snoozeCount = snoozeCount
         self.screenshotPath = screenshotPath
-        self.jiraKey = jiraKey; self.jiraURL = jiraURL; self.jiraStatus = jiraStatus
-        self.jiraStatusCategory = jiraStatusCategory
-        self.jiraAssigner = jiraAssigner; self.storyPoints = storyPoints
         self.aiExplanation = aiExplanation; self.tags = tags
         self.calendarEventId = calendarEventId
         self.reminderLeadMinutes = reminderLeadMinutes
@@ -247,12 +309,6 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         snoozedUntil = try? c.decodeIfPresent(Date.self, forKey: .snoozedUntil)
         snoozeCount = (try? c.decodeIfPresent(Int.self, forKey: .snoozeCount)) ?? 0
         screenshotPath = try? c.decodeIfPresent(String.self, forKey: .screenshotPath)
-        jiraKey = try? c.decodeIfPresent(String.self, forKey: .jiraKey)
-        jiraURL = try? c.decodeIfPresent(URL.self, forKey: .jiraURL)
-        jiraStatus = try? c.decodeIfPresent(String.self, forKey: .jiraStatus)
-        jiraStatusCategory = try? c.decodeIfPresent(String.self, forKey: .jiraStatusCategory)
-        jiraAssigner = try? c.decodeIfPresent(String.self, forKey: .jiraAssigner)
-        storyPoints = try? c.decodeIfPresent(Double.self, forKey: .storyPoints)
         aiExplanation = try? c.decodeIfPresent(String.self, forKey: .aiExplanation)
         tags = (try? c.decodeIfPresent([String].self, forKey: .tags)) ?? []
         calendarEventId = try? c.decodeIfPresent(String.self, forKey: .calendarEventId)
@@ -430,6 +486,8 @@ struct EmailAnalysis: Sendable {
 
 struct ReportContext: Sendable {
     var pendingTodos: [Todo]
+    /// 外部工单（Jira/GitHub），晨报/晚报与 AI 建议引用
+    var workItems: [WorkItem] = []
     var completedToday: [Todo]
     var meetings: [Meeting]
     var date = Date()

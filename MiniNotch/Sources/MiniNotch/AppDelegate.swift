@@ -360,7 +360,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 喂全部 pendingTodos 会让 AI 建议 Inbox 里明天的事，和面板列表对不上
     private func todaySuggestionContext() -> ReportContext {
         ReportContext(
-            pendingTodos: store.overdueTodos + store.todayTimedTodos + store.todayUntimedTodos + store.todayExternalTodos,
+            pendingTodos: store.overdueTodos + store.todayTimedTodos + store.todayUntimedTodos,
+            workItems: store.activeWorkItems,
             completedToday: store.completedToday,
             meetings: store.todayMeetings
         )
@@ -633,13 +634,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let service = currentJiraService() else {
             if !didLaunchCleanupJira {
                 didLaunchCleanupJira = true
-                store.mergeJiraTodos([], notify: false)
+                store.mergeJiraWorkItems([], notify: false)
             }
             return // 运行期未配置（编辑凭证窗口）：跳过，不 prune
         }
         didLaunchCleanupJira = true
         if let tickets = try? await service.fetchAssignedTickets() {
-            store.mergeJiraTodos(tickets, notify: notify && jiraBaselineSynced)
+            store.mergeJiraWorkItems(tickets, notify: notify && jiraBaselineSynced)
             jiraBaselineSynced = true
         }
     }
@@ -649,13 +650,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let service = currentGitHubService() else {
             if !didLaunchCleanupGitHub {
                 didLaunchCleanupGitHub = true
-                store.mergeExternalTodos([], source: .github, notify: false)
+                store.mergeWorkItems([], source: .github, notify: false)
             }
             return // 运行期未配置：跳过，不 prune（review-fixes #1）
         }
         didLaunchCleanupGitHub = true
         if let prs = try? await service.fetchMyPullRequests() {
-            store.mergeExternalTodos(prs, source: .github, notify: notify && githubBaselineSynced)
+            store.mergeWorkItems(prs, source: .github, notify: notify && githubBaselineSynced)
             githubBaselineSynced = true
         }
     }
@@ -995,7 +996,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             if let tickets = try? await mockJiraService.fetchAssignedTickets() {
                 // prune: false —— Mock 注入不能把真实 ticket 清掉（jira-sync-prune spec）
-                store.mergeJiraTodos(tickets, prune: false)
+                store.mergeJiraWorkItems(tickets, prune: false)
             }
         }
     }
@@ -1006,7 +1007,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             if let prs = try? await mockGitHubService.fetchMyPullRequests() {
                 // prune: false —— Mock 注入不能把真实 PR 清掉
-                store.mergeExternalTodos(prs, source: .github, notify: true, prune: false)
+                store.mergeWorkItems(prs, source: .github, notify: true, prune: false)
             }
         }
     }

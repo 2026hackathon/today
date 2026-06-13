@@ -64,7 +64,7 @@ struct MorningReportPanel: View {
     private var structuredBody: some View {
         let priorityIDs = Set(priorityItems.map(\.id))
         let personals = store.personalTodos.filter { !priorityIDs.contains($0.id) }
-        let jiras = store.jiraTodos.filter { !priorityIDs.contains($0.id) }
+        let jiras = store.workItems
 
         return VStack(alignment: .leading, spacing: 12) {
             if !priorityItems.isEmpty {
@@ -112,9 +112,9 @@ struct MorningReportPanel: View {
             }
 
             if !jiras.isEmpty {
-                PanelReportSection(title: "JIRA TICKETS · \(jiras.count)") {
-                    ForEach(jiras) { todo in
-                        Text(jiraLine(todo))
+                PanelReportSection(title: "工作项 · \(jiras.count)") {
+                    ForEach(jiras) { item in
+                        Text(workItemLine(item))
                             .font(DS.Fonts.button)
                             .foregroundStyle(DS.Colors.text1)
                             .padding(.vertical, 3)
@@ -142,19 +142,15 @@ struct MorningReportPanel: View {
     // MARK: - 文本生成
 
     private func deadlineTitle(_ todo: Todo) -> String {
-        if let key = todo.jiraKey {
-            return "\(key) \(todo.title)"
-        }
         if let due = todo.dueDate {
             return "\(todo.title)（截止 \(PanelFormat.due(due))）"
         }
         return todo.title
     }
 
-    private func jiraLine(_ todo: Todo) -> String {
-        let key = todo.jiraKey.map { "\($0) " } ?? ""
-        let status = todo.jiraStatus.map { " (\($0))" } ?? ""
-        return "\(key)\(todo.title)\(status)"
+    private func workItemLine(_ item: WorkItem) -> String {
+        let status = item.status.map { " (\($0))" } ?? ""
+        return "\(item.key) \(item.title)\(status)"
     }
 
     private func reportMarkdown() -> String {
@@ -180,10 +176,10 @@ struct MorningReportPanel: View {
             for todo in personals { lines.append("- \(todo.title)") }
             lines.append("")
         }
-        let jiras = store.jiraTodos.filter { !priorityIDs.contains($0.id) }
+        let jiras = store.workItems
         if !jiras.isEmpty {
-            lines.append("## JIRA TICKETS")
-            for todo in jiras { lines.append("- \(jiraLine(todo))") }
+            lines.append("## 工作项")
+            for item in jiras { lines.append("- \(workItemLine(item))") }
             lines.append("")
         }
         return lines.joined(separator: "\n")

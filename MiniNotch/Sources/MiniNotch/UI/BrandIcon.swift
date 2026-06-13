@@ -43,15 +43,6 @@ struct BrandIcon: View {
         .foregroundStyle(color)
     }
 
-    /// 来源 → 品牌（非 jira/github 来源返回 nil，调用方走原有 SF Symbol 逻辑）
-    static func brand(for source: TodoSource) -> Brand? {
-        switch source {
-        case .jira: .jira
-        case .github: .github
-        default: nil
-        }
-    }
-
     // MARK: - 资源缓存（SVG 解码一次，全列表复用；View.body 即主线程）
 
     @MainActor private static var cache: [Brand: NSImage] = [:]

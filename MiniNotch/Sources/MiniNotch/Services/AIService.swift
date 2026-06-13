@@ -254,12 +254,12 @@ final class MockAIService: AIService {
         }
 
         md += "\n## ✅ 个人 Todo\n"
-        let personal = ctx.pendingTodos.filter { $0.source != .jira }
+        let personal = ctx.pendingTodos
         md += personal.isEmpty ? "- 无\n" : personal.map { "- \($0.title)\(Self.dueSuffix($0.dueDate))" }.joined(separator: "\n") + "\n"
 
-        md += "\n## 🧩 Jira\n"
-        let jira = ctx.pendingTodos.filter { $0.source == .jira }
-        md += jira.isEmpty ? "- 无指派 ticket\n" : jira.map { "- \($0.jiraKey ?? "") \($0.title)（\($0.jiraStatus ?? "To Do")）" }.joined(separator: "\n") + "\n"
+        md += "\n## 🧩 工作项\n"
+        let jira = ctx.workItems
+        md += jira.isEmpty ? "- 无指派 ticket\n" : jira.map { "- \($0.key) \($0.title)（\($0.status ?? "To Do")）" }.joined(separator: "\n") + "\n"
 
         md += "\n## 💡 建议\n"
         if let first = priorities.first {
@@ -294,9 +294,9 @@ final class MockAIService: AIService {
         md += "\n## 📅 今日会议\n"
         md += ctx.meetings.isEmpty ? "- 今天没有会议\n" : ctx.meetings.map { "- \(Self.time($0.start)) \($0.title)" }.joined(separator: "\n") + "\n"
 
-        md += "\n## 🧩 Jira\n"
-        let jira = ctx.pendingTodos.filter { $0.source == .jira }
-        md += jira.isEmpty ? "- 无未完成 ticket\n" : jira.map { "- \($0.jiraKey ?? "") \($0.title)（\($0.jiraStatus ?? "To Do")）" }.joined(separator: "\n") + "\n"
+        md += "\n## 🧩 工作项\n"
+        let jira = ctx.workItems
+        md += jira.isEmpty ? "- 无未完成 ticket\n" : jira.map { "- \($0.key) \($0.title)（\($0.status ?? "To Do")）" }.joined(separator: "\n") + "\n"
 
         md += "\n## 💡 建议\n"
         if let first = carry.first {
@@ -715,8 +715,13 @@ final class OpenAIChatAIService: AIService {
         lines.append("\n未完成待办（\(ctx.pendingTodos.count)）：")
         for t in ctx.pendingTodos {
             let due = t.dueDate.map { dateTime.string(from: $0) } ?? "无截止"
-            let src = t.source == .jira ? "Jira \(t.jiraKey ?? "")（\(t.jiraStatus ?? "To Do")）" : "个人"
-            lines.append("- \(t.title) | \(t.priority.label) | \(due) | \(src)")
+            lines.append("- \(t.title) | \(t.priority.label) | \(due) | 个人")
+        }
+        if !ctx.workItems.isEmpty {
+            lines.append("\n工作项（\(ctx.workItems.count)）：")
+            for w in ctx.workItems {
+                lines.append("- \(w.key) \(w.title)（\(w.status ?? "To Do")）| \(w.source.label)")
+            }
         }
         lines.append("\n今日已完成（\(ctx.completedToday.count)）：")
         for t in ctx.completedToday { lines.append("- \(t.title)") }

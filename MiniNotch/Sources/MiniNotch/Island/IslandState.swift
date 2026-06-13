@@ -47,7 +47,7 @@ enum IslandState: Equatable, Sendable {
     case editTask(todo: Todo)           // 编辑已有个人任务（标题/时间/优先级）
     /// 新 Jira 分配通知卡：纯通知无操作，倒计时后自动收入岛体
     /// moreCount = 同轮其余新分配数（>0 显示「等 N 条」）
-    case jiraLanded(todo: Todo, moreCount: Int)
+    case jiraLanded(item: WorkItem, moreCount: Int)
     /// 新邮件消息降落卡（沿用 jiraLanded 样式/倒计时）：点击打开链接并标记已处理
     /// moreCount = 同轮其余新消息数（>0 聚合显示「N 条新消息」）
     case messageLanded(message: Message, moreCount: Int)

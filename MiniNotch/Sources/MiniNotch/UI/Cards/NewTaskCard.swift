@@ -73,10 +73,8 @@ struct NewTaskCard: View {
     private static func sourceIcon(_ source: TodoSource) -> String {
         switch source {
         case .screenshot: "camera"
-        case .jira: "link"
         case .manual: "square.and.pencil"
         case .calendar: "calendar"
-        case .github: "arrow.triangle.pull"
         }
     }
 

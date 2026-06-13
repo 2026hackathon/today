@@ -133,8 +133,8 @@ struct IslandRootView: View {
         case .editTask(let todo):
             EditTaskCard(todo: todo).id(todo.id)
 
-        case .jiraLanded(let todo, let moreCount):
-            JiraLandedCard(todo: todo, moreCount: moreCount)
+        case .jiraLanded(let item, let moreCount):
+            JiraLandedCard(item: item, moreCount: moreCount)
 
         case .messageLanded(let message, let moreCount):
             MessageLandedCard(message: message, moreCount: moreCount)

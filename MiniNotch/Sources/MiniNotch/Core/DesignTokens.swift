@@ -47,9 +47,15 @@ enum DS {
     static func sourceColor(_ source: TodoSource) -> Color {
         switch source {
         case .screenshot: Color(red: 0xAF / 255, green: 0x52 / 255, blue: 0xDE / 255) // 紫
-        case .jira: Color(red: 0x00 / 255, green: 0x7A / 255, blue: 0xFF / 255)        // 蓝
         case .manual: Color(red: 0x34 / 255, green: 0xC7 / 255, blue: 0x59 / 255)      // 绿
         case .calendar: Color(red: 0xFF / 255, green: 0x95 / 255, blue: 0x00 / 255)    // 橙
+        }
+    }
+
+    /// 工作项来源色（Jira 蓝 / GitHub PR 紫）
+    static func workItemColor(_ source: WorkItemSource) -> Color {
+        switch source {
+        case .jira: Color(red: 0x00 / 255, green: 0x7A / 255, blue: 0xFF / 255)        // 蓝
         case .github: Color(red: 0x82 / 255, green: 0x50 / 255, blue: 0xDF / 255)      // GitHub PR 紫
         }
     }
@@ -58,7 +64,7 @@ enum DS {
     static func messageColor(_ source: MessageSource) -> Color {
         switch source {
         case .slack: Color(red: 0x61 / 255, green: 0x1F / 255, blue: 0x69 / 255)  // Slack aubergine
-        case .jira: sourceColor(.jira)                                            // 复用 Jira 蓝
+        case .jira: workItemColor(.jira)                                          // 复用 Jira 蓝
         case .email: Colors.accent
         }
     }

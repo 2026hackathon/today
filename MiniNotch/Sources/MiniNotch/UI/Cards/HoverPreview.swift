@@ -8,9 +8,9 @@ import SwiftUI
 struct HoverPreview: View {
     @EnvironmentObject var store: AppStore
 
-    /// 个人 Todo 在前、Jira 在后，取前 3 条
+    /// 个人 Todo 前 3 条（外部工作项不挤这块小预览，完整在 Today/工作项）
     private var topTodos: [Todo] {
-        Array((store.personalTodos + store.jiraTodos).prefix(3))
+        Array(store.personalTodos.prefix(3))
     }
 
     var body: some View {
@@ -55,7 +55,7 @@ struct HoverPreview: View {
             Text(todo.priority.label)
                 .dsTag(tagColor(todo.priority), bg: tagBackground(todo.priority))
 
-            Text(rowTitle(todo))
+            Text(todo.title)
                 .font(DS.Fonts.button)
                 .foregroundStyle(DS.Colors.text1)
                 .lineLimit(1)
@@ -70,14 +70,6 @@ struct HoverPreview: View {
             }
         }
         .padding(.vertical, 5)
-    }
-
-    /// Jira 任务带 key 前缀（prototype: "MD-1024 修复登录 bug"）
-    private func rowTitle(_ todo: Todo) -> String {
-        if let key = todo.jiraKey {
-            return "\(key) \(todo.title)"
-        }
-        return todo.title
     }
 
     private func tagColor(_ p: Priority) -> Color {
