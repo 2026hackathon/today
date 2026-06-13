@@ -138,6 +138,8 @@ final class AppStore: ObservableObject {
     var onReminderCompletionChanged: ((String, Bool) -> Void)?
     /// 提醒事项 snooze → 把新截止时间回写 EventKit（calendarItemIdentifier, 新时间），AppDelegate 装配
     var onReminderSnoozed: ((String, Date) -> Void)?
+    /// 删除苹果来源项 → 从 EventKit 真删除对应事件/提醒（eventIdentifier），AppDelegate 装配
+    var onCalendarItemDeleted: ((String) -> Void)?
     /// agent 一轮完成（转入 replied）→ 提示音 + 完成通知卡，AppDelegate 装配（声音/前台判断属 AppKit）
     var onAgentReplied: ((AgentSession) -> Void)?
 
@@ -296,6 +298,74 @@ final class AppStore: ObservableObject {
         Task { @MainActor [weak self] in
             await onRefresh()
             self?.isRefreshing = false
+        }
+    }
+
+    // MARK: - 磁盘清理（disk-cleanup spec）
+    // 借鉴 storage-analyzer skill：只读 du 扫描 → 大模型分安全档 → 移废纸篓。
+    // 结果不落盘（每次打开重新扫，避免路径过期）；服务由 AppDelegate 按 AI 配置装配。
+
+    enum DiskScanStatus: Equatable {
+        case idle, scanning, classifying, done
+        case failed(String)
+    }
+
+    @Published private(set) var diskScanStatus: DiskScanStatus = .idle
+    @Published private(set) var diskCapacity: DiskCapacity?
+    @Published private(set) var diskClassified: [ClassifiedEntry] = []
+    @Published private(set) var diskReclaimedBytes: Int64 = 0
+    @Published private(set) var diskInaccessiblePaths: [String] = []
+    /// true = 分类回退到规则（无 AI Key / AI 失败），UI 提示
+    @Published private(set) var diskAIUnavailable = false
+    /// 移废纸篓单项失败的就地反馈（成功清除）
+    @Published private(set) var diskActionError: String?
+
+    /// 磁盘清理服务提供者（AppDelegate 装配，按 AI 配置选实现）。服务无状态，按需新建。
+    var diskCleanupServiceProvider: (() -> DiskCleanupService)?
+
+    var diskReclaimedHuman: String {
+        ByteCountFormatter.string(fromByteCount: diskReclaimedBytes, countStyle: .file)
+    }
+
+    /// 触发一次扫描 → 分类。重复触发在进行中时忽略。
+    func runDiskScan() {
+        guard let provider = diskCleanupServiceProvider else { return }
+        guard diskScanStatus != .scanning, diskScanStatus != .classifying else { return }
+        let service = provider()
+        diskScanStatus = .scanning
+        diskActionError = nil
+        diskReclaimedBytes = 0
+        diskAIUnavailable = false
+        diskClassified = []
+        Task { @MainActor in
+            do {
+                let result = try await service.scan()
+                diskCapacity = result.capacity
+                diskInaccessiblePaths = result.inaccessiblePaths
+                diskScanStatus = .classifying
+                let classification = await service.classify(result.entries)
+                diskClassified = classification.entries.sorted { $0.entry.sizeBytes > $1.entry.sizeBytes }
+                diskAIUnavailable = classification.aiUnavailable
+                diskScanStatus = .done
+            } catch {
+                diskScanStatus = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    /// 移到废纸篓（可恢复）。成功 → 从列表移除、累加已释放、更新可用容量。
+    func trashDiskEntry(_ classified: ClassifiedEntry) {
+        guard let provider = diskCleanupServiceProvider else { return }
+        diskActionError = nil
+        do {
+            try provider().trash(classified.entry)
+            diskClassified.removeAll { $0.id == classified.id }
+            diskReclaimedBytes += classified.entry.sizeBytes
+            if let cap = diskCapacity {
+                diskCapacity = DiskCapacity(total: cap.total, free: cap.free + classified.entry.sizeBytes)
+            }
+        } catch {
+            diskActionError = "「\(classified.entry.name)」移到废纸篓失败：\(error.localizedDescription)"
         }
     }
 
@@ -509,10 +579,18 @@ final class AppStore: ObservableObject {
         })
     }
 
-    /// Inbox（全部任务视图）：未来截止 + To Do 状态 Jira —— 今日焦点之外的所有未完成项
+    /// Inbox（Later 页签）：仅外部来源待办（To Do 状态 Jira / 未进焦点的 GitHub）。
+    /// later-into-calendar：个人任务不再进 Later，统一收敛到 Calendar 页签时间线。
     var inboxTodos: [Todo] {
         let focusIDs = Set((overdueTodos + todayTimedTodos + todayUntimedTodos + todayExternalTodos).map(\.id))
-        return sorted(pendingTodos.filter { !focusIDs.contains($0.id) })
+        return sorted(pendingTodos.filter { !focusIDs.contains($0.id) && isExternal($0) })
+    }
+
+    /// Calendar 页签承载的本地个人任务（later-into-calendar）：本地创建（含已完成）。
+    /// 排除外部来源（Jira/GitHub）与 `.calendar` 来源——后者已作为 Meeting 展示，避免重复。
+    /// 已完成的保留展示（删除线、不隐藏）；有截止按 dueDate 归入对应日期，无截止落「无固定时间」。
+    var calendarPersonalTodos: [Todo] {
+        sorted(todos.filter { !isExternal($0) && $0.source != .calendar })
     }
 
     /// 今日焦点数（Today 面板问候语用，与面板列表一致，含只读 ticket）
@@ -566,9 +644,55 @@ final class AppStore: ObservableObject {
     }
 
     func delete(_ todo: Todo) {
+        // 苹果来源项：从 EventKit 真删除对应事件/提醒，并清掉本地镜像（meetings）
+        if todo.source == .calendar, let key = todo.calendarEventId {
+            onCalendarItemDeleted?(key)
+            meetings.removeAll { $0.eventIdentifier == key }
+        }
         todos.removeAll { $0.id == todo.id }
         refreshCompactState()
     }
+
+    /// 删除日历时间线里的 Meeting 行（later-into-calendar）：
+    /// 有 eventIdentifier（真实苹果项）→ EventKit 真删除 + 清本地镜像；演示数据仅本地移除。
+    func deleteMeeting(_ meeting: Meeting) {
+        if let key = meeting.eventIdentifier {
+            onCalendarItemDeleted?(key)
+            meetings.removeAll { $0.eventIdentifier == key }
+            todos.removeAll { $0.source == .calendar && $0.calendarEventId == key }
+        } else {
+            meetings.removeAll { $0.id == meeting.id }
+        }
+        refreshCompactState()
+    }
+
+    /// 完成(✓)可用性（later-into-calendar）：
+    /// ① 苹果来源 `.calendar` 项均可完成（事件本地完成 / 提醒回写）——这些 todo 仅当天项生成；
+    /// ② 本地自定义任务且截止今天或已超期。未来/无截止本地任务、Jira/GitHub 不可完成。
+    func canComplete(_ todo: Todo) -> Bool {
+        if isExternal(todo) { return false }
+        if todo.source == .calendar { return true }
+        guard let anchor = todo.effectiveDue else { return false }
+        return todo.isOverdue || Calendar.current.isDateInToday(anchor)
+    }
+
+    /// 日历页签里 Meeting 行的完成可用性：今天（及更早）的苹果项可完成，未来项显示小点不可完成。
+    func isMeetingCompletable(_ meeting: Meeting) -> Bool {
+        let cal = Calendar.current
+        return cal.startOfDay(for: meeting.start) <= cal.startOfDay(for: Date())
+    }
+
+    /// 切换苹果来源会议的完成态：定位其当日 `.calendar` todo 复用 complete/uncomplete
+    /// （事件本地完成；提醒经 complete 内的回写同步苹果）。
+    func toggleMeetingCompleted(_ meeting: Meeting) {
+        guard let key = meeting.eventIdentifier,
+              let todo = todos.first(where: { $0.source == .calendar && $0.calendarEventId == key })
+        else { return }
+        if todo.isCompleted { uncomplete(todo) } else { complete(todo) }
+    }
+
+    /// 删除可用性：本地任务 + 苹果来源（事件/提醒）可删；Jira/GitHub 只读不可删。
+    func canDelete(_ todo: Todo) -> Bool { !isExternal(todo) }
 
     func complete(_ todo: Todo) {
         guard let i = todos.firstIndex(where: { $0.id == todo.id }) else { return }

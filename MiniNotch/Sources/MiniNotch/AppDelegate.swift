@@ -306,6 +306,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // 删除苹果来源项 → 从 EventKit 真删除对应事件/提醒（失败仅记日志，本地已移除）
+        store.onCalendarItemDeleted = { [weak self] identifier in
+            Task { @MainActor in
+                guard let service = self?.currentCalendarService() else { return }
+                do {
+                    try await service.deleteCalendarItem(identifier: identifier)
+                } catch {
+                    NSLog("[Calendar] deleteCalendarItem failed: \(error)")
+                }
+            }
+        }
+
         // ── 日历三层同步（apple-calendar-integration spec）──
         // Layer 1: 事件驱动（EKEventStoreChanged → 即时刷新）—— 权限授予后才挂接
         // Layer 3: 前台刷新（展开面板时立即拉一次）
@@ -323,6 +335,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 日历面板空态「允许访问日历 / 前往系统设置」按钮
         store.onRequestCalendarAccess = { [weak self] in
             self?.handleCalendarAccessRequest()
+        }
+
+        // 磁盘清理：扫描无需凭证（du 只读），分类复用 currentAIService()（无 Key 时回退规则）
+        store.diskCleanupServiceProvider = { [weak self] in
+            self?.currentDiskCleanupService() ?? RealDiskCleanupService(ai: MockAIService())
         }
 
         // 启动后等首轮 Jira/日历同步落地，再生成 Today 底部一句话建议
@@ -530,6 +547,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             apiKey: s.aiAPIKey,
             model: s.aiModel.isEmpty ? AIDefaults.model : s.aiModel
         )
+    }
+
+    /// 磁盘清理：始终走 Real（du 扫描无需凭证）。分类用 currentAIService()——
+    /// 无 Key 时它是 Mock，分类调用抛错 → RealDiskCleanupService 回退规则并提示。
+    private func currentDiskCleanupService() -> DiskCleanupService {
+        RealDiskCleanupService(ai: currentAIService())
     }
 
     /// 未配置 → nil（列表不再用 Mock 填充；Mock 仅供 Debug 菜单显式触发）

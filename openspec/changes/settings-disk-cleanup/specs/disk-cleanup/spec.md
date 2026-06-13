@@ -36,12 +36,17 @@ The system SHALL scan disk usage read-only, mirroring the storage-analyzer skill
 
 ### Requirement: AI-driven safety classification
 
-The system SHALL classify scanned space consumers into three safety tiers using the app's AI model: 🟢 green (safe regenerable cache/temp), 🟡 yellow (contains user data or a judgment call), 🔴 red (clearable but not recommended). Each classified item SHALL carry a one-line rationale.
+The system SHALL classify scanned space consumers into three safety tiers using the app's AI model: 🟢 green (pure cache/temp/installer remnants, regenerable without data loss), 🟡 yellow (contains user data or a judgment call), 🔴 red (clearable but not recommended). Each classified item SHALL carry a one-line rationale. To stay faithful to the storage-analyzer skill, 🟡 yellow items SHALL additionally carry at least three concrete disposal suggestions (how to confirm contents, where to move/keep, and a risk note), and 🔴 red items SHALL carry safe-handling suggestions (e.g. how to uninstall properly) rather than deletion advice.
 
 #### Scenario: Classification via AI model
 
 - **WHEN** a scan completes and an AI API key is configured
 - **THEN** the system sends the scan entries to the AI model with a classification prompt and groups the returned items by tier with their rationales
+
+#### Scenario: Yellow and red items carry handling suggestions
+
+- **WHEN** classification produces 🟡 yellow or 🔴 red items
+- **THEN** each such item is displayed with actionable handling suggestions (yellow: ≥3 disposal options with a risk note; red: safe-removal guidance), via the AI model when available or the rule-based fallback otherwise
 
 #### Scenario: Fallback without AI key
 
@@ -55,17 +60,18 @@ The system SHALL classify scanned space consumers into three safety tiers using 
 
 ### Requirement: Move-to-Trash cleanup with confirmation
 
-The system SHALL only reclaim space by moving selected items to the Trash via `FileManager.trashItem`, never by permanent deletion and never automatically. Cleanup SHALL require explicit per-item user confirmation.
+The system SHALL only reclaim space by moving selected items to the Trash via `FileManager.trashItem`, never by permanent deletion and never automatically. Cleanup SHALL require explicit per-item user confirmation. To stay faithful to the storage-analyzer skill, 🔴 red items SHALL NOT offer a deletion/Trash action; instead they SHALL offer a "reveal in Finder" action so the user can inspect or uninstall them manually.
 
 #### Scenario: Confirmed cleanup of a green item
 
 - **WHEN** the user selects a 🟢 green item and confirms cleanup
 - **THEN** the system moves that item to the Trash and updates the displayed reclaimed space and disk capacity
 
-#### Scenario: Red item requires extra warning
+#### Scenario: Red item is reveal-only, not deletable
 
-- **WHEN** the user attempts to clean a 🔴 red item
-- **THEN** the system shows an additional warning and proceeds only after a second explicit confirmation
+- **WHEN** the disk cleanup results include a 🔴 red item
+- **THEN** that item offers only a "reveal in Finder" action and provides no Trash/delete button
+- **AND** activating it opens Finder with the item selected, without removing anything
 
 #### Scenario: No item is removed without confirmation
 

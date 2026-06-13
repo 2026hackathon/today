@@ -8,7 +8,7 @@ Users have no way to understand or reclaim disk space from within MiniNotch, and
 - Scan the disk read-only (full-disk scope, mirroring the original skill): home dir & `/Applications`, `~/Library` (Caches, Containers, Application Support), `~/Downloads`, and developer caches (Xcode `DerivedData`, `CoreSimulator`, npm, cargo, pip/uv, docker, go) using `du -sk`.
 - Send the scan results to MiniNotch's existing AI model (the `AIService` / `OpenAIChatAIService` path) with a prompt that classifies each space hog into 🟢 green (safe regenerable cache), 🟡 yellow (user data / judgment call), 🔴 red (clearable but not recommended), with a one-line rationale and recommendation per item.
 - Present results grouped by tier with human-readable sizes and overall disk capacity.
-- Cleanup action = **move to Trash** via `FileManager.trashItem`, requiring explicit per-item user confirmation; never auto-execute, never permanent delete, never act on 🔴 items without an extra warning.
+- Cleanup action = **move to Trash** via `FileManager.trashItem` for 🟢/🟡 items, requiring explicit per-item user confirmation; never auto-execute, never permanent delete. 🔴 red items offer no delete button (aligned to the skill) — only "reveal in Finder" for manual handling/uninstall. 🟡/🔴 items carry handling suggestions.
 - Provide a graceful fallback (rule-based classification) when no AI API key is configured, consistent with the app's existing Mock-service pattern.
 
 ## Capabilities

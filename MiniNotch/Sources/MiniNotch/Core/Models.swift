@@ -28,6 +28,30 @@ enum Priority: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// 录入意图（later-into-calendar spec）—— 仅用于本地分类与提醒强度，**不触发任何苹果日历写入**。
+/// event：有具体时间点的日程；reminder：有截止的待办；task：无时间/纯笔记。
+enum DraftKind: String, Codable, CaseIterable, Sendable {
+    case event, reminder, task
+
+    var label: String {
+        switch self {
+        case .event: "日程"
+        case .reminder: "提醒"
+        case .task: "任务"
+        }
+    }
+
+    /// kind 对应的默认提前提醒量（分钟）；nil → 交回优先级兜底。
+    /// 日程需提前准备（更久），提醒中等，纯任务不强求。
+    var defaultLeadMinutes: Int? {
+        switch self {
+        case .event: return 60
+        case .reminder: return 15
+        case .task: return nil
+        }
+    }
+}
+
 /// 任务来源 —— 决定 Touchdown 动效的涟漪颜色（见 DesignTokens.sourceColor）
 enum TodoSource: String, Codable, CaseIterable, Sendable {
     case screenshot, jira, manual, calendar, github
@@ -118,6 +142,8 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
     var title: String
     var note: String?
     var source: TodoSource = .manual
+    /// 录入意图（日程/提醒/任务）—— 仅本地分类，影响展示与提醒强度，不写苹果日历
+    var kind: DraftKind = .task
     var priority: Priority = .medium
     var dueDate: Date?
     var createdAt = Date()
@@ -182,7 +208,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
 
     init(
         id: UUID = UUID(), title: String, note: String? = nil,
-        source: TodoSource = .manual, priority: Priority = .medium,
+        source: TodoSource = .manual, kind: DraftKind = .task, priority: Priority = .medium,
         dueDate: Date? = nil, createdAt: Date = Date(), completedAt: Date? = nil,
         snoozedUntil: Date? = nil, snoozeCount: Int = 0, screenshotPath: String? = nil,
         jiraKey: String? = nil, jiraURL: URL? = nil, jiraStatus: String? = nil,
@@ -192,7 +218,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         calendarEventId: String? = nil, reminderLeadMinutes: Int? = nil
     ) {
         self.id = id; self.title = title; self.note = note
-        self.source = source; self.priority = priority
+        self.source = source; self.kind = kind; self.priority = priority
         self.dueDate = dueDate; self.createdAt = createdAt; self.completedAt = completedAt
         self.snoozedUntil = snoozedUntil; self.snoozeCount = snoozeCount
         self.screenshotPath = screenshotPath
@@ -213,6 +239,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
         note = try? c.decodeIfPresent(String.self, forKey: .note)
         source = (try? c.decodeIfPresent(TodoSource.self, forKey: .source)) ?? .manual
+        kind = (try? c.decodeIfPresent(DraftKind.self, forKey: .kind)) ?? .task
         priority = (try? c.decodeIfPresent(Priority.self, forKey: .priority)) ?? .medium
         dueDate = try? c.decodeIfPresent(Date.self, forKey: .dueDate)
         createdAt = (try? c.decodeIfPresent(Date.self, forKey: .createdAt)) ?? Date()
@@ -240,6 +267,8 @@ struct TodoDraft: Identifiable, Codable, Equatable, Sendable {
     var title: String
     var note: String?
     var source: TodoSource = .screenshot
+    /// 录入意图（日程/提醒/任务）—— 仅本地分类，不写苹果日历。默认 .task
+    var kind: DraftKind = .task
     var priority: Priority = .medium
     var dueDate: Date?
     var aiExplanation: String?
@@ -248,15 +277,16 @@ struct TodoDraft: Identifiable, Codable, Equatable, Sendable {
     var isSelected = true
     /// 周期标签（如「每天」「每周一」），AI 解析或手动添加；完成时据此自动排下一次
     var tags: [String] = []
-    /// AI 判定的提前提醒量（分钟）；nil → 创建后按优先级兜底
+    /// AI 判定的提前提醒量（分钟）；nil → 创建后按 kind/优先级兜底
     var reminderLeadMinutes: Int?
 
     func toTodo() -> Todo {
         Todo(
-            title: title, note: note, source: source, priority: priority,
+            title: title, note: note, source: source, kind: kind, priority: priority,
             dueDate: dueDate, screenshotPath: screenshotPath,
             aiExplanation: aiExplanation, tags: tags,
-            reminderLeadMinutes: reminderLeadMinutes
+            // 提前量未显式给出时，按 kind 兜底（日程提前更久 / 提醒中等 / 任务交回优先级）
+            reminderLeadMinutes: reminderLeadMinutes ?? kind.defaultLeadMinutes
         )
     }
 }

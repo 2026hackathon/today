@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import AppKit
 
 // ============================================================
 // SettingsPanel —— 设置面板（prototype `settings` 状态，460×540）。
@@ -20,6 +21,7 @@ struct SettingsPanel: View {
                     integrationSection
                     emailSection
                     reminderSection
+                    diskCleanupSection
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -160,6 +162,219 @@ struct SettingsPanel: View {
                     .controlSize(.mini)
                     .labelsHidden()
                     .tint(DS.Colors.accent)
+            }
+        }
+    }
+
+    // MARK: - 磁盘清理（disk-cleanup spec）
+
+    private var diskCleanupSection: some View {
+        SettingsSection(label: "磁盘清理") {
+            DiskCleanupContent()
+        }
+    }
+}
+
+// MARK: - 磁盘清理内容（扫描 → 大模型分档 → 移废纸篓）
+
+private struct DiskCleanupContent: View {
+    @EnvironmentObject var store: AppStore
+
+    /// 移废纸篓最终确认（仅绿/黄项；红项不可删，只「在 Finder 中显示」）
+    @State private var pendingTrash: ClassifiedEntry?
+
+    private var isBusy: Bool {
+        store.diskScanStatus == .scanning || store.diskScanStatus == .classifying
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            capacityHeader
+
+            switch store.diskScanStatus {
+            case .idle:
+                scanButton(title: "扫描磁盘")
+            case .scanning:
+                progressRow("正在扫描磁盘占用…")
+            case .classifying:
+                progressRow("正在分析分类…")
+            case .failed(let msg):
+                Text("✗ \(msg)").font(DS.Fonts.meta).foregroundStyle(DS.Colors.alert).lineLimit(2)
+                scanButton(title: "重新扫描")
+            case .done:
+                doneContent
+            }
+        }
+        // 移废纸篓确认（可恢复）。红项不走这里——它不提供删除入口。
+        .confirmationDialog(
+            "移到废纸篓？",
+            isPresented: Binding(get: { pendingTrash != nil },
+                                 set: { if !$0 { pendingTrash = nil } }),
+            presenting: pendingTrash
+        ) { entry in
+            Button("移到废纸篓", role: .destructive) { store.trashDiskEntry(entry) }
+            Button("取消", role: .cancel) {}
+        } message: { entry in
+            Text("将「\(entry.entry.name)」（\(entry.entry.sizeHuman)）移到废纸篓，可随时从废纸篓恢复。")
+        }
+    }
+
+    // MARK: 容量头部
+
+    @ViewBuilder private var capacityHeader: some View {
+        if let cap = store.diskCapacity {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("已用 \(cap.usedHuman) / 共 \(cap.totalHuman)")
+                        .font(DS.Fonts.compactSide).foregroundStyle(DS.Colors.text2)
+                    Spacer(minLength: 8)
+                    Text("可用 \(cap.freeHuman)")
+                        .font(DS.Fonts.meta).foregroundStyle(DS.Colors.text3)
+                }
+                ProgressView(value: cap.usedFraction)
+                    .progressViewStyle(.linear)
+                    .tint(cap.usedFraction > 0.9 ? DS.Colors.alert : DS.Colors.accent)
+                if store.diskReclaimedBytes > 0 {
+                    Text("本次已释放 \(store.diskReclaimedHuman)")
+                        .font(DS.Fonts.meta).foregroundStyle(DS.Colors.success)
+                }
+            }
+        }
+    }
+
+    // MARK: done 态：通知条 + 分档列表 + 重新扫描
+
+    @ViewBuilder private var doneContent: some View {
+        if store.diskAIUnavailable {
+            notice("未启用 AI（或分析失败），已用内置规则分类，仅供参考")
+        }
+        if !store.diskInaccessiblePaths.isEmpty {
+            notice("\(store.diskInaccessiblePaths.count) 个位置无访问权限已跳过（可在「系统设置 › 隐私 › 完全磁盘访问」授权）")
+        }
+        if let err = store.diskActionError {
+            Text("✗ \(err)").font(DS.Fonts.meta).foregroundStyle(DS.Colors.alert).lineLimit(2)
+        }
+
+        if store.diskClassified.isEmpty {
+            Text("未发现明显可清理的大块占用 🎉")
+                .font(DS.Fonts.meta).foregroundStyle(DS.Colors.text3)
+        } else {
+            ForEach(CleanupTier.allCases, id: \.self) { tier in
+                let group = store.diskClassified.filter { $0.tier == tier }
+                if !group.isEmpty {
+                    tierHeader(tier, count: group.count)
+                    ForEach(group) { item in
+                        DiskEntryRow(
+                            item: item,
+                            onTrash: { pendingTrash = item },
+                            onReveal: { revealInFinder(item) }
+                        )
+                    }
+                }
+            }
+        }
+
+        scanButton(title: "重新扫描")
+    }
+
+    // MARK: 小组件
+
+    private func tierHeader(_ tier: CleanupTier, count: Int) -> some View {
+        HStack(spacing: 6) {
+            Text(tier.emoji).font(.system(size: 10))
+            Text("\(tier.label) · \(count)")
+                .font(DS.Fonts.sectionTitle).foregroundStyle(DS.Colors.text3)
+                .textCase(.uppercase).tracking(0.6)
+            Spacer()
+        }
+        .padding(.top, 2)
+    }
+
+    private func progressRow(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(text).font(DS.Fonts.meta).foregroundStyle(DS.Colors.text2)
+            Spacer()
+        }
+    }
+
+    private func notice(_ text: String) -> some View {
+        Text(text)
+            .font(DS.Fonts.meta).foregroundStyle(DS.Colors.warning)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func scanButton(title: String) -> some View {
+        HStack {
+            Spacer()
+            Button { store.runDiskScan() } label: {
+                Text(title).font(DS.Fonts.button).foregroundStyle(DS.Colors.accent)
+            }
+            .buttonStyle(.plain)
+            .disabled(isBusy)
+        }
+    }
+
+    /// 红档对齐 skill：不给删除入口，只在访达中定位，由用户自行处理 / 正规卸载
+    private func revealInFinder(_ item: ClassifiedEntry) {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.entry.path)])
+    }
+}
+
+// MARK: - 单个占用项行（名称/路径/理由 + 体积 + 移废纸篓）
+
+private struct DiskEntryRow: View {
+    let item: ClassifiedEntry
+    let onTrash: () -> Void
+    let onReveal: () -> Void
+
+    private var tierColor: Color {
+        switch item.tier {
+        case .green: return DS.Colors.success
+        case .yellow: return DS.Colors.warning
+        case .red: return DS.Colors.alert
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.entry.name)
+                    .font(DS.Fonts.button).foregroundStyle(DS.Colors.text1).lineLimit(1)
+                Text(item.entry.path)
+                    .font(DS.Fonts.tag).foregroundStyle(DS.Colors.text3)
+                    .lineLimit(1).truncationMode(.middle)
+                Text(item.rationale)
+                    .font(DS.Fonts.meta).foregroundStyle(DS.Colors.text2)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                // 处理建议（黄档 ≥3 条 / 红档安全处理建议；绿档通常无）
+                if !item.suggestions.isEmpty {
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(Array(item.suggestions.enumerated()), id: \.offset) { _, s in
+                            Text("· \(s)")
+                                .font(DS.Fonts.meta).foregroundStyle(DS.Colors.text3)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.top, 1)
+                }
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(item.entry.sizeHuman)
+                    .font(DS.Fonts.compactSide).foregroundStyle(tierColor)
+                // 红档不给删除入口（对齐 skill）：只「在 Finder 中显示」；绿/黄档可移废纸篓
+                if item.tier == .red {
+                    Button(action: onReveal) {
+                        Text("在 Finder 中显示").font(DS.Fonts.button).foregroundStyle(DS.Colors.accent)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button(action: onTrash) {
+                        Text("移到废纸篓").font(DS.Fonts.button).foregroundStyle(DS.Colors.accent)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }

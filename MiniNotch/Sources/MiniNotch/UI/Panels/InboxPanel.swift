@@ -1,20 +1,21 @@
 import SwiftUI
 
 // ============================================================
-// InboxPanel —— 「全部任务」视图（today-focus-redesign）。
-// 收纳今日焦点之外的所有未完成项：未来截止的任务 + To Do 状态的 Jira。
+// InboxPanel —— 「Later」视图（later-into-calendar）。
+// 只收纳今日焦点之外的「外部来源」待办：To Do 状态 Jira / 未进焦点的 GitHub。
+// 个人任务已统一收敛到 Calendar 页签，不在此展示。
 // 嵌在 TodayPanel 的 ScrollView 内（tab == .inbox 时渲染）。
 // ============================================================
 
 struct InboxPanel: View {
     @EnvironmentObject var store: AppStore
 
-    private var personal: [Todo] { store.inboxTodos.filter { $0.source != .jira } }
     private var jira: [Todo] { store.inboxTodos.filter { $0.source == .jira } }
+    private var github: [Todo] { store.inboxTodos.filter { $0.source == .github } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("今日焦点之外的 \(store.inboxTodos.count) 项存货")
+            Text("待处理的外部事项 \(store.inboxTodos.count) 项")
                 .font(DS.Fonts.button)
                 .foregroundStyle(DS.Colors.text2)
                 .padding(.horizontal, 2)
@@ -29,24 +30,27 @@ struct InboxPanel: View {
                     Text("没有积压，轻装上阵")
                         .font(DS.Fonts.button)
                         .foregroundStyle(DS.Colors.text3)
+                    Text("个人任务都在「日历」页签")
+                        .font(DS.Fonts.meta)
+                        .foregroundStyle(DS.Colors.text3)
                 }
                 .frame(maxWidth: .infinity, minHeight: 320)
-            }
-
-            if !personal.isEmpty {
-                PanelSectionTitle(title: "个人任务", count: personal.count)
-                ForEach(personal) { todo in
-                    TaskRow(todo: todo)
-                }
-            }
-
-            if !personal.isEmpty && !jira.isEmpty {
-                PanelDivider()
             }
 
             if !jira.isEmpty {
                 PanelSectionTitle(title: "Jira Tickets", count: jira.count)
                 ForEach(jira) { todo in
+                    TaskRow(todo: todo)
+                }
+            }
+
+            if !jira.isEmpty && !github.isEmpty {
+                PanelDivider()
+            }
+
+            if !github.isEmpty {
+                PanelSectionTitle(title: "GitHub", count: github.count)
+                ForEach(github) { todo in
                     TaskRow(todo: todo)
                 }
             }

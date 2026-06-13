@@ -34,6 +34,9 @@ protocol AIService: AnyObject {
     /// 邮件分析（批量；输入已隐私预处理）：每封给出重要级别 + ≤20 字一句话建议。
     /// 返回与输入等长、按序对应。
     func analyzeEmails(_ inputs: [EmailDigestInput]) async throws -> [EmailAnalysis]
+    /// 磁盘清理分类（disk-cleanup spec）：每项给安全档 + ≤20 字理由，按 path 回填。
+    /// 只依据 name/path/size 判断，不读文件内容。失败 throw → 上层规则兜底。
+    func classifyStorageItems(_ items: [StorageItemInput]) async throws -> [StorageClassification]
 }
 
 // MARK: - Mock 实现（固定延迟 ~1.2s，永不失败 —— ai-pipeline spec）
@@ -65,6 +68,7 @@ final class MockAIService: AIService {
         return TodoDraft(
             title: "完成首页性能优化",
             source: .screenshot,
+            kind: .reminder,
             priority: .high,
             dueDate: tonight,
             aiExplanation: "检测到「本周内」关键词，推断为今晚截止"
@@ -80,19 +84,19 @@ final class MockAIService: AIService {
             return cal.date(bySettingHour: hour, minute: 0, second: 0, of: d)
         }
         return [
-            TodoDraft(title: "陈昊跟进 API 设计文档", source: .screenshot, priority: .high,
+            TodoDraft(title: "陈昊跟进 API 设计文档", source: .screenshot, kind: .reminder, priority: .high,
                       dueDate: day(0, hour: 18),
                       aiExplanation: "会议纪要中标注「今天给结论」", isSelected: true),
-            TodoDraft(title: "林嘉完成前端原型", source: .screenshot, priority: .medium,
+            TodoDraft(title: "林嘉完成前端原型", source: .screenshot, kind: .reminder, priority: .medium,
                       dueDate: day(1, hour: 12),
                       aiExplanation: "纪要约定明天中午前提交", isSelected: true),
-            TodoDraft(title: "周彦约客户沟通", source: .screenshot, priority: .medium,
+            TodoDraft(title: "周彦约客户沟通", source: .screenshot, kind: .event, priority: .medium,
                       dueDate: day(1, hour: 18),
                       aiExplanation: "需在客户下班前敲定时间", isSelected: true),
-            TodoDraft(title: "全员评审 PRD", source: .screenshot, priority: .medium,
+            TodoDraft(title: "全员评审 PRD", source: .screenshot, kind: .event, priority: .medium,
                       dueDate: day(2, hour: 15),
                       aiExplanation: "评审会定在后天下午", isSelected: false),
-            TodoDraft(title: "部署测试环境", source: .screenshot, priority: .low,
+            TodoDraft(title: "部署测试环境", source: .screenshot, kind: .reminder, priority: .low,
                       dueDate: day(3, hour: 18),
                       aiExplanation: "依赖评审通过后执行", isSelected: false),
         ]
@@ -178,16 +182,26 @@ final class MockAIService: AIService {
         }
 
         // 提前量启发式（Mock 兜底）：会议类提前 60min，例行琐事 10min，其余 nil 走优先级默认
+        let meetingWords = ["会议", "会", "评审", "面试", "汇报", "约", "见面", "开会"]
         var lead: Int?
-        if ["会议", "会", "评审", "面试", "汇报", "约"].contains(where: trimmed.contains) {
+        if meetingWords.contains(where: trimmed.contains) {
             lead = 60
         } else if routineWords.contains(where: trimmed.contains) {
             lead = 10
         }
 
+        // 意图分类（later-into-calendar）：会议类带时间→日程；其余有截止→提醒；无时间→任务。仅本地用。
+        let kind: DraftKind
+        if dueDate != nil {
+            kind = meetingWords.contains(where: trimmed.contains) ? .event : .reminder
+        } else {
+            kind = .task
+        }
+
         return TodoDraft(
             title: trimmed.isEmpty ? "新任务" : trimmed,
             source: .manual,
+            kind: kind,
             priority: priority,
             dueDate: dueDate,
             aiExplanation: explanations.isEmpty ? nil : explanations.joined(separator: "；"),
@@ -306,6 +320,12 @@ final class MockAIService: AIService {
                                           suggestion: EmailSummary.suggestion($0)) }
     }
 
+    /// Mock 无法真正做 AI 推理 → 抛 notConfigured，由 RealDiskCleanupService 回退规则分类
+    /// 并在 UI 提示「AI 未启用」（与 parseScreenshot 的兜底约定一致）
+    func classifyStorageItems(_ items: [StorageItemInput]) async throws -> [StorageClassification] {
+        throw AIServiceError.notConfigured
+    }
+
     // MARK: 格式化辅助
 
     private static let dateLineFormatter: DateFormatter = {
@@ -374,9 +394,11 @@ final class OpenAIChatAIService: AIService {
         let system = """
         你是任务提取助手。从用户的截图（聊天记录/会议纪要/邮件等）中提取待办事项。
         只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
+        "kind": "event|reminder|task", \
         "dueDate": "yyyy-MM-dd HH:mm" 或 null, "recurrence": "每天"/"每周一"等周期描述（非周期为 null）, \
         "reminderLeadMinutes": 提前多少分钟提醒（整数）, \
         "aiExplanation": "一句话中文说明判断依据"}]}。
+        kind 判定：有具体时间点的会议/约会/活动=event；有截止时间的待办=reminder；无时间或纯笔记=task。
         识别标准从宽：聊天里别人对我的请求/我答应别人的事、邮件里的 action、\
         会议安排、需求描述、bug 报告、"记得/别忘了/要"句式都算待办；\
         用户特意截这张图就是想存事项，尽量提取出最可能的 1 条而不是返回空；\
@@ -403,9 +425,11 @@ final class OpenAIChatAIService: AIService {
         let system = """
         你是任务解析助手。把用户的一句话解析成一个待办事项。
         只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
+        "kind": "event|reminder|task", \
         "dueDate": "yyyy-MM-dd HH:mm" 或 null, "recurrence": "每天"/"每周一"等周期描述（非周期为 null）, \
         "reminderLeadMinutes": 提前多少分钟提醒（整数）, \
         "aiExplanation": "一句话中文说明判断依据"}]}。
+        kind 判定：有具体时间点的会议/约会/活动=event；有截止时间的待办=reminder；无时间或纯笔记=task。
         当前时间：\(Self.now())。title 保留原意但去掉时间词和周期词。\
         时间解析：支持相对时间（「15分钟后」「2小时后」= 当前时间 + 偏移）；\
         「晚上10点」=22:00、「下午3点」=15:00（时段前缀决定上下午）；\
@@ -488,6 +512,28 @@ final class OpenAIChatAIService: AIService {
         }
     }
 
+    /// 磁盘清理分类：把占用项列表喂给大模型，要求逐项给安全档 + 理由，按 path 回填。
+    func classifyStorageItems(_ items: [StorageItemInput]) async throws -> [StorageClassification] {
+        guard !items.isEmpty else { return [] }
+        let listing = items.map { "\($0.sizeHuman)\t\($0.path)" }.joined(separator: "\n")
+        let system = """
+        你是磁盘清理助手。给定一批占用磁盘空间较大的目录/文件（每行：体积 + 完整路径），\
+        逐项判断清理安全档：\
+        green=纯缓存/临时/安装包残留/明确可再生且不丢用户数据（浏览器缓存、构建产物 DerivedData、包管理器缓存等）；\
+        yellow=可能含用户数据或有判断成本（下载内容、项目目录、媒体文件）；\
+        red=你可能想动、但不建议手删的项（应用本体、系统核心、容器数据）。\
+        只输出 JSON 对象：{"items":[{"path":"与输入完全一致的完整路径","tier":"green|yellow|red",\
+        "rationale":"20字以内中文说明这是什么/能否清理","suggestions":["处理建议",...]}]}，覆盖全部条目。\
+        suggestions 规则：yellow 必须给至少 3 条具体建议（如何确认内容、可移到哪/是否保留、含风险提醒）；\
+        red 给安全处理建议（如何正规卸载、为何别手删），不要建议直接删除；green 可给空数组 []。\
+        只依据路径与体积判断，不要臆造。
+        """
+        let reply = try await chat(system: system, userContent: [["type": "text", "text": listing]], jsonMode: true)
+        let results = Self.decodeStorage(reply)
+        guard !results.isEmpty else { throw AIServiceError.invalidResponse }
+        return results
+    }
+
     // MARK: 内部
 
     private func report(_ ctx: ReportContext, instruction: String) async throws -> String {
@@ -552,6 +598,7 @@ final class OpenAIChatAIService: AIService {
     private struct DraftDTO: Decodable {
         let title: String
         let priority: String?
+        let kind: String?
         let dueDate: String?
         let recurrence: String?
         let reminderLeadMinutes: Int?
@@ -564,6 +611,37 @@ final class OpenAIChatAIService: AIService {
         let suggestion: String?
     }
     private struct AnalysesEnvelope: Decodable { let results: [EmailAnalysisDTO] }
+
+    private struct StorageEnvelope: Decodable { let items: [StorageDTO] }
+    private struct StorageDTO: Decodable {
+        let path: String
+        let tier: String?
+        let rationale: String?
+        let suggestions: [String]?
+    }
+
+    /// 解析 {"items":[{"path","tier","rationale"}]}（容错围栏/格式）→ [StorageClassification]
+    nonisolated private static func decodeStorage(_ reply: String) -> [StorageClassification] {
+        var text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("```") {
+            text = text
+                .replacingOccurrences(of: "```json", with: "")
+                .replacingOccurrences(of: "```", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let data = text.data(using: .utf8),
+              let envelope = try? JSONDecoder().decode(StorageEnvelope.self, from: data) else {
+            return []
+        }
+        return envelope.items.map {
+            StorageClassification(
+                path: $0.path,
+                tier: CleanupTier(rawValue: $0.tier ?? "") ?? .yellow,
+                rationale: ($0.rationale?.isEmpty == false) ? $0.rationale! : "大模型未给出理由",
+                suggestions: ($0.suggestions ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            )
+        }
+    }
 
     /// 解析 {"results":[{"index","importance","suggestion"}]} → [index: DTO]（容错围栏/格式）
     nonisolated private static func decodeAnalyses(_ reply: String) -> [Int: EmailAnalysisDTO] {
@@ -595,9 +673,12 @@ final class OpenAIChatAIService: AIService {
             throw AIServiceError.invalidResponse
         }
         return envelope.todos.map { dto in
-            TodoDraft(
+            // kind 缺省回退：有截止时间 → reminder，否则 task（仅本地分类，不写苹果日历）
+            let kind = DraftKind(rawValue: dto.kind ?? "") ?? (dto.dueDate != nil ? .reminder : .task)
+            return TodoDraft(
                 title: dto.title,
                 source: source,
+                kind: kind,
                 priority: Priority(rawValue: dto.priority ?? "") ?? .medium,
                 dueDate: dto.dueDate.flatMap(Self.parseDate),
                 aiExplanation: dto.aiExplanation,
@@ -695,6 +776,12 @@ final class AnthropicAIService: AIService {
     func analyzeEmails(_ inputs: [EmailDigestInput]) async throws -> [EmailAnalysis] {
         guard !apiKey.isEmpty else { throw AIServiceError.notConfigured }
         // TODO: B 接真实 LLM 调用（批量邮件 → 重要级别 + ≤20 字建议）
+        throw AIServiceError.notImplemented
+    }
+
+    func classifyStorageItems(_ items: [StorageItemInput]) async throws -> [StorageClassification] {
+        guard !apiKey.isEmpty else { throw AIServiceError.notConfigured }
+        // TODO: B 接真实 LLM 调用（磁盘占用项 → 安全档 + ≤20 字理由）
         throw AIServiceError.notImplemented
     }
 }

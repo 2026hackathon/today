@@ -180,14 +180,34 @@ struct PersonalTodoRow: View {
     let onComplete: () -> Void
     @EnvironmentObject var store: AppStore
     @State private var hovering = false
+    @State private var confirmingDelete = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            PanelCheckCircle(action: onComplete)
+            // 已完成：绿勾（点击撤销）；可完成：完成圈；其余（未来/无截止）：静态小点
+            if todo.isCompleted {
+                Button { store.uncomplete(todo) } label: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(DS.Colors.success)
+                        .contentShape(Rectangle().inset(by: -5))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 1)
+            } else if store.canComplete(todo) {
+                PanelCheckCircle(action: onComplete)
+            } else {
+                Circle()
+                    .fill(DS.Colors.text3.opacity(0.55))
+                    .frame(width: 5, height: 5)
+                    .frame(width: 16, height: 16)
+                    .padding(.top, 1)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(todo.title)
                     .font(DS.Fonts.todoTitle)
-                    .foregroundStyle(DS.Colors.text1)
+                    .foregroundStyle(todo.isCompleted ? DS.Colors.text3 : DS.Colors.text1)
+                    .strikethrough(todo.isCompleted, color: DS.Colors.text3)
                 HStack(spacing: 6) {
                     PanelPriorityTag(priority: todo.priority)
                     // 显示有效截止（snooze 后即新时间）；snooze 过的标个铃铛
@@ -220,6 +240,17 @@ struct PersonalTodoRow: View {
             if let path = todo.screenshotPath {
                 ScreenshotThumb(path: path)
             }
+            // 删除按钮（悬停显示）：本地任务直接删；苹果来源项删除前确认（会真删苹果日历/提醒）
+            if hovering && store.canDelete(todo) {
+                Button { requestDelete() } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundStyle(DS.Colors.text3)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(todo.source == .calendar ? "从苹果日历删除" : "删除")
+            }
         }
         .padding(8)
         .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
@@ -237,7 +268,23 @@ struct PersonalTodoRow: View {
                 }
             }
             Divider()
+            Button("删除", role: .destructive) { requestDelete() }
+        }
+        .confirmationDialog(
+            "从苹果日历删除「\(todo.title)」？此操作不可恢复。",
+            isPresented: $confirmingDelete, titleVisibility: .visible
+        ) {
             Button("删除", role: .destructive) { store.delete(todo) }
+            Button("取消", role: .cancel) {}
+        }
+    }
+
+    /// 苹果来源项删除前确认（真删苹果日历/提醒，不可恢复）；本地任务直接删
+    private func requestDelete() {
+        if todo.source == .calendar {
+            confirmingDelete = true
+        } else {
+            store.delete(todo)
         }
     }
 
@@ -256,6 +303,7 @@ struct PersonalTodoRow: View {
 struct ScreenshotThumb: View {
     let path: String
     @State private var image: NSImage?
+    @State private var missing = false
     @State private var hovering = false
 
     var body: some View {
@@ -275,10 +323,27 @@ struct ScreenshotThumb: View {
                     }
                     .onHover { hovering = $0 }
                     .help("点击查看原始截图")
+            } else if missing {
+                // 原图文件已被清理：降级为占位图标，不崩溃
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(DS.Colors.surface1)
+                    .frame(width: 38, height: 26)
+                    .overlay(
+                        Image(systemName: "photo.badge.exclamationmark")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DS.Colors.text3)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(DS.Colors.border, lineWidth: 1)
+                    )
+                    .help("原图已不可用")
             }
         }
         .task(id: path) {
-            image = Self.thumbnail(for: path)
+            let thumb = Self.thumbnail(for: path)
+            image = thumb
+            missing = thumb == nil
         }
     }
 
@@ -376,8 +441,10 @@ struct MeetingRow: View {
     let meeting: Meeting
     /// 对应 .calendar 任务已完成（日历页签传入，today-tasks-schedule-reminders spec）
     var isCompleted: Bool = false
+    @EnvironmentObject var store: AppStore
     @State private var hovering = false
     @State private var glowPulse = false
+    @State private var confirmingDelete = false
 
     private var isOngoing: Bool { meeting.status == .ongoing && !isCompleted }
 
@@ -421,7 +488,7 @@ struct MeetingRow: View {
             // 状态字形区：仅真实状态才占位（进行中/快到了/已完成/提醒），
             // 普通事件留空 —— 去掉装饰性灰点，同时用空位保证标题左对齐
             statusGlyph
-                .frame(width: 12)
+                .frame(width: 16)
 
             // 时间轨：等宽左对齐，所有行标题对齐到同一条竖线
             Text(timeLabel)
@@ -463,6 +530,17 @@ struct MeetingRow: View {
                 }
                 .buttonStyle(.plain)
             }
+            // 删除（悬停显示）：苹果来源项删除前确认，会真删苹果日历/提醒
+            if hovering {
+                Button { requestDelete() } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundStyle(DS.Colors.text3)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(meeting.eventIdentifier != nil ? "从苹果日历删除" : "删除")
+            }
         }
         .padding(8)
         .background(
@@ -486,25 +564,47 @@ struct MeetingRow: View {
         }
         .onHover { hovering = $0 }
         .opacity(isCompleted || meeting.status == .ended ? 0.65 : 1)
+        .confirmationDialog(
+            "从苹果日历删除「\(meeting.title)」？此操作不可恢复。",
+            isPresented: $confirmingDelete, titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) { store.deleteMeeting(meeting) }
+            Button("取消", role: .cancel) {}
+        }
     }
 
-    /// 状态字形：只在有真实语义时渲染，普通事件返回空占位（标题靠空位对齐）
+    /// 苹果来源项删除前确认（真删苹果日历/提醒）；演示数据（无标识）直接删
+    private func requestDelete() {
+        if meeting.eventIdentifier != nil {
+            confirmingDelete = true
+        } else {
+            store.deleteMeeting(meeting)
+        }
+    }
+
+    /// 状态/完成字形（later-into-calendar）：
+    /// 已完成→绿勾（点击撤销）；今天及更早的苹果项→可点击完成圈；未来项→静态小点。
     @ViewBuilder
     private var statusGlyph: some View {
         if isCompleted {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(DS.Colors.success)
-        } else if isOngoing {
-            // 进行中：绿点呼吸光晕
-            Circle().fill(DS.Colors.success).frame(width: 6, height: 6)
-                .shadow(color: DS.Colors.success.opacity(glowPulse ? 0.9 : 0.35), radius: glowPulse ? 4 : 2)
-        } else if meeting.isReminder || isImminent {
-            Image(systemName: "bell.fill")
-                .font(.system(size: 9))
-                .foregroundStyle(DS.Colors.accent)
+            Button { store.toggleMeetingCompleted(meeting) } label: {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(DS.Colors.success)
+                    .contentShape(Rectangle().inset(by: -5))
+            }
+            .buttonStyle(.plain)
+        } else if store.isMeetingCompletable(meeting) {
+            Button { store.toggleMeetingCompleted(meeting) } label: {
+                Circle()
+                    .strokeBorder(hovering ? DS.Colors.text1 : DS.Colors.text3, lineWidth: 1.5)
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle().inset(by: -5))
+            }
+            .buttonStyle(.plain)
         } else {
-            Color.clear.frame(width: 6, height: 6)
+            // 未来的苹果日历项：小点，不可完成
+            Circle().fill(DS.Colors.text3.opacity(0.55)).frame(width: 5, height: 5)
         }
     }
 }

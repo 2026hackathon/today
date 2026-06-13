@@ -29,6 +29,8 @@ protocol CalendarService: AnyObject {
     func setReminderCompleted(identifier: String, completed: Bool) async throws
     /// 提醒事项 snooze：把新的截止时间回写到 EKReminder（Apple 提醒事项也跟着改）
     func setReminderDue(identifier: String, due: Date) async throws
+    /// 从 EventKit 删除指定标识的事件/提醒（later-into-calendar：删除苹果来源项同步真删除）
+    func deleteCalendarItem(identifier: String) async throws
 }
 
 /// 协议默认扩展：便捷方法 fetchTodayMeetings() 委托给 fetchMeetings(in: .today)；
@@ -41,6 +43,7 @@ extension CalendarService {
     }
 
     func setReminderCompleted(identifier: String, completed: Bool) async throws {}
+    func deleteCalendarItem(identifier: String) async throws {}
 }
 
 /// 同步窗口常量 + 日期范围便捷构造
@@ -313,6 +316,29 @@ final class EventKitCalendarService: CalendarService {
         )
         try eventStore.save(reminder, commit: true)
         NSLog("[Calendar] setReminderDue: \(reminder.title ?? identifier) → \(due)")
+    }
+
+    /// 删除苹果来源项：先按事件标识查 EKEvent，再按 calendarItemIdentifier 查 EKReminder/EKEvent，
+    /// 找到即 remove。找不到（已被外部删除）视为成功——本地照常移除。
+    func deleteCalendarItem(identifier: String) async throws {
+        if let event = eventStore.event(withIdentifier: identifier) {
+            try eventStore.remove(event, span: .thisEvent, commit: true)
+            NSLog("[Calendar] deleteCalendarItem(event): \(event.title ?? identifier)")
+            return
+        }
+        if let item = eventStore.calendarItem(withIdentifier: identifier) {
+            if let reminder = item as? EKReminder {
+                try eventStore.remove(reminder, commit: true)
+                NSLog("[Calendar] deleteCalendarItem(reminder): \(reminder.title ?? identifier)")
+                return
+            }
+            if let event = item as? EKEvent {
+                try eventStore.remove(event, span: .thisEvent, commit: true)
+                NSLog("[Calendar] deleteCalendarItem(event): \(event.title ?? identifier)")
+                return
+            }
+        }
+        NSLog("[Calendar] deleteCalendarItem: \(identifier) not found (deleted externally?)")
     }
 
     /// EKReminder → Meeting 映射（due 在 range 内才保留——已完成提醒按完成时间拉取，
