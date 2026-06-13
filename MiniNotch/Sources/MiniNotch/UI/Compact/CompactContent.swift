@@ -106,7 +106,7 @@ struct CompactContent: View {
         default: // .normal 及兜底
             // 今日有定时 → 下一个截止；今日全无定时 → 提示未来最近截止；都没有 → 无截止
             if let due = store.todayNextDue {
-                sideText("下个 \(due.dsHHmm)", color: DS.Colors.text2)
+                sideText("next \(due.dsHHmm)", color: DS.Colors.text2)
             } else if let upcoming = store.nextDue {
                 sideText(Self.upcomingLabel(upcoming), color: DS.Colors.text3)
             } else {
@@ -135,7 +135,7 @@ struct CompactContent: View {
 
     /// 未来任务的提示文案：明天带时间（「明天 08:30」），更远用 dsShortLabel（周X / M/d）
     private static func upcomingLabel(_ due: Date) -> String {
-        Calendar.current.isDateInTomorrow(due) ? "明天 \(due.dsHHmm)" : "下个 \(due.dsShortLabel)"
+        Calendar.current.isDateInTomorrow(due) ? "明天 \(due.dsHHmm)" : "next \(due.dsShortLabel)"
     }
 
     // MARK: - 小构件

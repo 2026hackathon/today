@@ -571,19 +571,23 @@ struct PanelTabBar: View {
     let current: PanelTab
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(visibleTabs, id: \.self) { tab in
-                PanelTabButton(
-                    title: tab.title,
-                    isActive: tab == current,
-                    badge: tab == .messages ? store.unprocessedMessageCount
-                        : (tab == .agent ? store.waitingAgentCount : 0)
-                ) {
-                    guard tab != current else { return }
-                    store.present(.expanded(tab: tab))
+        HStack(spacing: 4) {
+            // tab 始终单行：横向滚动，标签不换行不挤压（tab 数多时可滑动）
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(visibleTabs, id: \.self) { tab in
+                        PanelTabButton(
+                            title: tab.title,
+                            isActive: tab == current,
+                            badge: tab == .messages ? store.unprocessedMessageCount
+                                : (tab == .agent ? store.waitingAgentCount : 0)
+                        ) {
+                            guard tab != current else { return }
+                            store.present(.expanded(tab: tab))
+                        }
+                    }
                 }
             }
-            Spacer(minLength: 0)
             if current != .settings {
                 // 临时 Debug 入口：菜单栏图标可能被刘海吞掉找不到（hackathon 期间保留）
                 PanelIconButton(symbol: "ladybug") {
@@ -618,6 +622,8 @@ struct PanelTabButton: View {
         Button(action: action) {
             Text(title)
                 .font(DS.Fonts.button)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false) // 标签恒单行，不换行不压缩
                 .foregroundStyle(isActive ? DS.Colors.text1 : (hovering ? DS.Colors.text2 : DS.Colors.text3))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
