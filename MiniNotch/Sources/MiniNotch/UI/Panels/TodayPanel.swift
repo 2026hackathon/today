@@ -26,7 +26,7 @@ struct TodayPanel: View {
             PanelScrollView {
                 switch currentTab {
                 case .messages:
-                    MessageInboxPanel()
+                    InboxHubPanel()   // 邮件消息 + @我提及，内部分段切换
                 case .inbox:
                     InboxPanel()
                 case .agent:
@@ -583,28 +583,29 @@ struct PanelTabBar: View {
     let current: PanelTab
 
     var body: some View {
-        HStack(spacing: 4) {
-            // tab 始终单行：横向滚动，标签不换行不挤压（tab 数多时可滑动）
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(visibleTabs, id: \.self) { tab in
-                        PanelTabButton(
-                            title: tab.title,
-                            isActive: tab == current,
-                            badge: tab == .messages ? store.unprocessedMessageCount
-                                : (tab == .agent ? store.waitingAgentCount : 0)
-                        ) {
-                            guard tab != current else { return }
-                            store.present(.expanded(tab: tab))
-                        }
-                    }
+        // 单行不滚动（5 个 tab 放得下）；不再套 ScrollView，避免角标被裁、且与右侧图标同中线
+        HStack(spacing: 2) {
+            ForEach(visibleTabs, id: \.self) { tab in
+                PanelTabButton(
+                    title: tab.title,
+                    isActive: tab == current,
+                    badge: tab == .messages ? (store.unprocessedMessageCount + store.unreadMentions.count)
+                        : (tab == .agent ? store.waitingAgentCount : 0)
+                ) {
+                    guard tab != current else { return }
+                    store.present(.expanded(tab: tab))
+                }
+                // 拖动重排（settings tab 固定不参与）
+                .draggable(tab.rawValue) { dragChip(tab) }
+                .dropDestination(for: String.self) { items, _ in
+                    guard current != .settings, let raw = items.first,
+                          let dragged = PanelTab(rawValue: raw) else { return false }
+                    store.moveTab(dragged, before: tab)
+                    return true
                 }
             }
+            Spacer(minLength: 8)
             if current != .settings {
-                // 临时 Debug 入口：菜单栏图标可能被刘海吞掉找不到（hackathon 期间保留）
-                PanelIconButton(symbol: "ladybug") {
-                    (NSApp.delegate as? AppDelegate)?.showDebugMenuAtMouse()
-                }
                 // 创建组：贴图识别（兼容 CleanShot/微信等外部截图工具）+ 手动新建
                 PanelIconButton(symbol: "doc.on.clipboard") { store.pasteScreenshot() }
                 PanelIconButton(symbol: "plus") { store.present(.quickInput) }
@@ -617,8 +618,17 @@ struct PanelTabBar: View {
         .padding(.top, 6)
     }
 
+    /// 拖动时跟随光标的小标签
+    private func dragChip(_ tab: PanelTab) -> some View {
+        Text(tab.title)
+            .font(DS.Fonts.button)
+            .foregroundStyle(DS.Colors.text1)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+    }
+
     private var visibleTabs: [PanelTab] {
-        current == .settings ? PanelTab.allCases : [.today, .calendar, .messages, .mentions, .inbox, .agent]
+        current == .settings ? PanelTab.allCases : store.orderedVisibleTabs
     }
 }
 
@@ -631,29 +641,30 @@ struct PanelTabButton: View {
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(DS.Fonts.button)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false) // 标签恒单行，不换行不压缩
-                .foregroundStyle(isActive ? DS.Colors.text1 : (hovering ? DS.Colors.text2 : DS.Colors.text3))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(isActive ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.s))
-                .overlay(alignment: .topTrailing) {
-                    if badge > 0 {
-                        Text("\(badge)")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
-                            .frame(minWidth: 13, minHeight: 13)
-                            .background(DS.Colors.alert, in: Capsule())
-                            .offset(x: 2, y: -1)
-                    }
+        // 用 onTapGesture 而非 Button：Button 会吞掉拖拽手势，导致 .draggable 不触发。
+        // tap 与 drag 由系统按移动距离自动区分
+        Text(title)
+            .font(DS.Fonts.button)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false) // 标签恒单行，不换行不压缩
+            .foregroundStyle(isActive ? DS.Colors.text1 : (hovering ? DS.Colors.text2 : DS.Colors.text3))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(isActive ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+            .overlay(alignment: .topTrailing) {
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 13, minHeight: 13)
+                        .background(DS.Colors.alert, in: Capsule())
+                        .offset(x: 2, y: -1)
                 }
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { action() }
+            .onHover { hovering = $0 }
     }
 }
 

@@ -8,22 +8,18 @@ import Foundation
 enum PanelTab: String, CaseIterable, Sendable {
     case today = "Today"
     case calendar = "日历"
-    case messages = "消息"
-    case mentions = "Mentions"
+    case messages = "消息"   // rawValue 稳定不变；现承载「收件」= 邮件消息 + @我提及（内部分段）
     case inbox = "Inbox"
     case agent = "Agent"
     case settings = "设置"
 
-    /// 显示名：统一中文，与正文（今日任务/建议…）一致，避免中英混排。
-    /// rawValue 保持稳定不动（仅作内部标识）
     /// tab 显示名统一英文（产品指定）
     var title: String {
         switch self {
         case .today: "Today"
         case .calendar: "Calendar"
-        case .messages: "Messages"
-        case .mentions: "Mentions"
-        case .inbox: "Later"   // 今日焦点之外的待办积压（未来截止 + To Do Jira）
+        case .messages: "Inbox"   // 邮件消息 + @我提及 合并，面板内分段切换
+        case .inbox: "Later"      // 今日焦点之外的待办积压（未来截止 + To Do Jira）
         case .agent: "Agent"
         case .settings: "Settings"
         }

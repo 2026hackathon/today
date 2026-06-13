@@ -73,6 +73,25 @@ final class AppStore: ObservableObject {
     /// 触发剪贴板贴图识别（面板按钮/菜单调用）
     func pasteScreenshot() { onPasteScreenshot?() }
 
+    /// tab 顺序（用户可拖动）：按 settings.tabOrder 排，新增/缺失的 tab 补到末尾
+    static let defaultTabs: [PanelTab] = [.today, .calendar, .messages, .inbox, .agent]
+    var orderedVisibleTabs: [PanelTab] {
+        let saved = settings.tabOrder.compactMap(PanelTab.init(rawValue:)).filter(Self.defaultTabs.contains)
+        let rest = Self.defaultTabs.filter { !saved.contains($0) }
+        return saved + rest
+    }
+
+    /// 拖动重排：把 tab 移到 target 之前/后，持久化
+    func moveTab(_ tab: PanelTab, before target: PanelTab) {
+        guard tab != target else { return }
+        var arr = orderedVisibleTabs
+        guard let from = arr.firstIndex(of: tab) else { return }
+        arr.remove(at: from)
+        let insertAt = arr.firstIndex(of: target) ?? arr.count
+        arr.insert(tab, at: insertAt)
+        settings.tabOrder = arr.map(\.rawValue)
+    }
+
     /// ⌥Space 语音速记：QuickInputCard onAppear 读到 true 即自动开始聆听，用后自清
     @Published var quickInputAutoVoice = false
 

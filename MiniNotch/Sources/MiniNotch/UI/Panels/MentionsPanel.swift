@@ -2,27 +2,20 @@ import AppKit
 import SwiftUI
 
 // ============================================================
-// MentionsPanel —— 「提及」页签：聚合各渠道@我的条目（只读跳转）。
+// MentionsContent —— @我提及内容（只读跳转），嵌在「收件 Inbox」tab 的分段里。
 // 数据来自 MentionService（Jira 评论@我 + Confluence 页面@我）。
-// 行复用来源图标 + 标题 + 上下文，点击整行用浏览器打开原文。
+// 纯内容（无自带 tab bar / ScrollView），由 InboxHubPanel 包裹。
 // ============================================================
 
-struct MentionsPanel: View {
+struct MentionsContent: View {
     @EnvironmentObject var store: AppStore
 
     var body: some View {
-        VStack(spacing: 0) {
-            PanelTabBar(current: .mentions)
-            PanelScrollView {
-                if store.unreadMentions.isEmpty {
-                    emptyState
-                } else {
-                    list
-                }
-            }
+        if store.unreadMentions.isEmpty {
+            emptyState
+        } else {
+            list
         }
-        .padding(.top, 36) // 摄像头区留位
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var list: some View {

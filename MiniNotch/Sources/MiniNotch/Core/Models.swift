@@ -437,6 +437,9 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// 这里只放非敏感的 IMAP 主机与账号。
     var emailAddress = ""
     var emailImapHost = ""
+    /// 用户自定义 tab 顺序（PanelTab.rawValue 列表）；空 = 默认顺序。
+    /// 拖动排序后写入，新增 tab 不在列表里时补到末尾（见 AppStore.orderedVisibleTabs）
+    var tabOrder: [String] = []
 
     init() {}
 
@@ -460,6 +463,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         barkToken = try c.decodeIfPresent(String.self, forKey: .barkToken) ?? ""
         emailAddress = try c.decodeIfPresent(String.self, forKey: .emailAddress) ?? ""
         emailImapHost = try c.decodeIfPresent(String.self, forKey: .emailImapHost) ?? ""
+        tabOrder = try c.decodeIfPresent([String].self, forKey: .tabOrder) ?? []
     }
 
     func isQuietHour(_ date: Date = Date()) -> Bool {
