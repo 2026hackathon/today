@@ -31,8 +31,6 @@ struct TodayPanel: View {
                     InboxPanel()
                 case .agent:
                     AgentPanel()
-                case .favorites:
-                    PanelPlaceholder(tab: currentTab)
                 default:
                     todayBody
                 }
@@ -618,7 +616,7 @@ struct PanelTabBar: View {
     }
 
     private var visibleTabs: [PanelTab] {
-        current == .settings ? PanelTab.allCases : [.today, .calendar, .messages, .mentions, .inbox, .favorites, .agent]
+        current == .settings ? PanelTab.allCases : [.today, .calendar, .messages, .mentions, .inbox, .agent]
     }
 }
 

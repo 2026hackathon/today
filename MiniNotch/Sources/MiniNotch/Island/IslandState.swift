@@ -11,7 +11,6 @@ enum PanelTab: String, CaseIterable, Sendable {
     case messages = "消息"
     case mentions = "Mentions"
     case inbox = "Inbox"
-    case favorites = "收藏"
     case agent = "Agent"
     case settings = "设置"
 
@@ -23,8 +22,7 @@ enum PanelTab: String, CaseIterable, Sendable {
         case .calendar: "日历"
         case .messages: "消息"
         case .mentions: "提及"
-        case .inbox: "收件箱"
-        case .favorites: "收藏"
+        case .inbox: "稍后"   // 今日焦点之外的待办积压（未来截止 + To Do Jira）
         case .agent: "Agent"
         case .settings: "设置"
         }
