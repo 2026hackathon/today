@@ -287,7 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.onRefresh = { [weak self] in
             await self?.syncExternalSources(notifyJira: true)
             await self?.syncEmail(notify: true)
-            self?.refreshAISuggestion()
+            self?.refreshAISuggestion(force: true)   // 手动刷新始终重算
         }
 
         // 剪贴板贴图识别：找到图走 AI 管线；没图就引导手动录入（与「未识别」兜底一致）
@@ -369,22 +369,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshAISuggestion(afterSeconds: 3)
     }
 
+    /// 上次成功生成建议时所用上下文的签名 —— 内容没变就不再打 LLM。
+    private var lastSuggestionSignature: String?
+
     /// 生成 Today 面板顶部的 AI 一句话建议（失败保持现有/兜底文案）
-    private func refreshAISuggestion(afterSeconds delay: Double = 0) {
+    private func refreshAISuggestion(afterSeconds delay: Double = 0, force: Bool = false) {
         Task { @MainActor in
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            let ctx = todaySuggestionContext()
+            let sig = Self.suggestionSignature(ctx)
+            // 内容签名未变（如工作项轮询只刷新了 updatedAt、或 Inbox 里与今日无关的改动）→ 不刷。
+            // 手动点 ↻（force）始终重算。
+            if !force, sig == lastSuggestionSignature { return }
             // 未配置 AI Key：给明确提示，而不是伪装成一条真建议（Mock 那句固定文案没用到真实任务）
             guard !store.settings.aiAPIKey.isEmpty else {
                 store.updateAISuggestion("建议: 未配置 AI，前往设置 ⚙ 填入 API Key 即可获得基于今日任务的个性化建议")
+                lastSuggestionSignature = sig   // 提示已展示，相同上下文不重复
                 return
             }
             do {
-                let text = try await currentAIService().generateDailySuggestion(todaySuggestionContext())
+                let text = try await currentAIService().generateDailySuggestion(ctx)
                 store.updateAISuggestion(text)
+                lastSuggestionSignature = sig   // 仅成功后记录，失败不记 → 下次变化/手动会重试
             } catch {
                 store.updateAISuggestion("建议: AI 生成失败，点 ↻ 重试（或检查设置里的 AI 端点/模型配置）")
             }
         }
+    }
+
+    /// 上下文签名：只取真正影响建议的稳定字段（忽略 updatedAt / ctx.date 等易变值），
+    /// 排序后拼成确定性字符串——同样的「今日待办 + 活跃工作项 + 今日会议 + 今日完成」即同签名。
+    private static func suggestionSignature(_ ctx: ReportContext) -> String {
+        var parts: [String] = ["T"]
+        parts += ctx.pendingTodos.map { t -> String in
+            let due = t.effectiveDue.map { Int($0.timeIntervalSince1970) } ?? -1
+            return "\(t.id)|\(t.title)|\(t.priority.rawValue)|\(due)"
+        }.sorted()
+        parts.append("D")
+        parts += ctx.completedToday.map { $0.id.uuidString }.sorted()
+        parts.append("W")
+        parts += ctx.workItems.map { w -> String in
+            "\(w.key)|\(w.status ?? "")|\(w.priority.rawValue)|\(w.title)"
+        }.sorted()
+        parts.append("M")
+        parts += ctx.meetings.map { m -> String in
+            "\(m.id)|\(m.title)|\(Int(m.start.timeIntervalSince1970))|\(Int(m.end.timeIntervalSince1970))"
+        }.sorted()
+        return parts.joined(separator: "\n")
     }
 
     /// 建议条挂在 Today 面板上，只喂今日焦点数据（超期 + 今日任务 + 今日会议）。
