@@ -98,8 +98,28 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
     var tags: [String] = []
     /// 日历/提醒来源的 EventKit 稳定标识（合并同步与日历页签完成状态匹配的键）
     var calendarEventId: String?
+    /// AI 判定的提前提醒量（分钟）：会议/需准备的事更大（提前知道好准备），
+    /// 吃饭/喝水这类即兴小事更小（5-10min 即可）。nil → 按优先级取默认值
+    var reminderLeadMinutes: Int?
 
     var isCompleted: Bool { completedAt != nil }
+
+    /// 有效提前量：AI 给了用 AI 的；没给按优先级兜底（高 60 / 中 30 / 低 10）。
+    /// 同时驱动提醒触发时机与岛体高亮的起始（重要的事更早亮起）
+    var effectiveLeadMinutes: Int {
+        if let lead = reminderLeadMinutes, lead > 0 { return lead }
+        switch priority {
+        case .high: return 60
+        case .medium: return 30
+        case .low: return 10
+        }
+    }
+
+    /// 临近最后窗口（分钟）：提前量的 1/3，夹在 5~15 之间。
+    /// 会议(lead 120) → 最后 15min 再强提醒一次；小事(lead 10) → 最后 5min
+    var finalWindowMinutes: Int {
+        min(15, max(5, effectiveLeadMinutes / 3))
+    }
 
     /// 超期锚点 = snoozedUntil ?? dueDate（review-fixes #9）：
     /// snooze 到未来 → 不超期、回「今日任务」；snooze 过期才重新计超期
@@ -123,7 +143,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         jiraStatusCategory: String? = nil,
         jiraAssigner: String? = nil, storyPoints: Double? = nil,
         aiExplanation: String? = nil, tags: [String] = [],
-        calendarEventId: String? = nil
+        calendarEventId: String? = nil, reminderLeadMinutes: Int? = nil
     ) {
         self.id = id; self.title = title; self.note = note
         self.source = source; self.priority = priority
@@ -135,6 +155,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         self.jiraAssigner = jiraAssigner; self.storyPoints = storyPoints
         self.aiExplanation = aiExplanation; self.tags = tags
         self.calendarEventId = calendarEventId
+        self.reminderLeadMinutes = reminderLeadMinutes
     }
 
     /// 向后兼容解码（review-fixes #4）：合成 Codable 不会用属性默认值兜底，
@@ -162,6 +183,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         aiExplanation = try? c.decodeIfPresent(String.self, forKey: .aiExplanation)
         tags = (try? c.decodeIfPresent([String].self, forKey: .tags)) ?? []
         calendarEventId = try? c.decodeIfPresent(String.self, forKey: .calendarEventId)
+        reminderLeadMinutes = try? c.decodeIfPresent(Int.self, forKey: .reminderLeadMinutes)
     }
 }
 
@@ -180,12 +202,15 @@ struct TodoDraft: Identifiable, Codable, Equatable, Sendable {
     var isSelected = true
     /// 周期标签（如「每天」「每周一」），AI 解析或手动添加；完成时据此自动排下一次
     var tags: [String] = []
+    /// AI 判定的提前提醒量（分钟）；nil → 创建后按优先级兜底
+    var reminderLeadMinutes: Int?
 
     func toTodo() -> Todo {
         Todo(
             title: title, note: note, source: source, priority: priority,
             dueDate: dueDate, screenshotPath: screenshotPath,
-            aiExplanation: aiExplanation, tags: tags
+            aiExplanation: aiExplanation, tags: tags,
+            reminderLeadMinutes: reminderLeadMinutes
         )
     }
 }

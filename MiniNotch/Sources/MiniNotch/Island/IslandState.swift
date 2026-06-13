@@ -11,6 +11,18 @@ enum PanelTab: String, CaseIterable, Sendable {
     case inbox = "Inbox"
     case favorites = "收藏"
     case settings = "设置"
+
+    /// 显示名：统一中文，与正文（今日任务/建议…）一致，避免中英混排。
+    /// rawValue 保持稳定不动（仅作内部标识）
+    var title: String {
+        switch self {
+        case .today: "Today"   // 保留英文品牌标签（产品指定）
+        case .calendar: "日历"
+        case .inbox: "收件箱"
+        case .favorites: "收藏"
+        case .settings: "设置"
+        }
+    }
 }
 
 enum IslandState: Equatable, Sendable {

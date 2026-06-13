@@ -97,6 +97,11 @@ final class TimerReminderScheduler: ReminderScheduler {
             let dueTs = Int(effectiveDue.timeIntervalSince1970)
             let base = "\(todo.id.uuidString)-\(dueTs)"
 
+            // 提前量由 AI 按任务性质给出（会议提前 1-2h，吃饭喝水提前 5-10min），
+            // nil 则按优先级兜底。两道预警：heads-up（lead）→ 临近（finalWindow）
+            let leadSec = TimeInterval(todo.effectiveLeadMinutes * 60)
+            let finalSec = TimeInterval(todo.finalWindowMinutes * 60)
+
             switch interval {
             case ..<(-60):
                 // 已过期 > 1min：每 5 分钟重复一次（key 加时间桶）
@@ -104,10 +109,10 @@ final class TimerReminderScheduler: ReminderScheduler {
                 fire(todo, level: .overdue, key: "\(base)-overdue-\(bucket)")
             case ..<0:
                 fire(todo, level: .due, key: "\(base)-due")
-            case ..<(15 * 60):
-                fire(todo, level: .fifteenMin, key: "\(base)-fifteenMin")
-            case ..<(60 * 60):
-                fire(todo, level: .oneHour, key: "\(base)-oneHour")
+            case ..<finalSec:
+                fire(todo, level: .fifteenMin, key: "\(base)-final")
+            case ..<leadSec:
+                fire(todo, level: .oneHour, key: "\(base)-headsup")
             default:
                 continue
             }

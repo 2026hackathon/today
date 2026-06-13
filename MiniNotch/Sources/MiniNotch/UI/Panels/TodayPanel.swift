@@ -569,7 +569,7 @@ struct PanelTabBar: View {
     var body: some View {
         HStack(spacing: 2) {
             ForEach(visibleTabs, id: \.self) { tab in
-                PanelTabButton(title: tab.rawValue, isActive: tab == current) {
+                PanelTabButton(title: tab.title, isActive: tab == current) {
                     guard tab != current else { return }
                     store.present(.expanded(tab: tab))
                 }
@@ -580,8 +580,11 @@ struct PanelTabBar: View {
                 PanelIconButton(symbol: "ladybug") {
                     (NSApp.delegate as? AppDelegate)?.showDebugMenuAtMouse()
                 }
-                PanelRefreshButton()
+                // 创建组：贴图识别（兼容 CleanShot/微信等外部截图工具）+ 手动新建
+                PanelIconButton(symbol: "doc.on.clipboard") { store.pasteScreenshot() }
                 PanelIconButton(symbol: "plus") { store.present(.quickInput) }
+                // 系统组：刷新（同步 Jira/日历）+ 设置
+                PanelRefreshButton()
                 PanelIconButton(symbol: "gearshape.fill") { store.present(.expanded(tab: .settings)) }
             }
         }
@@ -761,7 +764,7 @@ struct PanelPlaceholder: View {
             Image(systemName: tab == .inbox ? "tray" : "star")
                 .font(.system(size: 24))
                 .foregroundStyle(DS.Colors.text3)
-            Text("\(tab.rawValue) 等待接入")
+            Text("\(tab.title) 等待接入")
                 .font(DS.Fonts.button)
                 .foregroundStyle(DS.Colors.text3)
         }

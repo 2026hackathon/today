@@ -169,13 +169,22 @@ final class MockAIService: AIService {
             explanations.append("检测到周期任务「每天」")
         }
 
+        // 提前量启发式（Mock 兜底）：会议类提前 60min，例行琐事 10min，其余 nil 走优先级默认
+        var lead: Int?
+        if ["会议", "会", "评审", "面试", "汇报", "约"].contains(where: trimmed.contains) {
+            lead = 60
+        } else if routineWords.contains(where: trimmed.contains) {
+            lead = 10
+        }
+
         return TodoDraft(
             title: trimmed.isEmpty ? "新任务" : trimmed,
             source: .manual,
             priority: priority,
             dueDate: dueDate,
             aiExplanation: explanations.isEmpty ? nil : explanations.joined(separator: "；"),
-            tags: tags
+            tags: tags,
+            reminderLeadMinutes: lead
         )
     }
 
@@ -351,6 +360,7 @@ final class OpenAIChatAIService: AIService {
         你是任务提取助手。从用户的截图（聊天记录/会议纪要/邮件等）中提取待办事项。
         只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
         "dueDate": "yyyy-MM-dd HH:mm" 或 null, "recurrence": "每天"/"每周一"等周期描述（非周期为 null）, \
+        "reminderLeadMinutes": 提前多少分钟提醒（整数）, \
         "aiExplanation": "一句话中文说明判断依据"}]}。
         识别标准从宽：聊天里别人对我的请求/我答应别人的事、邮件里的 action、\
         会议安排、需求描述、bug 报告、"记得/别忘了/要"句式都算待办；\
@@ -358,6 +368,8 @@ final class OpenAIChatAIService: AIService {
         只有内容完全无行动语义（纯风景/代码/图表）才返回 {"todos": []}。
         当前时间：\(Self.now())。相对时间（明天/周五/下班前）换算成具体时间；\
         周期任务的 dueDate 给下一次发生时间（今天该时间已过则为明天/下个周期）。
+        reminderLeadMinutes 按性质定：会议/评审/需提前准备的事 60-120（早知道好准备）；\
+        普通任务 30；吃饭/喝水/打卡等即兴小事 5-10。无截止时间可省略。
         """
         let content: [[String: Any]] = [
             ["type": "text", "text": "提取这张截图里的待办事项"],
@@ -377,6 +389,7 @@ final class OpenAIChatAIService: AIService {
         你是任务解析助手。把用户的一句话解析成一个待办事项。
         只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
         "dueDate": "yyyy-MM-dd HH:mm" 或 null, "recurrence": "每天"/"每周一"等周期描述（非周期为 null）, \
+        "reminderLeadMinutes": 提前多少分钟提醒（整数）, \
         "aiExplanation": "一句话中文说明判断依据"}]}。
         当前时间：\(Self.now())。title 保留原意但去掉时间词和周期词。\
         时间解析：支持相对时间（「15分钟后」「2小时后」= 当前时间 + 偏移）；\
@@ -384,6 +397,8 @@ final class OpenAIChatAIService: AIService {
         只有当解析出的时间确实早于当前时间才顺延到明天。\
         优先级标准（临近 ≠ 紧急）：仅文本含紧急语气（紧急/ASAP/立即/马上/尽快/不能拖）→ high；\
         喝水/打卡/休息等例行琐事 → low（即使截止临近也不提升）；其余有明确事项的 → medium。\
+        reminderLeadMinutes 按性质定：会议/评审/需提前准备的事 60-120；普通任务 30；\
+        吃饭/喝水/打卡等即兴小事 5-10。无截止时间可省略。\
         周期任务（每天/每周X…）的 dueDate 给下一次发生时间（今天该时间已过则为明天/下个周期）。
         """
         let reply = try await chat(system: system, userContent: [["type": "text", "text": text]], jsonMode: true)
@@ -494,6 +509,7 @@ final class OpenAIChatAIService: AIService {
         let priority: String?
         let dueDate: String?
         let recurrence: String?
+        let reminderLeadMinutes: Int?
         let aiExplanation: String?
     }
 
@@ -517,7 +533,8 @@ final class OpenAIChatAIService: AIService {
                 priority: Priority(rawValue: dto.priority ?? "") ?? .medium,
                 dueDate: dto.dueDate.flatMap(Self.parseDate),
                 aiExplanation: dto.aiExplanation,
-                tags: dto.recurrence.map { [$0] } ?? []
+                tags: dto.recurrence.map { [$0] } ?? [],
+                reminderLeadMinutes: dto.reminderLeadMinutes
             )
         }
     }

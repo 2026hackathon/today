@@ -37,6 +37,11 @@ final class AppStore: ObservableObject {
     var onTodoLanded: ((Todo) -> Void)?
     /// 手动刷新的实际同步逻辑（Jira/日历），AppDelegate 装配
     var onRefresh: (() async -> Void)?
+    /// 从剪贴板贴图识别（兼容外部截图工具），AppDelegate 装配
+    var onPasteScreenshot: (() -> Void)?
+
+    /// 触发剪贴板贴图识别（面板按钮/菜单调用）
+    func pasteScreenshot() { onPasteScreenshot?() }
     /// 提醒事项任务完成/撤销 → EventKit 回写（calendarItemIdentifier, 完成态），AppDelegate 装配
     var onReminderCompletionChanged: ((String, Bool) -> Void)?
 
@@ -139,11 +144,27 @@ final class AppStore: ObservableObject {
         // compact 以「今日可动手的事」为准：个人的事做完 → 打钩清空态。
         // 明天的任务、只读的 Jira/GitHub ticket 都不在刘海上挂数字
         guard todayActionableCount > 0 else { return .idle }
-        guard let nearest = todayNextDue else { return .normal }
-        let interval = nearest.timeIntervalSinceNow
-        if interval < 15 * 60 { return .urgent }   // 15min 内（橙）/ 已过期（红），对齐 F-04 分级
-        if interval < 60 * 60 { return .near }     // 1h 内（弱脉冲）
-        return .normal
+
+        // 逐任务按各自 AI 提前量判定高亮：会议（提前量大）更早进入 near/urgent，
+        // 吃饭喝水（提前量小）只在临近才亮 —— 不再全局一刀切 60/15min
+        let endOfToday = Calendar.current.date(
+            byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!
+        var level = 0 // 0 normal · 1 near · 2 urgent
+        for todo in pendingTodos where !Self.readOnlySources.contains(todo.source) {
+            if let snooze = todo.snoozedUntil, snooze > Date() { continue }
+            guard let anchor = todo.snoozedUntil ?? todo.dueDate, anchor < endOfToday else { continue }
+            let interval = anchor.timeIntervalSinceNow
+            if interval < 0 || interval < Double(todo.finalWindowMinutes * 60) {
+                level = max(level, 2)
+            } else if interval < Double(todo.effectiveLeadMinutes * 60) {
+                level = max(level, 1)
+            }
+        }
+        switch level {
+        case 2: return .urgent
+        case 1: return .near
+        default: return .normal
+        }
     }
 
     // MARK: - 派生数据
