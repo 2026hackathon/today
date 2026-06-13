@@ -15,11 +15,19 @@ TBD - created by archiving change todoisland-framework. Update Purpose after arc
 
 - **已超期**：截止时间已过的未完成任务；个人来源全部计入，Jira 仅活跃状态（非 To Do/Done/Cancelled）计入
 - **今日任务**：① 今天截止（含 snoozedUntil 今天到点）的任务与当天日历/提醒派生的 `.calendar` 任务按时间排序；② 活跃状态 Jira；③ 无截止时间的非 Jira 任务（含全天事件/无时间提醒）按优先级排序，置于「无固定时间」细分隔线下
-- **Inbox（全部任务）**：其余未完成任务（未来截止 + To Do 状态 Jira），按 个人/Jira 分组、截止时间排序
+- **Inbox（全部任务）**：`inboxTodos` SHALL 仅包含**非个人来源**的其余未完成任务（如 To Do 状态 Jira 等外部来源），按来源分组、截止时间排序；个人任务 SHALL NOT 出现在 Inbox/Later 页签，而是统一由 Calendar 页签时间线承载
 
 #### Scenario: 活跃 Jira 进入今日任务
 - **WHEN** Jira ticket 状态为 In Progress / In Review 等活跃状态
 - **THEN** 它出现在「今日任务」，To Do 状态的 ticket 只出现在 Inbox
+
+#### Scenario: 个人任务不再出现在 Later
+- **WHEN** 存在一个未来截止的个人任务
+- **THEN** 它不出现在 Inbox/Later 页签，而出现在 Calendar 页签对应日期的时间线中
+
+#### Scenario: Later 仅保留外部来源
+- **WHEN** Later 页签渲染
+- **THEN** 仅展示 Jira 等外部来源待办，无个人任务区段
 
 #### Scenario: 无截止时间的提醒事项
 - **WHEN** 个人任务（含提醒事项同步）无截止时间
