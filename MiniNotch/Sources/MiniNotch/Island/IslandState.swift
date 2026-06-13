@@ -11,6 +11,7 @@ enum PanelTab: String, CaseIterable, Sendable {
     case messages = "消息"
     case inbox = "Inbox"
     case favorites = "收藏"
+    case agent = "Agent"
     case settings = "设置"
 
     /// 显示名：统一中文，与正文（今日任务/建议…）一致，避免中英混排。
@@ -22,6 +23,7 @@ enum PanelTab: String, CaseIterable, Sendable {
         case .messages: "消息"
         case .inbox: "收件箱"
         case .favorites: "收藏"
+        case .agent: "Agent"
         case .settings: "设置"
         }
     }

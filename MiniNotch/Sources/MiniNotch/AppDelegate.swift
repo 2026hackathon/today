@@ -754,6 +754,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.store.present(.agentLanded(session: session))
             }
         }
+        // Agent 面板/卡片点击跳转
+        store.onAgentJump = { [weak self] session in
+            self?.agentService.jumpTo(session)
+        }
         agentService.start()
     }
 

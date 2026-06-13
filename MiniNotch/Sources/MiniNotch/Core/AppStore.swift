@@ -123,6 +123,18 @@ final class AppStore: ObservableObject {
 
     func clearAgentSessions() { agentSessions.removeAll() }
 
+    /// 跳转到 agent 所属终端 session（Agent 面板/卡片点击），AppDelegate 装配 → AgentSessionService.jumpTo
+    var onAgentJump: ((AgentSession) -> Void)?
+    func jumpToAgent(_ session: AgentSession) { onAgentJump?(session) }
+
+    /// Agent 面板列表：需处理的（waiting/replied）在前，运行中在后，各按最近更新排
+    var sortedAgentSessions: [AgentSession] {
+        agentSessions.sorted { a, b in
+            if a.state.needsAttention != b.state.needsAttention { return a.state.needsAttention }
+            return a.updatedAt > b.updatedAt
+        }
+    }
+
     // MARK: - 日历权限（未授权时日历面板空态引导授权）
 
     /// 日历权限 UI 状态（AppDelegate 按 EKAuthorizationStatus 维护）

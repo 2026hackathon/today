@@ -29,6 +29,8 @@ struct TodayPanel: View {
                     MessageInboxPanel()
                 case .inbox:
                     InboxPanel()
+                case .agent:
+                    AgentPanel()
                 case .favorites:
                     PanelPlaceholder(tab: currentTab)
                 default:
@@ -574,7 +576,8 @@ struct PanelTabBar: View {
                 PanelTabButton(
                     title: tab.title,
                     isActive: tab == current,
-                    badge: tab == .messages ? store.unprocessedMessageCount : 0
+                    badge: tab == .messages ? store.unprocessedMessageCount
+                        : (tab == .agent ? store.waitingAgentCount : 0)
                 ) {
                     guard tab != current else { return }
                     store.present(.expanded(tab: tab))
@@ -599,7 +602,7 @@ struct PanelTabBar: View {
     }
 
     private var visibleTabs: [PanelTab] {
-        current == .settings ? PanelTab.allCases : [.today, .calendar, .messages, .inbox, .favorites]
+        current == .settings ? PanelTab.allCases : [.today, .calendar, .messages, .inbox, .favorites, .agent]
     }
 }
 
