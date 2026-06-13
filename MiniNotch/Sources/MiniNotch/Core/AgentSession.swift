@@ -103,11 +103,14 @@ struct AgentEvent: Decodable, Sendable {
     /// hook 事件名 → 会话状态（nil = 不改变状态，如 PostToolUse）
     var mappedState: AgentSessionState? {
         switch event {
-        case "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse":
+        case "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+             // 子任务（Task 子 agent）完成 ≠ 整轮完成：父会话仍在跑，
+             // 故归为 working（刷新存活、不触发「已完成」卡），只有顶层 Stop 才算完成。
+             "SubagentStop":
             .working
         case "Notification":
             .waiting
-        case "Stop", "SubagentStop":
+        case "Stop":
             .replied
         case "SessionEnd":
             .ended
