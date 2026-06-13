@@ -185,8 +185,6 @@ struct EveningReportPanel: View {
     private var actionRow: some View {
         HStack(spacing: 6) {
             PanelButton(title: "复制为文本") { copyToPasteboard() }
-            // TODO: C 接 PushService 后启用
-            PanelButton(title: "发送到微信/飞书", kind: .disabled) {}
             PanelButton(title: "收到", kind: .primary) { store.dismiss() }
         }
         .padding(.top, 14)

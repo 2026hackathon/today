@@ -487,9 +487,28 @@ final class OpenAIChatAIService: AIService {
         try await report(
             ctx,
             instruction: """
-            生成中文 markdown 晨报，以「# ☀️ 早安！」开头，结构依次为：
-            一句话概览、## 🔥 优先处理（最多3条，加粗标题+截止说明）、## 📅 今日会议、\
-            ## ✅ 个人 Todo、## 🧩 Jira、## 💡 建议（2-3条可执行建议）。语气轻快简洁。
+            写一份简短晨报，帮用户决定今天先做什么。中文 markdown，结构：
+
+            # ☀️ 早安
+            一句话现状：今天几件事、有无超期/紧急、最该先动手哪件。≤30 字，不加感叹号。
+
+            ## 先做这些
+            排最多 3 条，综合三点排序：**优先级（高 > 中 > 低）+ 截止临近 + 是否卡着别人/会前要准备**——
+            高优先级或快到期的排最前。每条点名具体任务，跟一句为什么（如「高优先级」「20:00 截止」
+            「卡着评审」），引用真实标题和时间。别给「上午精力好做深度工作」这种放之四海的话。
+
+            ## 今日安排
+            今日会议按时间列（每个前面留 10 分钟缓冲）；当天有截止的个人任务并进来，标 HH:mm。
+            没有会议就写「今天没有会议」。
+
+            ## 工作项
+            只列**正在进行（In Progress / 处理中）**的，最多 3 条：`票号 标题`。
+            标题去掉 `[FE FOR TEST]`、`[UI]`、`[Bug]` 这类方括号前缀标记，过长截到约 24 字加省略号。
+            其余「待办（To Do）」别逐条列——用一句汇总：「另有 N 个待办工单，去 Work 页签看」。
+            一个进行中的都没有就只写那句汇总；全都没有写「无」。
+
+            约束：只引用上下文真实条目，禁止编造；缺数据的小节写「无」或直接省略；
+            整体 ≤18 行；时间用 HH:mm。今天确实没什么要紧事，就如实说一句，别硬凑清单。
             """
         )
     }
@@ -498,9 +517,24 @@ final class OpenAIChatAIService: AIService {
         try await report(
             ctx,
             instruction: """
-            生成中文 markdown 晚报，以「# 🌙 晚上好，来复盘今天」开头，结构依次为：
-            一句话完成度概览、## 🎉 今日完成（删除线列出）、## 🔥 优先处理（结转明天，最多3条）、\
-            ## 📅 今日会议、## 🧩 Jira、## 💡 建议（含明早第一件事 + 休息提醒）。语气温和。
+            写一份简短晚报，帮用户收尾今天、给明天留个头。中文 markdown，结构：
+
+            # 🌙 收工
+            一句话：今天完成几件、还剩什么、明早第一件事是哪个。≤30 字，不加感叹号。
+
+            ## 今天做完的
+            完成项用删除线列出（~~标题~~）。一件都没有就如实写「今天没有标记完成的事」，不评判、不安慰。
+
+            ## 留到明天
+            最多 3 条未完成，按**优先级（高 > 中 > 低）+ 截止临近**排：点名任务 + 截止或原因（如「高优先级」）。引用真实标题和时间。
+
+            ## 工作项
+            只列**正在进行（In Progress / 处理中）**的，最多 3 条：`票号 标题`。
+            标题去掉 `[FE FOR TEST]`、`[UI]`、`[Bug]` 这类方括号前缀，过长截到约 24 字。
+            待办（To Do）别逐条列，用一句汇总「另有 N 个待办工单」。都没有写「无」。
+
+            约束：只引用上下文真实条目，禁止编造；缺数据的小节写「无」；整体 ≤16 行；
+            语气平实，像同事帮你顺了一遍。不写「辛苦了 / 早点休息 / 明天会更好」这类套话。
             """
         )
     }
@@ -509,7 +543,8 @@ final class OpenAIChatAIService: AIService {
         let reply = try await chat(
             system: """
             你是用户的个人工作助理。根据上下文给出一句话行动建议：30 字以内、\
-            以「建议: 」开头、具体可执行（点名最该先做的事、如何利用会议间隙），不要换行。\
+            以「建议: 」开头、具体可执行，不要换行。\
+            「最该先做的事」综合优先级（高 > 中 > 低）+ 截止临近来选，点名它，可顺带提如何利用会议间隙。\
             只能引用上下文里明确列出的任务和会议，禁止臆造或引入列表之外的事项。
             """,
             userContent: [["type": "text", "text": Self.contextText(ctx)]],
@@ -573,8 +608,16 @@ final class OpenAIChatAIService: AIService {
     // MARK: 内部
 
     private func report(_ ctx: ReportContext, instruction: String) async throws -> String {
+        let voice = """
+        你是用户的私人助理，帮 ta 在一天开头/收尾时快速理清状态。\
+        说话像个靠谱、话不多的同事：直接讲事实和该做什么，对事不对人。\
+        不要寒暄、不灌鸡汤、不堆感叹号和 emoji 情绪、不写「加油 / 元气满满 / 高效 / 赋能 / \
+        开启美好的一天 / 辛苦了 / 早点休息」这类正确的废话。该说的说完就停，别凑字数。\
+        只引用下面上下文里真实存在的任务 / 会议 / 工单（含编号与时间），绝不编造或泛泛而谈。\
+        只输出 markdown 正文，不要代码块包裹。
+        """
         let reply = try await chat(
-            system: "你是用户的个人工作助理。只输出 markdown 正文，不要代码块包裹。\(instruction)",
+            system: "\(voice)\n\n\(instruction)",
             userContent: [["type": "text", "text": Self.contextText(ctx)]],
             jsonMode: false
         )
@@ -755,10 +798,15 @@ final class OpenAIChatAIService: AIService {
             lines.append("- \(t.title) | \(t.priority.label) | \(due) | 个人")
         }
         if !ctx.workItems.isEmpty {
-            lines.append("\n工作项（\(ctx.workItems.count)）：")
-            for w in ctx.workItems {
-                lines.append("- \(w.key) \(w.title)（\(w.status ?? "To Do")）| \(w.source.label)")
+            // 晨/晚报只需要「进行中」的逐条 + 待办计数——不把整个 backlog 倒给模型，
+            // 否则报告会被几十条 To Do 撑爆（也费 token）。
+            let active = ctx.workItems.filter(\.isActive)
+            let todoCount = ctx.workItems.count - active.count
+            lines.append("\n工作项（进行中 \(active.count)，待办 \(todoCount)）：")
+            for w in active {
+                lines.append("- \(w.key) \(w.title)（\(w.status ?? "In Progress")）| \(w.source.label)")
             }
+            if todoCount > 0 { lines.append("- 另有 \(todoCount) 个待办（To Do）工单，未逐条列出") }
         }
         lines.append("\n今日已完成（\(ctx.completedToday.count)）：")
         for t in ctx.completedToday { lines.append("- \(t.title)") }
