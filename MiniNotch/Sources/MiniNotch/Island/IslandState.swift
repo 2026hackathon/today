@@ -111,7 +111,8 @@ struct IslandGeometry: Equatable {
         case .quickInput, .editTask:
             return .init(width: 480, height: nil, cornerRadius: DS.Radius.island)
         case .expanded, .morningReport, .eveningReport:
-            return .init(width: 460, height: 540, cornerRadius: DS.Radius.island)
+            // 内容变密（Agent 行带来源/终端标签、6 个 tab）后 460 偏挤，加宽到 520
+            return .init(width: 520, height: 560, cornerRadius: DS.Radius.island)
         }
     }
 }
