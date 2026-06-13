@@ -678,15 +678,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var seen = Set<String>()
         let fresh = inputs.filter { !knownIds.contains($0.messageId) && seen.insert($0.messageId).inserted }
         guard !fresh.isEmpty else { emailBaselineSynced = true; return }
-        // AI 分析；无 Key/失败时 AIService 自身已降级，这里再兜一层规则化
+        // AI 分析；无 Key/失败时 AIService 自身已降级，这里再兜一层规则化（含本地价值判定）
         let analyses = (try? await currentAIService().analyzeEmails(fresh))
             ?? fresh.map { EmailAnalysis(importance: EmailHeuristics.importance($0),
-                                         suggestion: EmailSummary.suggestion($0)) }
-        let messages = zip(fresh, analyses).map { input, a in
-            Message(messageId: input.messageId, summary: a.suggestion, source: input.source,
-                    importance: a.importance, link: input.link, receivedAt: input.receivedAt,
-                    sender: input.sender, rawSubject: input.subject)
+                                         suggestion: EmailSummary.suggestion($0),
+                                         valuable: !EmailHeuristics.isLowValue($0)) }
+        // AI 价值过滤（硬过滤之后、入库之前）：价值不高的不入库、不占提醒位
+        let messages = zip(fresh, analyses).compactMap { input, a -> Message? in
+            guard a.valuable else { return nil }
+            return Message(messageId: input.messageId, summary: a.suggestion, source: input.source,
+                           importance: a.importance, link: input.link, receivedAt: input.receivedAt,
+                           sender: input.sender, rawSubject: input.subject)
         }
+        guard !messages.isEmpty else { emailBaselineSynced = true; return }
         store.addMessages(messages, notify: notify && emailBaselineSynced)
         emailBaselineSynced = true
     }

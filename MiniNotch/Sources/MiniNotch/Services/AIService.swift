@@ -347,7 +347,8 @@ final class MockAIService: AIService {
     func analyzeEmails(_ inputs: [EmailDigestInput]) async throws -> [EmailAnalysis] {
         try? await Task.sleep(for: .seconds(0.3))
         return inputs.map { EmailAnalysis(importance: EmailHeuristics.importance($0),
-                                          suggestion: EmailSummary.suggestion($0)) }
+                                          suggestion: EmailSummary.suggestion($0),
+                                          valuable: !EmailHeuristics.isLowValue($0)) }
     }
 
     /// Mock 无法真正做 AI 推理 → 抛 notConfigured，由 RealDiskCleanupService 回退规则分类
@@ -565,8 +566,10 @@ final class OpenAIChatAIService: AIService {
         importance（high=需我尽快行动/老板或客户催办/明确截止，medium=一般待办，low=仅知会/通知类），\
         suggestion（提炼这封邮件最关键的一件事——对方具体要我做什么、或我必须知道的核心信息，\
         务必带上关键对象：人名 / 单号 / 截止时间；去掉寒暄、签名、客套和无关细节；\
-        纯知会类直接概括要点即可。**20 个汉字以内**、不换行、不加引号、不要用「查看…」「了解…」这类空泛说法）。\
-        只输出 JSON 对象：{"results": [{"index": 0, "importance": "high|medium|low", "suggestion": "..."}]}，\
+        纯知会类直接概括要点即可。**20 个汉字以内**、不换行、不加引号、不要用「查看…」「了解…」这类空泛说法），\
+        valuable（true=值得进收件箱提醒的真人事务或我必须知道的信息；\
+        false=价值不高、可忽略：纯营销/群发周知/自动回执/与我无关的抄送/重复或过期通知。把握不准时给 true）。\
+        只输出 JSON 对象：{"results": [{"index": 0, "importance": "high|medium|low", "suggestion": "...", "valuable": true}]}，\
         index 与输入序号一致、覆盖全部邮件。只依据给定内容，不要臆造。
         """
         let reply = try await chat(system: system, userContent: [["type": "text", "text": listing]], jsonMode: true)
@@ -574,12 +577,15 @@ final class OpenAIChatAIService: AIService {
         return inputs.indices.map { i in
             guard let dto = byIndex[i] else {
                 return EmailAnalysis(importance: EmailHeuristics.importance(inputs[i]),
-                                     suggestion: EmailSummary.suggestion(inputs[i]))
+                                     suggestion: EmailSummary.suggestion(inputs[i]),
+                                     valuable: !EmailHeuristics.isLowValue(inputs[i]))
             }
             let importance = MessageImportance(rawValue: dto.importance ?? "") ?? EmailHeuristics.importance(inputs[i])
             let s = (dto.suggestion ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let suggestion = s.isEmpty ? EmailSummary.suggestion(inputs[i]) : EmailSummary.clamp(s)
-            return EmailAnalysis(importance: importance, suggestion: suggestion)
+            // AI 未给 valuable 时回退本地启发式价值判定
+            let valuable = dto.valuable ?? !EmailHeuristics.isLowValue(inputs[i])
+            return EmailAnalysis(importance: importance, suggestion: suggestion, valuable: valuable)
         }
     }
 
@@ -688,6 +694,8 @@ final class OpenAIChatAIService: AIService {
         let index: Int
         let importance: String?
         let suggestion: String?
+        /// 价值识别：true=值得进收件箱提醒；false=价值不高、过滤掉。缺省时上层走启发式兜底。
+        let valuable: Bool?
     }
     private struct AnalysesEnvelope: Decodable { let results: [EmailAnalysisDTO] }
 

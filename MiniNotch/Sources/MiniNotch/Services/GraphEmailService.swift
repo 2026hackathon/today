@@ -15,9 +15,12 @@ final class GraphEmailService: EmailService {
     func fetchNewMessages() async throws -> [EmailDigestInput] {
         let token = try await MicrosoftOAuth.shared.validAccessToken()
 
+        // 只拉最近 3 天的未读（receivedDateTime ge 精确时间窗 + isRead 过滤已读）
+        let cutoff = EmailFetchWindow.cutoff()
         var comps = URLComponents(string: "https://graph.microsoft.com/v1.0/me/messages")!
         comps.queryItems = [
-            URLQueryItem(name: "$filter", value: "isRead eq false"),
+            URLQueryItem(name: "$filter",
+                         value: "isRead eq false and receivedDateTime ge \(EmailFetchWindow.iso8601(cutoff))"),
             URLQueryItem(name: "$top", value: "\(maxFetch)"),
             URLQueryItem(name: "$select", value: "id,subject,from,bodyPreview,receivedDateTime,webLink,internetMessageId"),
             URLQueryItem(name: "$orderby", value: "receivedDateTime desc"),

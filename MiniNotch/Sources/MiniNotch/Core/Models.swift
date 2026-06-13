@@ -491,6 +491,9 @@ struct EmailDigestInput: Sendable {
 struct EmailAnalysis: Sendable {
     var importance: MessageImportance
     var suggestion: String
+    /// AI 价值识别（email-integration spec）：false = 价值不高，过滤不入库、不占提醒位。
+    /// 默认 true（保守保留），由 AI 或本地启发式按内容判定下沉。
+    var valuable: Bool = true
 }
 
 // MARK: - 晨报/晚报上下文（ai-pipeline spec）

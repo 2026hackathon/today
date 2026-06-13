@@ -30,6 +30,33 @@ protocol EmailService: AnyObject {
     func fetchNewMessages() async throws -> [EmailDigestInput]
 }
 
+// MARK: - 拉取时间窗（最近 N 天，供 IMAP/Graph/本地二次过滤共用）
+
+/// email-integration spec：只纳入「最后更新时间在最近 N 天内」的未读邮件。
+/// IMAP 用 `SEARCH ... SINCE`（日期粒度，略宽），Graph 用 `receivedDateTime ge`（精确），
+/// 两者拉回后都按 `cutoff()` 精确时间戳本地二次过滤，对齐到统一的「最近 3 天」语义。
+enum EmailFetchWindow {
+    static let recentDays = 3
+
+    /// 精确起点：当前时间往前 recentDays 天（本地二次过滤的判定基准）
+    static func cutoff(now: Date = Date()) -> Date {
+        now.addingTimeInterval(-Double(recentDays) * 86_400)
+    }
+
+    /// IMAP `SEARCH ... SINCE` 的日期串（dd-MMM-yyyy，en_US_POSIX）
+    static func imapDate(_ date: Date) -> String { imapFormatter.string(from: date) }
+
+    /// Graph `$filter ... receivedDateTime ge` 的 ISO8601 时间戳（无引号、UTC）
+    static func iso8601(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
+
+    private static let imapFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "dd-MMM-yyyy"
+        return f
+    }()
+}
+
 // MARK: - 来源识别与链接归一（email-integration spec）
 
 enum EmailClassifier {
@@ -207,6 +234,18 @@ enum EmailHeuristics {
         if lowWords.contains(where: hay.contains) { return .low }
         return .medium
     }
+
+    /// 价值识别的本地兜底（无 AI Key / AI 失败时用，不出网）。
+    /// 保守：默认保留（返回 false），仅强特征低价值才过滤；高价值信号一票否决。
+    static func isLowValue(_ input: EmailDigestInput) -> Bool {
+        let hay = "\(input.sender ?? "") \(input.subject) \(input.bodyExcerpt)".lowercased()
+        // 紧急/催办/重要发件人 → 一定保留
+        if importantSenders.contains(where: hay.contains) || highWords.contains(where: hay.contains) {
+            return false
+        }
+        // 过了硬过滤却仍像纯知会/通知类的，视为价值不高
+        return EmailPreprocess.looksLikeNotificationSubject(input.subject)
+    }
 }
 
 // MARK: - Mock 实现（3 条演示：slack / jira / 普通邮件，integrations spec）
@@ -312,12 +351,16 @@ final class RealEmailService: EmailService {
             try await conn.authenticateXOAUTH2(user: email, accessToken: token)
         }
         try await conn.select("INBOX")
-        let uids = try await conn.searchUnseen()
+        // 只取最近 3 天的未读（SINCE 在服务端先收一刀）
+        let cutoff = EmailFetchWindow.cutoff()
+        let uids = try await conn.searchUnseen(since: cutoff)
         guard !uids.isEmpty else { return [] }
 
         var out: [EmailDigestInput] = []
         for uid in uids.suffix(maxFetch) {
             guard let raw = try? await conn.fetchMessage(uid: uid) else { continue }
+            // 本地按精确时间戳把 SINCE 的日期粒度收紧到精确最近 3 天（日期不可解析时保留）
+            if let date = raw.date, date < cutoff { continue }
             let domain = raw.from.split(separator: "@").last.map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "> ")) } ?? ""
             // 送 AI 之前的一段代码过滤：丢弃明显噪音/无效邮件
             guard !EmailPreprocess.isNoise(domain: domain, subject: raw.subject),
@@ -421,9 +464,10 @@ final class IMAPConnection: @unchecked Sendable {
         _ = try await command("SELECT \(quoted(mailbox))")
     }
 
-    /// UID SEARCH UNSEEN → 未读 UID 列表
-    func searchUnseen() async throws -> [Int] {
-        let resp = try await command("UID SEARCH UNSEEN")
+    /// UID SEARCH UNSEEN SINCE <date> → 最近 N 天内的未读 UID 列表。
+    /// SINCE 是日期粒度（含当天，略宽），由调用方按精确 cutoff 再做本地二次过滤。
+    func searchUnseen(since: Date) async throws -> [Int] {
+        let resp = try await command("UID SEARCH UNSEEN SINCE \(EmailFetchWindow.imapDate(since))")
         guard let line = resp.split(separator: "\r\n").first(where: { $0.uppercased().contains("SEARCH") }) else { return [] }
         return line.split(separator: " ").compactMap { Int($0) }
     }
