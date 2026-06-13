@@ -125,6 +125,8 @@ final class AgentSessionService {
             "cwd": d.get("cwd", ""),
             "message": d.get("message", ""),
             "agent": "Claude Code",
+            # UserPromptSubmit 带 prompt = 用户这轮的指令，当 session 标题（截断 + 去换行）
+            "title": " ".join(d.get("prompt", "").split())[:80],
             "term": os.environ.get("TERM_PROGRAM", ""),
             "term_bundle": os.environ.get("__CFBundleIdentifier", ""),
             "iterm_session": os.environ.get("ITERM_SESSION_ID", ""),
@@ -294,14 +296,17 @@ final class AgentSessionService {
           tmux_pane: process.env.TMUX_PANE ?? "",
         }
 
-        function emit(event: string, sessionID: string, cwd: string, message: string) {
+        const titles = new Map<string, string>()
+
+        function emit(event: string, sessionID: string, cwd: string, message: string, title: string) {
+          if (title) titles.set(sessionID, title)
           if (last.get(sessionID) === event) return  // 去抖：状态没变不重复写
           last.set(sessionID, event)
           try {
             fs.mkdirSync(path.dirname(EVENTS), { recursive: true })
             fs.appendFileSync(
               EVENTS,
-              JSON.stringify({ event, session_id: sessionID, cwd, message, agent: "opencode", ...TERM }) + "\\n"
+              JSON.stringify({ event, session_id: sessionID, cwd, message, agent: "opencode", title: titles.get(sessionID) ?? "", ...TERM }) + "\\n"
             )
           } catch {}
         }
@@ -310,19 +315,24 @@ final class AgentSessionService {
           return {
             event: async ({ event }: any) => {
               const p = event.properties ?? {}
-              const sid = p.sessionID ?? p.sessionId ?? directory
+              const sid = p.sessionID ?? p.sessionId ?? p.info?.id ?? directory
+              // opencode 自动生成的 session 标题（session.updated/idle 的 info.title）
+              const title = (p.info?.title ?? "").slice(0, 80)
               switch (event.type) {
                 case "session.status":
-                  if (p.status?.type === "busy") emit("UserPromptSubmit", sid, directory, "")
+                  if (p.status?.type === "busy") emit("UserPromptSubmit", sid, directory, "", title)
+                  break
+                case "session.updated":
+                  emit(last.get(sid) ?? "UserPromptSubmit", sid, directory, "", title)
                   break
                 case "permission.updated":
-                  emit("Notification", sid, directory, "opencode 请求确认")
+                  emit("Notification", sid, directory, "opencode 请求确认", title)
                   break
                 case "permission.replied":
-                  emit("UserPromptSubmit", sid, directory, "")
+                  emit("UserPromptSubmit", sid, directory, "", title)
                   break
                 case "session.idle":
-                  emit("Stop", sid, directory, "")
+                  emit("Stop", sid, directory, "", title)
                   break
               }
             },

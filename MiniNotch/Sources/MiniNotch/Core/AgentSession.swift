@@ -39,6 +39,8 @@ struct AgentSession: Identifiable, Equatable, Sendable {
     var updatedAt: Date
     /// 终端定位（点击卡片跳转用，捕获不到则为 nil）
     var terminal: TerminalRef?
+    /// 会话标题：Claude Code 取 UserPromptSubmit 的 prompt，opencode 取 session.title
+    var title: String?
 
     /// 项目名（cwd 末段，用于通知/跳转展示）
     var project: String? {
@@ -60,6 +62,7 @@ struct AgentEvent: Decodable, Sendable {
     var term_bundle: String?
     var iterm_session: String?
     var tmux_pane: String?
+    var title: String?
 
     var terminal: TerminalRef? {
         let ref = TerminalRef(

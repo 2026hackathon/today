@@ -87,6 +87,7 @@ final class AppStore: ObservableObject {
             if mapped == .waiting { agentSessions[i].message = event.message }
             if let cwd = event.cwd, !cwd.isEmpty { agentSessions[i].cwd = cwd }
             if let term = event.terminal { agentSessions[i].terminal = term }
+            if let t = event.title, !t.isEmpty { agentSessions[i].title = t } // 保留已有标题，不被空值覆盖
             replied = agentSessions[i]
         } else {
             becameReplied = mapped == .replied  // 首个事件就是完成（少见但也算一次完成）
@@ -97,7 +98,8 @@ final class AppStore: ObservableObject {
                 state: mapped,
                 message: event.message,
                 updatedAt: Date(),
-                terminal: event.terminal
+                terminal: event.terminal,
+                title: event.title?.isEmpty == false ? event.title : nil
             )
             agentSessions.append(s)
             replied = s

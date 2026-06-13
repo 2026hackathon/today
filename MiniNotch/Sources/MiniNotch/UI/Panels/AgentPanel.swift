@@ -76,16 +76,19 @@ struct AgentSessionRow: View {
                 .frame(width: 16, height: 16)
 
             VStack(alignment: .leading, spacing: 4) {
+                // 标题优先（session 标题/指令），没有则显示 agent 名
                 HStack(spacing: 6) {
-                    Text(session.agent)
+                    Text(session.title?.isEmpty == false ? session.title! : session.agent)
                         .font(DS.Fonts.todoTitle)
                         .foregroundStyle(DS.Colors.text1)
+                        .lineLimit(1)
                     if let project = session.project {
                         Text(project).dsTag()
                     }
                 }
                 HStack(spacing: 6) {
-                    Text(stateLabel)
+                    // 标题占了主行时，agent 名落到这里，状态色标注
+                    Text(session.title?.isEmpty == false ? "\(session.agent) · \(stateLabel)" : stateLabel)
                         .font(DS.Fonts.meta)
                         .foregroundStyle(color)
                     if session.state == .waiting, let msg = session.message, !msg.isEmpty {
