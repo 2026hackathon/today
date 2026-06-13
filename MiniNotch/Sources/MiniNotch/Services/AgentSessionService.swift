@@ -64,17 +64,10 @@ final class AgentSessionService {
             queue: .main
         )
         src.setEventHandler { [weak self] in
-            // queue: .main → 已在主线程；assumeIsolated 让 MainActor 隔离显式成立，
-            // 杜绝从非隔离 dispatch 块改 @MainActor 状态导致的数据竞争
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let flags = self.source?.data ?? []
-                if flags.contains(.delete) || flags.contains(.rename) {
-                    self.reopenWatcher() // 文件被轮转/删除 → 重开
-                } else {
-                    self.drainNewLines()
-                }
-            }
+            // 关键：DispatchSource 回调不直接改 @MainActor 状态——投递成 MainActor 作业，
+            // 与 SwiftUI 的渲染/读取在同一 actor 上串行互斥，杜绝并发改 agentSessions
+            // 导致的野指针崩溃（EXC_BAD_ACCESS in swift_retain）。
+            Task { @MainActor in self?.drainNewLines() }
         }
         src.setCancelHandler { [weak self] in
             if let fd = self?.fileDescriptor, fd >= 0 { close(fd) }
