@@ -259,7 +259,17 @@ struct PersonalTodoRow: View {
             if !todo.screenshotPaths.isEmpty {
                 ScreenshotThumb(paths: todo.screenshotPaths)
             }
-            // 删除按钮（悬停显示）：本地任务直接删；苹果来源项删除前确认（会真删苹果日历/提醒）
+            // 编辑 + 删除按钮（悬停显示）：编辑开编辑卡；删除时本地直接删、苹果来源项删前确认
+            if hovering && !todo.isCompleted {
+                Button { store.present(.editTask(todo: todo)) } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 11))
+                        .foregroundStyle(DS.Colors.text3)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("编辑")
+            }
             if hovering && store.canDelete(todo) {
                 Button { requestDelete() } label: {
                     Image(systemName: "trash")
@@ -276,21 +286,7 @@ struct PersonalTodoRow: View {
         // 整行（含右侧空白）参与命中测试，删除按钮不再只在文字上方才出现
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        // 右键：编辑（开编辑卡）/ 快速改优先级（无需进卡）/ 删除
-        .contextMenu {
-            Button("编辑…") { store.present(.editTask(todo: todo)) }
-            Menu("优先级") {
-                ForEach(Priority.allCases, id: \.self) { p in
-                    Button {
-                        var t = todo; t.priority = p; store.update(t)
-                    } label: {
-                        Label(p.label, systemImage: todo.priority == p ? "checkmark" : "")
-                    }
-                }
-            }
-            Divider()
-            Button("删除", role: .destructive) { requestDelete() }
-        }
+        // 编辑/删除/改优先级都走编辑卡（行内右侧 icon 进入），不再用右键菜单
         .confirmationDialog(
             "从苹果日历删除「\(todo.title)」？此操作不可恢复。",
             isPresented: $confirmingDelete, titleVisibility: .visible
