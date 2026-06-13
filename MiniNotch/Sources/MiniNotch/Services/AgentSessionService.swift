@@ -22,6 +22,11 @@ final class AgentSessionService {
 
     private var eventsFile: URL { Persistence.baseDir.appendingPathComponent("agent-events.jsonl") }
     private var hookScript: URL { Persistence.baseDir.appendingPathComponent("claude-agent-hook.py") }
+    /// opencode 全局插件目录（实测 1.17.4：plugin/ 单数，与 workmux 示例一致）
+    private var openCodePlugin: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/opencode/plugin/mininotch.ts")
+    }
 
     // MARK: - 启动监听
 
@@ -168,6 +173,72 @@ final class AgentSessionService {
             return "已安装 Claude Code Hook（已备份原 settings.json）。重启 Claude Code 生效。"
         } catch {
             NSLog("[Agent] install hook failed: \(error)")
+            return "安装失败：\(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - 安装到 opencode（只通知，无双向）
+
+    /// 写一个 opencode 插件，把事件转成与 Claude Code 同 schema 的 JSONL（agent="opencode"），
+    /// 复用同一个事件文件与监听 —— Swift 端无需任何改动。
+    @discardableResult
+    func installOpenCodePlugin() -> String {
+        let path = eventsFile.path
+        // 事件映射对齐 workmux-status.ts 实测的 opencode 事件类型：
+        // session.status(busy)→working / permission.updated→waiting /
+        // permission.replied→working / session.idle→done(replied)
+        let plugin = """
+        import type { Plugin } from "@opencode-ai/plugin"
+        import { createRequire } from "module"
+        const require = createRequire(import.meta.url)
+        const fs = require("fs")
+        const path = require("path")
+
+        const EVENTS = "\(path)"
+        const last = new Map<string, string>()
+
+        function emit(event: string, sessionID: string, cwd: string, message: string) {
+          if (last.get(sessionID) === event) return  // 去抖：状态没变不重复写
+          last.set(sessionID, event)
+          try {
+            fs.mkdirSync(path.dirname(EVENTS), { recursive: true })
+            fs.appendFileSync(
+              EVENTS,
+              JSON.stringify({ event, session_id: sessionID, cwd, message, agent: "opencode" }) + "\\n"
+            )
+          } catch {}
+        }
+
+        export const MiniNotchPlugin: Plugin = async ({ directory }) => {
+          return {
+            event: async ({ event }: any) => {
+              const p = event.properties ?? {}
+              const sid = p.sessionID ?? p.sessionId ?? directory
+              switch (event.type) {
+                case "session.status":
+                  if (p.status?.type === "busy") emit("UserPromptSubmit", sid, directory, "")
+                  break
+                case "permission.updated":
+                  emit("Notification", sid, directory, "opencode 请求确认")
+                  break
+                case "permission.replied":
+                  emit("UserPromptSubmit", sid, directory, "")
+                  break
+                case "session.idle":
+                  emit("Stop", sid, directory, "")
+                  break
+              }
+            },
+          }
+        }
+        """
+        do {
+            try FileManager.default.createDirectory(
+                at: openCodePlugin.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try plugin.write(to: openCodePlugin, atomically: true, encoding: .utf8)
+            return "已安装 opencode 插件到 \(openCodePlugin.path)。重启 opencode 生效。"
+        } catch {
+            NSLog("[Agent] install opencode plugin failed: \(error)")
             return "安装失败：\(error.localizedDescription)"
         }
     }

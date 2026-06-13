@@ -680,6 +680,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("模拟 Agent 等待确认", #selector(debugAgentWaiting)),
             ("清空 Agent 会话", #selector(debugAgentClear)),
             ("安装 Claude Code Hook", #selector(debugInstallAgentHook)),
+            ("安装 opencode 插件", #selector(debugInstallOpenCodePlugin)),
             ("回到收缩态", #selector(debugDismiss)),
             ("重置演示数据", #selector(debugReset)),
         ]
@@ -862,6 +863,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func debugInstallAgentHook() {
         let msg = agentService.installClaudeCodeHook()
+        NSLog("[Agent] \(msg)")
+    }
+
+    @objc private func debugInstallOpenCodePlugin() {
+        let msg = agentService.installOpenCodePlugin()
         NSLog("[Agent] \(msg)")
     }
 
