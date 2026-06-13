@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 // ============================================================
@@ -32,6 +33,10 @@ final class AgentSessionService {
 
     func start() {
         ensureHookScript()
+        // 已安装的 opencode 插件随代码更新（拿到新的 env 捕获等）；未装则不动
+        if FileManager.default.fileExists(atPath: openCodePlugin.path) {
+            _ = installOpenCodePlugin()
+        }
         ensureEventsFile()
         // 首次启动从文件末尾开始读（不回放历史事件，避免崩溃前的陈旧状态复活）
         readOffset = (try? FileManager.default.attributesOfItem(atPath: eventsFile.path)[.size] as? UInt64) ?? 0
@@ -120,6 +125,10 @@ final class AgentSessionService {
             "cwd": d.get("cwd", ""),
             "message": d.get("message", ""),
             "agent": "Claude Code",
+            "term": os.environ.get("TERM_PROGRAM", ""),
+            "term_bundle": os.environ.get("__CFBundleIdentifier", ""),
+            "iterm_session": os.environ.get("ITERM_SESSION_ID", ""),
+            "tmux_pane": os.environ.get("TMUX_PANE", ""),
         }
         p = "\(path)"
         os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -178,6 +187,86 @@ final class AgentSessionService {
         }
     }
 
+    // MARK: - 跳转到终端 session（agent-landed-jump spec）
+
+    /// 尽力跳转：tmux 选 pane → iTerm 选 session → 激活终端 App → 兜底打开 cwd。
+    func jumpTo(_ session: AgentSession) {
+        let t = session.terminal
+
+        // 1) tmux：选中那个 pane（跨进程经 tmux server 生效）
+        if let pane = t?.tmuxPane, !pane.isEmpty {
+            runShell("tmux select-window -t '\(pane)' \\; select-pane -t '\(pane)'")
+        }
+
+        // 2) iTerm2：ITERM_SESSION_ID = wNtNpN:UUID，按 UUID 选中那个 session
+        if let iterm = t?.itermSession, !iterm.isEmpty,
+           (t?.program ?? "").localizedCaseInsensitiveContains("iterm") {
+            let uuid = iterm.split(separator: ":").last.map(String.init) ?? iterm
+            runAppleScript("""
+            tell application "iTerm2"
+              activate
+              repeat with w in windows
+                repeat with tb in tabs of w
+                  repeat with s in sessions of tb
+                    if id of s is "\(uuid)" then
+                      select w
+                      select tb
+                      select s
+                      return
+                    end if
+                  end repeat
+                end repeat
+              end repeat
+            end tell
+            """)
+            return
+        }
+
+        // 3) 激活终端 App（Warp / Terminal / 其它无 pane API 的）
+        if let bundle = t?.bundleID, !bundle.isEmpty,
+           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first {
+            app.activate(options: [.activateAllWindows])
+            return
+        }
+        if let program = t?.program, let bundle = Self.bundleID(forProgram: program),
+           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first {
+            app.activate(options: [.activateAllWindows])
+            return
+        }
+
+        // 4) 兜底：打开工作目录（Finder）
+        if let cwd = session.cwd, !cwd.isEmpty {
+            NSWorkspace.shared.open(URL(fileURLWithPath: cwd))
+        }
+    }
+
+    /// TERM_PROGRAM → bundle id（拿不到 __CFBundleIdentifier 时的兜底映射）
+    private static func bundleID(forProgram program: String) -> String? {
+        switch program {
+        case "WarpTerminal": "dev.warp.Warp-Stable"
+        case "iTerm.app": "com.googlecode.iterm2"
+        case "Apple_Terminal": "com.apple.Terminal"
+        case "vscode": "com.microsoft.VSCode"
+        case "ghostty": "com.mitchellh.ghostty"
+        case "WezTerm": "com.github.wez.wezterm"
+        default: nil
+        }
+    }
+
+    private func runShell(_ command: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        p.arguments = ["-lc", command]  // 登录 shell 拿到 PATH 里的 tmux
+        try? p.run()
+    }
+
+    private func runAppleScript(_ source: String) {
+        // NSAppleScript 须在主线程
+        var err: NSDictionary?
+        NSAppleScript(source: source)?.executeAndReturnError(&err)
+        if let err { NSLog("[Agent] applescript jump failed: \(err)") }
+    }
+
     // MARK: - 安装到 opencode（只通知，无双向）
 
     /// 写一个 opencode 插件，把事件转成与 Claude Code 同 schema 的 JSONL（agent="opencode"），
@@ -197,6 +286,13 @@ final class AgentSessionService {
 
         const EVENTS = "\(path)"
         const last = new Map<string, string>()
+        // 终端定位（opencode 进程在终端里启动，env 含这些；用于点击跳转）
+        const TERM = {
+          term: process.env.TERM_PROGRAM ?? "",
+          term_bundle: process.env.__CFBundleIdentifier ?? "",
+          iterm_session: process.env.ITERM_SESSION_ID ?? "",
+          tmux_pane: process.env.TMUX_PANE ?? "",
+        }
 
         function emit(event: string, sessionID: string, cwd: string, message: string) {
           if (last.get(sessionID) === event) return  // 去抖：状态没变不重复写
@@ -205,7 +301,7 @@ final class AgentSessionService {
             fs.mkdirSync(path.dirname(EVENTS), { recursive: true })
             fs.appendFileSync(
               EVENTS,
-              JSON.stringify({ event, session_id: sessionID, cwd, message, agent: "opencode" }) + "\\n"
+              JSON.stringify({ event, session_id: sessionID, cwd, message, agent: "opencode", ...TERM }) + "\\n"
             )
           } catch {}
         }

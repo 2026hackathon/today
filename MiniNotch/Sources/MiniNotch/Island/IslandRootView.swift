@@ -11,6 +11,8 @@ struct IslandRootView: View {
     let notchSize: CGSize
     /// ⌘N / quickInput 的 AI 解析（AppDelegate 注入，走 AIService）
     let onParse: (String) async -> TodoDraft?
+    /// agentLanded 卡点击跳转终端（AppDelegate 注入，走 AgentSessionService）
+    var onJumpToAgent: (AgentSession) -> Void = { _ in }
 
     @State private var isHovering = false
     @State private var hoverTask: Task<Void, Never>?
@@ -138,6 +140,9 @@ struct IslandRootView: View {
 
         case .messageLanded(let message, let moreCount):
             MessageLandedCard(message: message, moreCount: moreCount)
+
+        case .agentLanded(let session):
+            AgentLandedCard(session: session, onJump: onJumpToAgent)
 
         case .expanded(let tab):
             if tab == .settings {

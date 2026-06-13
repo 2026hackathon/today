@@ -55,8 +55,8 @@ final class AppStore: ObservableObject {
     }
     /// 提醒事项任务完成/撤销 → EventKit 回写（calendarItemIdentifier, 完成态），AppDelegate 装配
     var onReminderCompletionChanged: ((String, Bool) -> Void)?
-    /// agent 一轮完成（转入 replied）→ 播放轻提示音，AppDelegate 装配（声音属 AppKit，不放 Core）
-    var onAgentReplied: (() -> Void)?
+    /// agent 一轮完成（转入 replied）→ 提示音 + 完成通知卡，AppDelegate 装配（声音/前台判断属 AppKit）
+    var onAgentReplied: ((AgentSession) -> Void)?
 
     // MARK: - Agent 会话（agent-session spec，借鉴 Vibe Island）
     // 独立于 todo：coding agent 的瞬态监控，只驱动收缩态徽章，不进任何列表。
@@ -78,6 +78,7 @@ final class AppStore: ObservableObject {
             return
         }
         var becameReplied = false
+        var replied: AgentSession?
         if let i = agentSessions.firstIndex(where: { $0.id == event.session_id }) {
             // 转入 replied 的瞬间（之前不是 replied）= agent 这一轮刚完成
             becameReplied = mapped == .replied && agentSessions[i].state != .replied
@@ -85,18 +86,23 @@ final class AppStore: ObservableObject {
             agentSessions[i].updatedAt = Date()
             if mapped == .waiting { agentSessions[i].message = event.message }
             if let cwd = event.cwd, !cwd.isEmpty { agentSessions[i].cwd = cwd }
+            if let term = event.terminal { agentSessions[i].terminal = term }
+            replied = agentSessions[i]
         } else {
             becameReplied = mapped == .replied  // 首个事件就是完成（少见但也算一次完成）
-            agentSessions.append(AgentSession(
+            let s = AgentSession(
                 id: event.session_id,
                 agent: event.agent ?? "Claude Code",
                 cwd: event.cwd,
                 state: mapped,
                 message: event.message,
-                updatedAt: Date()
-            ))
+                updatedAt: Date(),
+                terminal: event.terminal
+            )
+            agentSessions.append(s)
+            replied = s
         }
-        if becameReplied { onAgentReplied?() }
+        if becameReplied, let replied { onAgentReplied?(replied) }
     }
 
     /// 陈旧清理：working 超 30min / 其它超 2h 无更新 → 视为结束（agent 崩溃兜底）

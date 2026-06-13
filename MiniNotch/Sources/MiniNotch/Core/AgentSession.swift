@@ -16,6 +16,19 @@ enum AgentSessionState: String, Codable, Sendable {
     var needsAttention: Bool { self == .waiting || self == .replied }
 }
 
+/// 终端定位信息（hook/插件从所在终端环境变量捕获，用于点击跳转）
+struct TerminalRef: Equatable, Sendable {
+    var program: String?     // TERM_PROGRAM：WarpTerminal / iTerm.app / Apple_Terminal …
+    var bundleID: String?    // __CFBundleIdentifier：dev.warp.Warp-Stable …（激活用）
+    var itermSession: String? // ITERM_SESSION_ID：wNtNpN:UUID（iTerm 精确选中）
+    var tmuxPane: String?    // TMUX_PANE：%3（tmux 精确选中）
+
+    var isEmpty: Bool {
+        (bundleID ?? "").isEmpty && (program ?? "").isEmpty
+            && (itermSession ?? "").isEmpty && (tmuxPane ?? "").isEmpty
+    }
+}
+
 struct AgentSession: Identifiable, Equatable, Sendable {
     let id: String          // hook 的 session_id
     var agent: String       // "Claude Code" / "Codex" …
@@ -24,6 +37,8 @@ struct AgentSession: Identifiable, Equatable, Sendable {
     /// Notification 的 message（等待原因，如「需要权限运行 Bash」）
     var message: String?
     var updatedAt: Date
+    /// 终端定位（点击卡片跳转用，捕获不到则为 nil）
+    var terminal: TerminalRef?
 
     /// 项目名（cwd 末段，用于通知/跳转展示）
     var project: String? {
@@ -40,6 +55,19 @@ struct AgentEvent: Decodable, Sendable {
     let cwd: String?
     let message: String?
     let agent: String?
+    // 终端定位（hook/插件捕获，老事件缺失则为 nil）
+    var term: String?
+    var term_bundle: String?
+    var iterm_session: String?
+    var tmux_pane: String?
+
+    var terminal: TerminalRef? {
+        let ref = TerminalRef(
+            program: term, bundleID: term_bundle,
+            itermSession: iterm_session, tmuxPane: tmux_pane
+        )
+        return ref.isEmpty ? nil : ref
+    }
 
     /// hook 事件名 → 会话状态（nil = 不改变状态，如 PostToolUse）
     var mappedState: AgentSessionState? {

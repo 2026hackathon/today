@@ -716,6 +716,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("模拟 PR 新分配", #selector(debugPRAssign)),
             ("模拟 Agent 运行中", #selector(debugAgentWorking)),
             ("模拟 Agent 等待确认", #selector(debugAgentWaiting)),
+            ("模拟 Agent 完成（弹卡）", #selector(debugAgentDone)),
             ("清空 Agent 会话", #selector(debugAgentClear)),
             ("安装 Claude Code Hook", #selector(debugInstallAgentHook)),
             ("安装 opencode 插件", #selector(debugInstallOpenCodePlugin)),
@@ -739,12 +740,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         agentService.onEvent = { [weak self] event in
             self?.store.applyAgentEvent(event)
         }
-        // agent 一轮完成 → 轻提示音（柔和的 Glass 系统音，半音量；尊重动效开关）
-        store.onAgentReplied = { [weak self] in
-            guard self?.store.settings.effectsEnabled ?? true else { return }
-            if let sound = NSSound(named: "Glass") {
+        // agent 一轮完成 → 轻提示音 + 完成通知卡（agent-landed-jump spec）
+        store.onAgentReplied = { [weak self] session in
+            guard let self else { return }
+            if self.store.settings.effectsEnabled, let sound = NSSound(named: "Glass") {
                 sound.volume = 0.5
                 sound.play()
+            }
+            // 只在你不盯着该终端、且 island 处于收缩态时弹卡（不打扰）
+            let frontBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            let watching = session.terminal?.bundleID != nil && session.terminal?.bundleID == frontBundle
+            if self.store.islandState.isCompact, !watching {
+                self.store.present(.agentLanded(session: session))
             }
         }
         agentService.start()
@@ -765,6 +772,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             notchSize: notchSize,
             onParse: { [weak self] text in
                 try? await self?.currentAIService().parseQuickInput(text)
+            },
+            onJumpToAgent: { [weak self] session in
+                self?.agentService.jumpTo(session)
             }
         )
         .environmentObject(store)
@@ -904,6 +914,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             id: "demo-wait-\(store.waitingAgentCount + 1)", state: .waiting,
             project: "today", message: "需要权限运行 Bash"
         )
+    }
+
+    @objc private func debugAgentDone() {
+        // 先标记运行中再转完成，触发 onAgentReplied → 弹完成卡
+        let id = "demo-done-\(store.agentSessions.count + 1)"
+        store.debugUpsertAgentSession(id: id, state: .working, project: "today")
+        store.debugUpsertAgentSession(id: id, state: .replied, project: "today")
     }
 
     @objc private func debugAgentClear() { store.clearAgentSessions() }

@@ -52,6 +52,8 @@ enum IslandState: Equatable, Sendable {
     /// 新邮件消息降落卡（沿用 jiraLanded 样式/倒计时）：点击打开链接并标记已处理
     /// moreCount = 同轮其余新消息数（>0 聚合显示「N 条新消息」）
     case messageLanded(message: Message, moreCount: Int)
+    /// agent 一轮完成通知卡：倒计时自动收回，点击跳转对应终端 session
+    case agentLanded(session: AgentSession)
 
     // ── 展开态 ──
     case expanded(tab: PanelTab)
@@ -103,7 +105,7 @@ struct IslandGeometry: Equatable {
         case .hoverPreview:
             // 与 compact 同宽：悬停时壳体只向下拉伸，不发生横向跳变
             return .init(width: compactW + 150, height: nil, cornerRadius: DS.Radius.island)
-        case .newTask, .reminder, .jiraLanded, .messageLanded:
+        case .newTask, .reminder, .jiraLanded, .messageLanded, .agentLanded:
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)
         case .batch:
             return .init(width: 380, height: nil, cornerRadius: DS.Radius.island)

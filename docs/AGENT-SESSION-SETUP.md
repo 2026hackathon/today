@@ -44,6 +44,17 @@
 
 **完成音效**:会话转入「已回复」（Stop / session.idle）时播放一次柔和的系统音（Glass，半音量）。受设置里「动效」开关控制；想换音色改 `AppDelegate.setupAgentMonitor` 里的 `NSSound(named:)`（可选 Tink / Pop / Glass / Purr 等系统音）。
 
+**完成通知卡 + 跳转**:agent 完成且你**不在该终端前台**时,弹一张「✅ 已完成」卡（倒计时自动收回,与 Jira 降落卡同款；盯着该终端时不弹,只响一声）。点击卡片跳转到对应终端 session,精度取决于终端：
+
+| 终端 | 跳转效果 |
+|------|---------|
+| iTerm2 | 精确选中那个 session（AppleScript 按 `ITERM_SESSION_ID`）|
+| tmux | 选中那个 pane（`tmux select-pane`）|
+| Warp / Terminal / 其它 | 激活 App 到前台（无公开 pane 定位 API）|
+| 拿不到终端信息 | 兜底用 Finder 打开工作目录 |
+
+hook / 插件会从所在终端环境变量（`TERM_PROGRAM` / `__CFBundleIdentifier` / `ITERM_SESSION_ID` / `TMUX_PANE`）捕获定位信息。Claude Code 的 hook 脚本每次启动 App 自动更新；**opencode 插件需重新点一次「安装 opencode 插件」**才会带上终端捕获（或已安装时启动 App 会自动刷新）。
+
 ---
 
 ## 手动配置（不想用菜单 / 给其他 Mac）
