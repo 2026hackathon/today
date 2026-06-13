@@ -27,8 +27,10 @@ struct TodayPanel: View {
                 switch currentTab {
                 case .messages:
                     InboxHubPanel()   // 邮件消息 + @我提及，内部分段切换
-                case .inbox:
-                    InboxPanel()
+                case .tasks:
+                    TasksPanel()      // 全部未完成个人任务
+                case .workItems:
+                    WorkItemPanel()   // 全部 Jira/GitHub 工作项
                 case .agent:
                     AgentPanel()
                 default:
@@ -692,31 +694,38 @@ struct PanelTabBar: View {
     let current: PanelTab
 
     var body: some View {
-        // 单行不滚动（5 个 tab 放得下）；不再套 ScrollView，避免角标被裁、且与右侧图标同中线
-        HStack(spacing: 2) {
-            ForEach(visibleTabs, id: \.self) { tab in
-                PanelTabButton(
-                    title: tab.title,
-                    isActive: tab == current,
-                    badge: tab == .messages ? (store.unprocessedMessageCount + store.unreadMentions.count)
-                        : (tab == .agent ? store.waitingAgentCount : 0)
-                ) {
-                    guard tab != current else { return }
-                    store.present(.expanded(tab: tab))
+        // 概念页签变多（7 个），页签区横向滚动；右端 ＋/↻/⚙ 固定不随滚动。
+        // scrollClipDisabled 让未读角标能溢出滚动边界不被裁（concept-tabs spec）。
+        HStack(spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(visibleTabs, id: \.self) { tab in
+                        PanelTabButton(
+                            title: tab.title,
+                            isActive: tab == current,
+                            badge: tab == .messages ? (store.unprocessedMessageCount + store.unreadMentions.count)
+                                : (tab == .agent ? store.waitingAgentCount : 0)
+                        ) {
+                            guard tab != current else { return }
+                            store.present(.expanded(tab: tab))
+                        }
+                        // 拖动重排（settings tab 固定不参与）
+                        .draggable(tab.rawValue) { dragChip(tab) }
+                        .dropDestination(for: String.self) { items, _ in
+                            guard current != .settings, let raw = items.first,
+                                  let dragged = PanelTab(rawValue: raw) else { return false }
+                            store.moveTab(dragged, before: tab)
+                            return true
+                        }
+                    }
                 }
-                // 拖动重排（settings tab 固定不参与）
-                .draggable(tab.rawValue) { dragChip(tab) }
-                .dropDestination(for: String.self) { items, _ in
-                    guard current != .settings, let raw = items.first,
-                          let dragged = PanelTab(rawValue: raw) else { return false }
-                    store.moveTab(dragged, before: tab)
-                    return true
-                }
+                .padding(.vertical, 2) // 给角标留出溢出空间
             }
-            Spacer(minLength: 8)
+            .scrollClipDisabled()
+
             if current != .settings {
-                // 新建：手动输入 / ⌥Space 语音 / ⌘V 贴图识别（贴图功能已并入快速录入框）。
-                // 记住来源面板，取消/创建后回到面板继续操作，不一路收起到刘海
+                // 右端固定图标组——不随页签滚动
+                // 新建：手动输入 / ⌥Space 语音 / ⌘V 贴图识别（记住来源面板，完成后回面板）
                 PanelIconButton(symbol: "plus") { store.presentQuickInput() }
                 // 系统组：刷新（同步 Jira/日历）+ 设置
                 PanelRefreshButton()
@@ -911,24 +920,6 @@ struct PanelPriorityTag: View {
         } else {
             Text(priority.label).dsTag()
         }
-    }
-}
-
-// MARK: - Inbox/收藏 占位
-
-struct PanelPlaceholder: View {
-    let tab: PanelTab
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: tab == .inbox ? "tray" : "star")
-                .font(.system(size: 24))
-                .foregroundStyle(DS.Colors.text3)
-            Text("\(tab.title) 等待接入")
-                .font(DS.Fonts.button)
-                .foregroundStyle(DS.Colors.text3)
-        }
-        .frame(maxWidth: .infinity, minHeight: 380)
     }
 }
 

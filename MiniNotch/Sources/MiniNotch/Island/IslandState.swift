@@ -5,21 +5,26 @@ import Foundation
 // island 长什么样只由 IslandState 决定（island-shell spec）。
 // ============================================================
 
+// 页签 = 五大概念一一对应（concept-tabs）：Today 聚合 + 任务/工作项/日历事件/信息/Agent
+// + 合并时间线 Calendar。rawValue 稳定（持久化 tabOrder 用）。
 enum PanelTab: String, CaseIterable, Sendable {
     case today = "Today"
-    case calendar = "日历"
-    case messages = "消息"   // rawValue 稳定不变；现承载「收件」= 邮件消息 + @我提及（内部分段）
-    case inbox = "Inbox"
+    case tasks = "任务"        // Todo —— 全部未完成个人任务
+    case workItems = "工作项"  // WorkItem —— 全部 Jira/GitHub
+    case events = "日历事件"   // CalendarEvent —— 纯事件议程
+    case calendar = "日历"     // 合并时间线（事件 + 任务，later-into-calendar）
+    case messages = "消息"     // Message + Mention（内部分段）
     case agent = "Agent"
     case settings = "设置"
 
-    /// tab 显示名统一英文（产品指定）
     var title: String {
         switch self {
         case .today: "Today"
+        case .tasks: "任务"
+        case .workItems: "工作项"
+        case .events: "日历事件"
         case .calendar: "Calendar"
-        case .messages: "Inbox"   // 邮件消息 + @我提及 合并，面板内分段切换
-        case .inbox: "Later"      // 今日焦点之外的待办积压（未来截止 + To Do Jira）
+        case .messages: "信息"     // 邮件消息 + @我提及
         case .agent: "Agent"
         case .settings: "Settings"
         }

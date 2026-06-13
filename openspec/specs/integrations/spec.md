@@ -4,11 +4,11 @@
 TBD - created by archiving change todoisland-framework. Update Purpose after archive.
 ## Requirements
 ### Requirement: JiraService 协议
-框架 SHALL 定义 `JiraService.fetchAssignedTickets() -> [Todo]`；真实现轮询周期 60s；新 ticket SHALL 触发蓝色 Touchdown 动效。
+`JiraService.fetchAssignedTickets()` SHALL 返回 `[WorkItem]`（不再是 `[Todo]`），映射 issueKey→`key`、summary→`title`、status/statusCategory、priority、duedate→`updatedAt` 参考、assigner（changelog）、storyPoints（customfield_10025）。Mock 实现 SHALL 同步返回 `[WorkItem]` 供联调。
 
-#### Scenario: 新分配 ticket
-- **WHEN** 轮询发现新 jiraKey
-- **THEN** todo 加入 Jira 分组并播放蓝色任务降落动效
+#### Scenario: Jira 拉取产出 WorkItem
+- **WHEN** 调用 `fetchAssignedTickets()`
+- **THEN** 返回的每个元素是 `WorkItem`（source `.jira`），含 key/status/statusCategory/assigner/storyPoints
 
 ### Requirement: CalendarService 协议
 框架 SHALL 定义 `CalendarService.fetchTodayMeetings() -> [Meeting]`；真实现基于 EventKit 拉取今日所有日历事件并提取会议链接（6 大平台）。
@@ -47,30 +47,18 @@ MockJiraService SHALL 返回 3 条演示 ticket，MockCalendarService SHALL 返�
 - **THEN** 下个轮询周期起回到 Mock 演示数据，Debug「模拟 Jira 新分配」仍可用
 
 ### Requirement: Jira 同步镜像清理
-Jira 同步 SHALL 使列表镜像「当前 assign 给我的未完成 ticket」：本地未完成的 Jira todo 若 key 不在本次完整拉取结果中 SHALL 被移除；本地已完成的保留。RealJiraService SHALL 按 nextPageToken 分页拉全后再清理。
+同步镜像清理 SHALL 以 `WorkItem.key` 为准对 `workItems` 做 upsert/prune（替代原先对 `todos` 按 `jiraKey` 的清理）：本轮未返回的同源工作项被移除，已存在的更新可变字段，新出现的追加。
 
-#### Scenario: ticket 被转走
-- **WHEN** ticket 在 Jira 中改派他人或关闭，下一轮同步（≤60s）或手动刷新后
-- **THEN** 该 ticket 从 Today/Inbox 列表消失
-
-#### Scenario: Debug 模拟不清真实数据
-- **WHEN** 使用 Debug「模拟 Jira 新分配」（Mock 数据）
-- **THEN** 真实 ticket 不被清除（prune 关闭）
+#### Scenario: 同源 prune 不误伤
+- **WHEN** Jira 轮询返回集合 A，GitHub 轮询返回集合 B
+- **THEN** prune 仅作用于对应 source，互不影响
 
 ### Requirement: GitHub PR 拉取与通知
-`GitHubService` SHALL 通过 GitHub Search API 拉取待我 review（`review-requested:@me`）与指派给我（`assignee:@me`）的 open PR，按 PR URL 去重，映射为只读 todo（source=github，key=`repo#123`，作者作指派人，draft 降为低优先级）。同步 SHALL 复用外部镜像合并（按 github 来源清理），新 PR 且 compact 态 SHALL 弹通知卡（GitHub 紫）。Token 未配置时 SHALL 回退 Mock。
+`GitHubService.fetchMyPullRequests()` SHALL 返回 `[WorkItem]`（source `.github`），`key="repo#number"`、`status` 为「待 Review/已指派/Draft」、`assigner` 为 PR 作者、`url` 为 PR 页面。新 PR SHALL 通过降落卡通知（携带 `WorkItem`）。
 
-#### Scenario: 新 PR 请求我 review
-- **WHEN** 同事在 PR 上 request 我 review，下一轮轮询后
-- **THEN** 通知卡浮起（「新 PR 待处理」+ 作者 + repo#编号），倒计时后收入岛体，「今日任务」出现该 PR 行
-
-#### Scenario: PR 合并或移除 review 请求
-- **WHEN** PR 关闭/合并/取消 review 请求
-- **THEN** 下一轮同步后该行消失（镜像清理，不影响 Jira 来源）
-
-#### Scenario: 点击 PR 行
-- **WHEN** 点击 PR 行任意位置
-- **THEN** 浏览器打开 PR 页面（只读集成，不提供完成圈）
+#### Scenario: GitHub 拉取产出 WorkItem
+- **WHEN** 调用 `fetchMyPullRequests()`
+- **THEN** 返回 `WorkItem` 列表，key 形如 `repo#123`，可跳转 PR 页面
 
 ### Requirement: CalendarService 动态装配
 CalendarService 装配 SHALL 由 AppDelegate 按 EventKit 权限动态选择，而非硬编码 Mock。fullAccess 权限时用 EventKitCalendarService，否则降级到 MockCalendarService。每个轮询周期重新判定。

@@ -76,7 +76,7 @@ final class AppStore: ObservableObject {
     func pasteScreenshot() { onPasteScreenshot?() }
 
     /// tab 顺序（用户可拖动）：按 settings.tabOrder 排，新增/缺失的 tab 补到末尾
-    static let defaultTabs: [PanelTab] = [.today, .calendar, .messages, .inbox, .agent]
+    static let defaultTabs: [PanelTab] = [.today, .tasks, .workItems, .events, .messages, .agent, .calendar]
     var orderedVisibleTabs: [PanelTab] {
         let saved = settings.tabOrder.compactMap(PanelTab.init(rawValue:)).filter(Self.defaultTabs.contains)
         let rest = Self.defaultTabs.filter { !saved.contains($0) }
