@@ -42,6 +42,8 @@
 
 陈旧兜底:agent 异常退出没发结束事件时,运行中会话超 30min / 其它超 2h 无更新自动从计数移除。
 
+**完成音效**:会话转入「已回复」（Stop / session.idle）时播放一次柔和的系统音（Glass，半音量）。受设置里「动效」开关控制；想换音色改 `AppDelegate.setupAgentMonitor` 里的 `NSSound(named:)`（可选 Tink / Pop / Glass / Purr 等系统音）。
+
 ---
 
 ## 手动配置（不想用菜单 / 给其他 Mac）

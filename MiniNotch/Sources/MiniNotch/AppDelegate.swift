@@ -739,6 +739,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         agentService.onEvent = { [weak self] event in
             self?.store.applyAgentEvent(event)
         }
+        // agent 一轮完成 → 轻提示音（柔和的 Glass 系统音，半音量；尊重动效开关）
+        store.onAgentReplied = { [weak self] in
+            guard self?.store.settings.effectsEnabled ?? true else { return }
+            if let sound = NSSound(named: "Glass") {
+                sound.volume = 0.5
+                sound.play()
+            }
+        }
         agentService.start()
     }
 
