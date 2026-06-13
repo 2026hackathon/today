@@ -76,7 +76,6 @@ struct NewTaskCard: View {
         case .jira: "link"
         case .manual: "square.and.pencil"
         case .calendar: "calendar"
-        case .wechat: "message"
         case .github: "arrow.triangle.pull"
         }
     }

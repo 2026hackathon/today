@@ -4,7 +4,7 @@ import SwiftUI
 // Touchdown 任务降落涟漪（effects spec）
 //
 // 新任务卡片出现时播放：2-3 个同心圆从中心扩散淡出，
-// 颜色按来源区分（DS.sourceColor）：截图紫 / Jira 蓝 / 手动绿 / 日历橙 / 微信绿。
+// 颜色按来源区分（DS.sourceColor）：截图紫 / Jira 蓝 / 手动绿 / 日历橙。
 //
 // 两种用法：
 //

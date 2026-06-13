@@ -30,7 +30,7 @@ enum Priority: String, Codable, CaseIterable, Sendable {
 
 /// 任务来源 —— 决定 Touchdown 动效的涟漪颜色（见 DesignTokens.sourceColor）
 enum TodoSource: String, Codable, CaseIterable, Sendable {
-    case screenshot, jira, manual, calendar, wechat, github
+    case screenshot, jira, manual, calendar, github
 
     var label: String {
         switch self {
@@ -38,7 +38,6 @@ enum TodoSource: String, Codable, CaseIterable, Sendable {
         case .jira: "Jira"
         case .manual: "手动"
         case .calendar: "日历"
-        case .wechat: "微信"
         case .github: "GitHub"
         }
     }

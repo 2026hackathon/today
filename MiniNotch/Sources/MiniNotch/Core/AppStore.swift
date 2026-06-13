@@ -836,14 +836,12 @@ final class AppStore: ObservableObject {
     static func demoTodos() -> [Todo] {
         let cal = Calendar.current
         let today18 = cal.date(bySettingHour: 18, minute: 0, second: 0, of: Date())!
-        let tomorrow = cal.date(byAdding: .day, value: 1, to: Date())!
         let friday = cal.date(byAdding: .day, value: 3, to: Date())!
         return [
             Todo(title: "提交 PRD 草稿", source: .screenshot, priority: .high,
                  dueDate: today18, aiExplanation: "检测到「今晚之前」关键词 → 紧急"),
             Todo(title: "买生日礼物", source: .manual, priority: .medium, dueDate: friday),
             Todo(title: "健身打卡", source: .manual, priority: .low, tags: ["每天"]),
-            Todo(title: "回复客户邮件", source: .wechat, priority: .medium, dueDate: tomorrow),
             Todo(title: "整理本周会议纪要", source: .manual, priority: .low, dueDate: friday),
             Todo(title: "修复登录 bug", source: .jira, priority: .high,
                  jiraKey: "MD-1024", jiraURL: URL(string: "https://example.atlassian.net/browse/MD-1024"),

@@ -246,7 +246,6 @@ struct PersonalTodoRow: View {
         switch source {
         case .screenshot: "camera.fill"
         case .calendar: "calendar"
-        case .wechat: "message.fill"
         case .manual, .jira, .github: nil
         }
     }
