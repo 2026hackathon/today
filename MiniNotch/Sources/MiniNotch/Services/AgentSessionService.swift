@@ -291,17 +291,19 @@ final class AgentSessionService {
         NSWorkspace.shared.openApplication(at: url, configuration: cfg)
     }
 
-    /// TERM_PROGRAM → bundle id（拿不到 __CFBundleIdentifier 时的兜底映射）
+    /// TERM_PROGRAM → bundle id（拿不到 __CFBundleIdentifier 时的兜底）。
+    /// 大小写无关 + 包含匹配，避免因环境变量字符串变体（ghostty/Ghostty 等）漏判。
     nonisolated private static func bundleID(forProgram program: String) -> String? {
-        switch program {
-        case "WarpTerminal": "dev.warp.Warp-Stable"
-        case "iTerm.app": "com.googlecode.iterm2"
-        case "Apple_Terminal": "com.apple.Terminal"
-        case "vscode": "com.microsoft.VSCode"
-        case "ghostty": "com.mitchellh.ghostty"
-        case "WezTerm": "com.github.wez.wezterm"
-        default: nil
-        }
+        let p = program.lowercased()
+        if p.contains("warp") { return "dev.warp.Warp-Stable" }
+        if p.contains("iterm") { return "com.googlecode.iterm2" }
+        if p.contains("ghostty") { return "com.mitchellh.ghostty" }
+        if p.contains("wezterm") { return "com.github.wez.wezterm" }
+        if p.contains("kitty") { return "net.kovidgoyal.kitty" }
+        if p.contains("alacritty") { return "org.alacritty" }
+        if p == "vscode" { return "com.microsoft.VSCode" }
+        if p.contains("apple_terminal") || p == "terminal" { return "com.apple.Terminal" }
+        return nil
     }
 
     private func runShell(_ command: String) {
