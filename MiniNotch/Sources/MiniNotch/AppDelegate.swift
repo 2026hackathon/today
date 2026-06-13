@@ -188,7 +188,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } catch {
                     NSLog("[AI] parse failed: \(error)")
                     self.store.isAIWorking = false
-                    self.store.quickInputNotice = "AI 解析失败（网络/Key 问题），已切换手动录入"
+                    if case AIServiceError.notConfigured = error {
+                        self.store.quickInputNotice = "未配置 AI，无法解析截图。请在设置填入 API Key，或手动录入"
+                    } else {
+                        self.store.quickInputNotice = "AI 解析失败（网络/Key 问题），可手动录入"
+                    }
                     self.store.present(.quickInput)
                 }
             }
@@ -882,10 +886,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store.present(.newTask(draft: Self.draftFrom(todo)))
             return
         }
-        Task { @MainActor in
-            let drafts = (try? await mockAIService.parseScreenshot(Data())) ?? []
-            if let first = drafts.first { store.present(.newTask(draft: first)) }
-        }
+        store.present(.newTask(draft: MockAIService.demoScreenshotDraft()))
     }
 
     /// 优先用真实任务数据预览批量卡（不足 3 条才回退 Mock 会议纪要）

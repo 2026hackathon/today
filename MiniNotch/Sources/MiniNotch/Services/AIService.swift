@@ -53,17 +53,22 @@ final class MockAIService: AIService {
         if batchMode {
             return Self.meetingNotesDrafts()
         }
-        let cal = Calendar.current
-        let tonight = cal.date(bySettingHour: 18, minute: 0, second: 0, of: Date())
-        return [
-            TodoDraft(
-                title: "完成首页性能优化",
-                source: .screenshot,
-                priority: .high,
-                dueDate: tonight,
-                aiExplanation: "检测到「本周内」关键词，推断为今晚截止"
-            )
-        ]
+        // 截图理解需要视觉模型，Mock 无法真正解析。
+        // 绝不能编造一条固定假任务（会让用户误以为识别成功）——
+        // 未配置真实 AI 时如实抛出，由上层提示「无法解析」并切手动录入。
+        throw AIServiceError.notConfigured
+    }
+
+    /// Debug 菜单预览降落卡用的示例草稿（仅显式调试触发，非真实解析路径）
+    static func demoScreenshotDraft() -> TodoDraft {
+        let tonight = Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: Date())
+        return TodoDraft(
+            title: "完成首页性能优化",
+            source: .screenshot,
+            priority: .high,
+            dueDate: tonight,
+            aiExplanation: "检测到「本周内」关键词，推断为今晚截止"
+        )
     }
 
     /// 5 条会议纪要 drafts：前 3 条默认勾选，后 2 条不勾选，截止时间错开
