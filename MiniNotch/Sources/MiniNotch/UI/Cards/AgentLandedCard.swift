@@ -43,14 +43,23 @@ struct AgentLandedCard: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(accent)
-            Text("\(session.agent) 已完成")
+            Text("已完成")
                 .font(DS.Fonts.meta.weight(.medium))
                 .foregroundStyle(DS.Colors.text2)
             Spacer(minLength: 0)
+            // 来源（Claude Code / opencode）+ 终端名 + 项目
+            Text(session.agent).dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
+            if let term = session.terminal?.displayName {
+                HStack(spacing: 3) {
+                    Image(systemName: "terminal.fill").font(.system(size: 7))
+                    Text(term)
+                }
+                .dsTag()
+            }
             if let project = session.project {
                 Text(project).dsTag()
             }
@@ -80,14 +89,7 @@ struct AgentLandedCard: View {
 
     private var metaRow: some View {
         HStack(spacing: 6) {
-            if let term = session.terminal?.program, !term.isEmpty {
-                HStack(spacing: 3) {
-                    Image(systemName: "terminal.fill").font(.system(size: 8))
-                    Text(Self.termLabel(term))
-                }
-                .font(DS.Fonts.meta)
-                .foregroundStyle(DS.Colors.text2)
-            }
+            // 来源/终端已在头部展示；这里只留跳转提示
             Spacer(minLength: 0)
             Text(session.terminal != nil ? "点击跳转终端" : "点击打开目录")
                 .font(DS.Fonts.tag)

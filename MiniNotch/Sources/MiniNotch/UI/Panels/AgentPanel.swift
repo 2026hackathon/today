@@ -98,8 +98,7 @@ struct AgentSessionRow: View {
                     }
                 }
                 HStack(spacing: 6) {
-                    // 标题占了主行时，agent 名落到这里，状态色标注
-                    Text(session.displayName != nil ? "\(session.agent) · \(stateLabel)" : stateLabel)
+                    Text(stateLabel)
                         .font(DS.Fonts.meta)
                         .foregroundStyle(color)
                     if session.state == .waiting, let msg = session.message, !msg.isEmpty {
@@ -114,12 +113,17 @@ struct AgentSessionRow: View {
                 }
             }
             Spacer(minLength: 0)
-            // 行尾跳转箭头（hover 才显示）
-            Image(systemName: "arrow.up.forward.app")
-                .font(.system(size: 11))
-                .foregroundStyle(DS.Colors.text3)
-                .opacity(hovering ? 1 : 0)
-                .padding(.top, 2)
+            // 右侧：来源（Claude Code / opencode）+ 终端名（Warp / Ghostty …）
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(session.agent).dsTag(DS.Colors.accent, bg: DS.Colors.accentSoft)
+                if let term = session.terminal?.displayName {
+                    HStack(spacing: 3) {
+                        Image(systemName: "terminal.fill").font(.system(size: 7))
+                        Text(term)
+                    }
+                    .dsTag()
+                }
+            }
         }
         .padding(8)
         .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))

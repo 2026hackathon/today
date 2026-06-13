@@ -27,6 +27,21 @@ struct TerminalRef: Equatable, Sendable {
         (bundleID ?? "").isEmpty && (program ?? "").isEmpty
             && (itermSession ?? "").isEmpty && (tmuxPane ?? "").isEmpty
     }
+
+    /// 终端友好名（Warp / Ghostty / iTerm …），拿不到则 nil
+    var displayName: String? {
+        guard let p = program, !p.isEmpty else { return nil }
+        let s = p.lowercased()
+        if s.contains("warp") { return "Warp" }
+        if s.contains("iterm") { return "iTerm" }
+        if s.contains("ghostty") { return "Ghostty" }
+        if s.contains("wezterm") { return "WezTerm" }
+        if s.contains("kitty") { return "kitty" }
+        if s.contains("alacritty") { return "Alacritty" }
+        if s == "vscode" { return "VS Code" }
+        if s.contains("apple_terminal") || s == "terminal" { return "Terminal" }
+        return p
+    }
 }
 
 struct AgentSession: Identifiable, Equatable, Sendable {

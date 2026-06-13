@@ -172,12 +172,17 @@ final class AppStore: ObservableObject {
         dismiss()
     }
 
-    /// Agent 面板列表：需处理的（waiting/replied）在前，运行中在后，各按最近更新排
+    /// Agent 面板（tab）：全部会话，需处理的在前、运行中在后，各按最近更新排
     var sortedAgentSessions: [AgentSession] {
         agentSessions.sorted { a, b in
             if a.state.needsAttention != b.state.needsAttention { return a.state.needsAttention }
             return a.updatedAt > b.updatedAt
         }
+    }
+
+    /// Today 的 Agent 栏：只显示需要你处理的（已完成/等待确认），运行中的不在 Today 露出
+    var attentionAgentSessions: [AgentSession] {
+        sortedAgentSessions.filter { $0.state.needsAttention }
     }
 
     // MARK: - 日历权限（未授权时日历面板空态引导授权）

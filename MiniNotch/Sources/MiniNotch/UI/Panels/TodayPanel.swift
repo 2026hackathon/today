@@ -97,10 +97,10 @@ struct TodayPanel: View {
                     TaskRow(todo: todo)
                 }
             }
-            // agent 会话栏：运行中 / 待确认 / 已完成，点击跳转对应终端 session
-            if !store.sortedAgentSessions.isEmpty {
+            // agent 会话栏：只展示需要你处理的（已完成/待确认），运行中的不在 Today 露出
+            if !store.attentionAgentSessions.isEmpty {
                 PanelMiniDividerLabel(text: "Agent")
-                ForEach(store.sortedAgentSessions) { session in
+                ForEach(store.attentionAgentSessions) { session in
                     AgentSessionRow(
                         session: session,
                         onJump: { store.jumpToAgent(session) },
