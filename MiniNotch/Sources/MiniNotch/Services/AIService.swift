@@ -21,6 +21,35 @@ enum AIServiceError: Error {
     case invalidResponse
 }
 
+// MARK: - AI 调试日志（开发期排查识图/解析失败）
+
+/// 把 AI 调用的失败原因（HTTP 错误体 / 模型原始回复 / 解析异常）追加写到
+/// ~/Library/Application Support/MiniNotch/ai-debug.log，开发期可 `tail -f` 或经
+/// Debug 菜单「打开 AI 调试日志」直接查看。同时照常 NSLog（Console.app 可见）。
+enum AIDebugLog {
+    static var fileURL: URL { Persistence.baseDir.appendingPathComponent("ai-debug.log") }
+
+    private static let stamp: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm:ss"
+        return f
+    }()
+
+    static func record(_ message: String) {
+        NSLog("[AI] \(message)")
+        let line = "[\(stamp.string(from: Date()))] \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        let url = fileURL
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            handle.seekToEndOfFile()
+            handle.write(data)
+        } else {
+            try? data.write(to: url)
+        }
+    }
+}
+
 @MainActor
 protocol AIService: AnyObject {
     /// 截图 → 草稿列表。1 个 = newTask 单卡；≥3 个 = batch 批量卡（ai-pipeline spec）
@@ -416,7 +445,7 @@ final class OpenAIChatAIService: AIService {
         let drafts = try Self.decodeDrafts(reply, source: .screenshot)
         if drafts.isEmpty {
             // 「未识别」诊断：把模型原话留在日志里，能直接看到它看见了什么
-            NSLog("[AI] screenshot parsed empty, raw reply: \(reply.prefix(300))")
+            AIDebugLog.record("截图识别为空 —— 模型原始回复：\(reply.prefix(600))")
         }
         return drafts
     }
@@ -574,7 +603,7 @@ final class OpenAIChatAIService: AIService {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            NSLog("[AI] HTTP \(code): \(String(data: data.prefix(300), encoding: .utf8) ?? "")")
+            AIDebugLog.record("HTTP \(code) @ \(model)：\(String(data: data.prefix(500), encoding: .utf8) ?? "")")
             throw AIServiceError.invalidResponse
         }
         guard let content = try JSONDecoder().decode(ChatResponse.self, from: data)
@@ -670,6 +699,7 @@ final class OpenAIChatAIService: AIService {
         }
         guard let data = text.data(using: .utf8),
               let envelope = try? JSONDecoder().decode(DraftsEnvelope.self, from: data) else {
+            AIDebugLog.record("解析失败（非预期 JSON）—— 模型原始回复：\(reply.prefix(600))")
             throw AIServiceError.invalidResponse
         }
         return envelope.todos.map { dto in

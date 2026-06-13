@@ -186,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.store.present(.quickInput)
                     }
                 } catch {
-                    NSLog("[AI] parse failed: \(error)")
+                    AIDebugLog.record("截图解析抛错：\(error)")
                     self.store.isAIWorking = false
                     if case AIServiceError.notConfigured = error {
                         self.store.quickInputNotice = "未配置 AI，无法解析截图。请在设置填入 API Key，或手动录入"
@@ -200,6 +200,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // F3 收藏：文件已落盘 favorites/，收藏 Tab 待接入（capture spec / owner C）
         captureService.onFavoriteCapture = { path in
             NSLog("[Capture] favorited: \(path)") // TODO(C): 收藏 Tab + AI 打标签
+        }
+        // 缺「屏幕录制」权限：弹快速录入给出明确提示，并打开系统设置对应面板（授权后需重启 App）
+        captureService.onScreenRecordingDenied = { [weak self] in
+            guard let self else { return }
+            self.store.isAIWorking = false
+            self.store.quickInputNotice = "截图需要「屏幕录制」权限：请在 系统设置 › 隐私与安全性 › 屏幕录制 里勾选本应用，授权后重启生效。可先手动录入"
+            self.store.present(.quickInput)
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
         }
         captureService.start()
         // 全局热键按 settings 注册，改键即热生效（Published 首发当前值 → 同时完成首次注册）。
@@ -828,6 +838,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("安装 Claude Code Hook", #selector(debugInstallAgentHook)),
             ("安装 opencode 插件", #selector(debugInstallOpenCodePlugin)),
             ("模拟新邮件", #selector(debugNewMail)),
+            ("打开 AI 调试日志", #selector(debugOpenAILog)),
             ("回到收缩态", #selector(debugDismiss)),
             ("重置演示数据", #selector(debugReset)),
         ]
@@ -1050,6 +1061,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             emailBaselineSynced = true
             await syncEmail(notify: true, services: [mockEmailService])
         }
+    }
+
+    /// 打开 AI 调试日志（识图/解析失败原因；不存在则先建空文件再打开）
+    @objc private func debugOpenAILog() {
+        let url = AIDebugLog.fileURL
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try? "（暂无 AI 调试记录）\n".data(using: .utf8)?.write(to: url)
+        }
+        NSWorkspace.shared.open(url)
     }
 
     @objc private func debugDismiss() { store.dismiss() }

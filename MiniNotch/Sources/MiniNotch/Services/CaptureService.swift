@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Foundation
 import Carbon.HIToolbox
 
@@ -38,6 +39,8 @@ protocol CaptureService: AnyObject {
     func recognize(pngData png: Data)
     /// 全局语音热键（⌥Space）：弹出快速录入并自动开始语音
     var onVoiceCapture: (() -> Void)? { get set }
+    /// 缺「屏幕录制」权限：截图只会抓到桌面壁纸（窗口内容被系统抹掉），此时引导去授权
+    var onScreenRecordingDenied: (() -> Void)? { get set }
 }
 
 @MainActor
@@ -46,6 +49,7 @@ final class HotkeyCaptureService: CaptureService {
     var onTodoCapture: ((Data, _ savedPath: String) -> Void)?
     var onFavoriteCapture: ((String) -> Void)?
     var onVoiceCapture: (() -> Void)?
+    var onScreenRecordingDenied: (() -> Void)?
 
     // MARK: Carbon 热键
 
@@ -202,6 +206,15 @@ final class HotkeyCaptureService: CaptureService {
     /// 跑 `screencapture -i <path>`：交互选区。esc 取消 → 文件不存在 → 静默返回（capture spec）。
     /// Process 的 terminationHandler 在后台线程触发，读完文件后 hop 回 MainActor。
     private func capture(into dir: URL, completion: @escaping @MainActor @Sendable (Data, String) -> Void) {
+        // 没「屏幕录制」权限时，screencapture 只会抓到桌面壁纸（窗口内容被系统抹掉）——
+        // 这正是「截图识别一直失败、抓到的全是壁纸」的根因。先检测，缺权限就触发系统弹窗
+        // 并把 App 加进「屏幕录制」列表，再引导用户去打开（授权后需重启 App 生效）。
+        guard CGPreflightScreenCaptureAccess() else {
+            CGRequestScreenCaptureAccess()   // 首次会弹系统授权框，并把 App 登记进列表
+            onScreenRecordingDenied?()
+            return
+        }
+
         let filename = Self.filenameFormatter.string(from: Date()) + ".png"
         let fileURL = dir.appendingPathComponent(filename)
         let path = fileURL.path
