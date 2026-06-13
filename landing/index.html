@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MiniNotch — 刘海，是你的第二块屏</title>
+<meta name="description" content="把待办、日程、Jira、AI 晨晚报和 coding agent 状态收进 MacBook 的刘海里。一眼可见，顺手就办。" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          ink: "#0a0a0b",        // 近黑底（非纯黑，留深度）
+          ink2: "#121214",
+          line: "rgba(255,255,255,0.10)",
+          accent: "#6E8BFF",     // 唯一强调色：克制的蓝
+          warn: "#FF9F4A",       // 仅状态示意用
+        },
+        maxWidth: { content: "1120px" },
+      },
+    },
+  };
+</script>
+<style>
+  :root { color-scheme: dark; }
+  html { scroll-behavior: smooth; }
+  body {
+    /* Apple 系统字体：Mac 上就是 SF Pro，原生质感，且避开 Inter 这个 AI 默认 */
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC",
+      "Helvetica Neue", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* —— 刘海 + 灵动岛实时演示（纯 CSS，不依赖素材）—— */
+  .notchbar {
+    background: linear-gradient(180deg, #050506, #0a0a0b);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .island {
+    background: #000;
+    border-radius: 0 0 18px 18px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 14px 50px rgba(0,0,0,0.6);
+    animation: breathe 5.5s ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 14px 50px rgba(0,0,0,0.6); }
+    50%      { box-shadow: 0 0 0 1px rgba(110,139,255,0.25), 0 14px 60px rgba(110,139,255,0.18); }
+  }
+  .dot-pulse { animation: dotpulse 1.6s ease-in-out infinite; }
+  @keyframes dotpulse { 0%,100%{opacity:.4} 50%{opacity:1} }
+
+  /* —— 滚动渐显 —— */
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1); }
+  .reveal.in { opacity: 1; transform: none; }
+
+  /* —— 待放素材的占位框 —— */
+  .slot {
+    border: 1px dashed rgba(255,255,255,0.18);
+    background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.015) 0 12px, transparent 12px 24px),
+      #0e0e10;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .island, .dot-pulse { animation: none; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+  }
+</style>
+</head>
+
+<body class="bg-ink text-white/90 selection:bg-accent/30">
+
+  <!-- 顶部导航：单行 -->
+  <header class="sticky top-0 z-50 backdrop-blur-md bg-ink/70 border-b border-line">
+    <nav class="max-w-content mx-auto h-14 px-5 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <span class="inline-block w-2.5 h-2.5 rounded-full bg-accent"></span>
+        <span class="font-semibold tracking-tight">MiniNotch</span>
+      </div>
+      <div class="hidden sm:flex items-center gap-7 text-sm text-white/55">
+        <a href="#what" class="hover:text-white transition">是什么</a>
+        <a href="#capture" class="hover:text-white transition">截图即待办</a>
+        <a href="#flow" class="hover:text-white transition">接入工作流</a>
+        <a href="#agent" class="hover:text-white transition">Agent</a>
+      </div>
+      <a href="#get" class="text-sm font-medium px-3.5 py-1.5 rounded-lg bg-white text-ink hover:bg-white/90 transition">下载</a>
+    </nav>
+  </header>
+
+  <!-- ===================== HERO ===================== -->
+  <section class="relative overflow-hidden">
+    <!-- 顶部刘海条 + 实时灵动岛 -->
+    <div class="notchbar h-9 relative flex justify-center">
+      <div class="island h-9 px-4 flex items-center gap-3 text-[12px] -mt-px">
+        <span class="text-white/70">⚑</span>
+        <span class="font-semibold">3</span>
+        <span class="text-accent dot-pulse">●</span>
+        <span class="text-white/45 ml-1 tabular-nums">26 min</span>
+      </div>
+    </div>
+
+    <div class="max-w-content mx-auto px-5 pt-20 pb-24 text-center">
+      <p class="reveal text-accent/90 text-sm font-medium tracking-wide mb-5">为 MacBook 刘海而生</p>
+      <h1 class="reveal text-4xl sm:text-6xl font-semibold tracking-tight leading-[1.05]">
+        刘海，是你的<br class="hidden sm:block" />第二块屏。
+      </h1>
+      <p class="reveal mt-6 text-lg text-white/55 max-w-xl mx-auto leading-relaxed">
+        把今天要做的事、临近的截止、Jira 工作项和 coding agent 的状态，
+        收进那块本来空着的黑条里。抬眼可见，顺手就办。
+      </p>
+      <div class="reveal mt-9 flex items-center justify-center gap-3">
+        <a href="#get" class="px-5 py-2.5 rounded-xl bg-white text-ink font-medium hover:-translate-y-0.5 active:translate-y-0 transition">免费下载</a>
+        <a href="#what" class="px-5 py-2.5 rounded-xl border border-line text-white/80 hover:bg-white/5 transition">看看怎么用</a>
+      </div>
+      <p class="reveal mt-5 text-xs text-white/35">macOS 14+ · Apple Silicon &amp; Intel</p>
+    </div>
+  </section>
+
+  <!-- ===================== WHAT ===================== -->
+  <section id="what" class="border-t border-line">
+    <div class="max-w-content mx-auto px-5 py-24 grid lg:grid-cols-2 gap-14 items-center">
+      <div class="reveal">
+        <h2 class="text-3xl sm:text-4xl font-semibold tracking-tight leading-tight">
+          一块会变形的黑条
+        </h2>
+        <p class="mt-5 text-white/55 leading-relaxed">
+          平时它只露一个数字和一个小图标，安静地待在刘海里。
+          有事发生时它会展开：任务降落、到期提醒、AI 解析、庆祝清空。
+          鼠标一悬停就拉开成完整面板，移开又收回去。
+        </p>
+        <ul class="mt-7 space-y-3 text-white/70 text-[15px]">
+          <li class="flex gap-3"><span class="text-accent">·</span> 收缩态只占两翼，不挡内容</li>
+          <li class="flex gap-3"><span class="text-accent">·</span> 悬停展开、移开收回，无需点击</li>
+          <li class="flex gap-3"><span class="text-accent">·</span> 临近 / 超期分级辉光，余光就能感知</li>
+        </ul>
+      </div>
+      <!-- 占位：灵动岛形变 GIF -->
+      <div class="reveal slot rounded-2xl aspect-[4/3] flex items-center justify-center">
+        <div class="text-center text-white/35 text-sm px-6">
+          <div class="text-2xl mb-2">🎬</div>
+          放这里：<b class="text-white/60">灵动岛形变循环 GIF</b><br />
+          (compact → 悬停展开 → 切 tab → 收回，3~5s)<br />
+          <span class="text-white/25">assets/morph.gif</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 截图即待办 ===================== -->
+  <section id="capture" class="border-t border-line bg-ink2">
+    <div class="max-w-content mx-auto px-5 py-24 grid lg:grid-cols-2 gap-14 items-center">
+      <!-- 占位：截图识别 demo（左右换位，避免与上一段同构）-->
+      <div class="reveal slot rounded-2xl aspect-[4/3] flex items-center justify-center order-last lg:order-first">
+        <div class="text-center text-white/35 text-sm px-6">
+          <div class="text-2xl mb-2">📸</div>
+          放这里：<b class="text-white/60">F2 截图 → AI 解析出待办</b> 的录屏<br />
+          <span class="text-white/25">assets/capture.gif</span>
+        </div>
+      </div>
+      <div class="reveal">
+        <p class="text-accent/90 text-sm font-medium mb-3">截图即待办</p>
+        <h2 class="text-3xl sm:text-4xl font-semibold tracking-tight leading-tight">
+          看到要做的事，截一下就进清单
+        </h2>
+        <p class="mt-5 text-white/55 leading-relaxed">
+          聊天里别人催的、邮件里答应的、会议纪要定的——按 F2 框选，
+          AI 直接读出标题、截止时间和优先级，落成一张「任务降落卡」，
+          确认即入库。也能 ⌘V 把剪贴板的图直接喂进去。
+        </p>
+        <div class="mt-7 flex flex-wrap gap-2 text-[13px]">
+          <span class="px-3 py-1 rounded-full border border-line text-white/60">自动判截止</span>
+          <span class="px-3 py-1 rounded-full border border-line text-white/60">高 / 中 / 低 优先级</span>
+          <span class="px-3 py-1 rounded-full border border-line text-white/60">无法识别会如实提示</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 三个能力（非等分卡，错落 bento）===================== -->
+  <section class="border-t border-line">
+    <div class="max-w-content mx-auto px-5 py-24">
+      <h2 class="reveal text-3xl sm:text-4xl font-semibold tracking-tight text-center mb-14">
+        不只是个待办
+      </h2>
+      <div class="grid md:grid-cols-3 gap-5">
+        <!-- 大格：AI 晨晚报 跨两列 -->
+        <div class="reveal md:col-span-2 rounded-2xl border border-line bg-ink2 p-7 flex flex-col justify-between">
+          <div>
+            <p class="text-accent/90 text-sm font-medium mb-2">AI 晨报 / 晚报</p>
+            <h3 class="text-2xl font-semibold tracking-tight">早上理清今天，晚上收个尾</h3>
+            <p class="mt-3 text-white/55 leading-relaxed max-w-md">
+              综合优先级和截止，挑出该先做的几件；进行中的工单单列，待办只给计数。
+              语气像个话不多的同事，不灌鸡汤。
+            </p>
+          </div>
+          <div class="slot rounded-xl h-40 mt-6 flex items-center justify-center text-white/30 text-xs">
+            放这里：晨报面板截图 · assets/report.png
+          </div>
+        </div>
+        <!-- 小格：分级提醒 -->
+        <div class="reveal rounded-2xl border border-line bg-ink2 p-7">
+          <p class="text-warn text-sm font-medium mb-2">到期分级提醒</p>
+          <h3 class="text-2xl font-semibold tracking-tight">余光就知道急不急</h3>
+          <p class="mt-3 text-white/55 leading-relaxed text-[15px]">
+            1 小时内橙色弱呼吸，15 分钟橙脉冲，过期红色强闪。
+            不用盯着，刘海的光会告诉你。
+          </p>
+          <div class="mt-6 flex items-center gap-2 text-xs text-white/40">
+            <span class="w-3 h-3 rounded-full bg-white/20"></span>正常
+            <span class="w-3 h-3 rounded-full bg-warn ml-2"></span>临近
+            <span class="w-3 h-3 rounded-full bg-red-500 ml-2"></span>超期
+          </div>
+        </div>
+        <!-- 小格：语音速记 -->
+        <div class="reveal rounded-2xl border border-line bg-ink2 p-7">
+          <p class="text-accent/90 text-sm font-medium mb-2">语音速记</p>
+          <h3 class="text-2xl font-semibold tracking-tight">⌥Space 说一句</h3>
+          <p class="mt-3 text-white/55 leading-relaxed text-[15px]">
+            一个全局快捷键，开口说，自动转成待办。快捷键还能自己改键，避免和别的软件撞。
+          </p>
+        </div>
+        <!-- 大格：日历时间线 跨两列 -->
+        <div class="reveal md:col-span-2 rounded-2xl border border-line bg-ink2 p-7">
+          <p class="text-accent/90 text-sm font-medium mb-2">日历时间线</p>
+          <h3 class="text-2xl font-semibold tracking-tight">事件、提醒、个人任务，一条线看完</h3>
+          <p class="mt-3 text-white/55 leading-relaxed max-w-lg">
+            接入 Apple 日历与提醒事项，未来两周的安排和你自己的待办并到同一条时间线上，
+            当天该处理的自动进「今日」。
+          </p>
+          <div class="slot rounded-xl h-32 mt-6 flex items-center justify-center text-white/30 text-xs">
+            放这里：日历页签截图 · assets/calendar.png
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 接入工作流（真实 logo）===================== -->
+  <section id="flow" class="border-t border-line bg-ink2">
+    <div class="max-w-content mx-auto px-5 py-24 text-center">
+      <h2 class="reveal text-3xl sm:text-4xl font-semibold tracking-tight">接进你已经在用的工具</h2>
+      <p class="reveal mt-4 text-white/55 max-w-xl mx-auto">
+        指派给你的 Jira、待 review 的 PR、@你的 Confluence、收件箱里要紧的邮件，
+        统一收到刘海，不用来回切。
+      </p>
+      <div class="reveal mt-12 flex flex-wrap items-center justify-center gap-x-12 gap-y-8">
+        <img src="https://cdn.simpleicons.org/jira/ffffff" alt="Jira" class="h-8 opacity-70 hover:opacity-100 transition" />
+        <img src="https://cdn.simpleicons.org/github/ffffff" alt="GitHub" class="h-8 opacity-70 hover:opacity-100 transition" />
+        <img src="https://cdn.simpleicons.org/confluence/ffffff" alt="Confluence" class="h-8 opacity-70 hover:opacity-100 transition" />
+        <img src="https://cdn.simpleicons.org/gmail/ffffff" alt="Gmail" class="h-8 opacity-70 hover:opacity-100 transition" />
+        <img src="https://cdn.simpleicons.org/microsoftoutlook/ffffff" alt="Outlook" class="h-8 opacity-70 hover:opacity-100 transition" />
+        <img src="https://cdn.simpleicons.org/applecalendar/ffffff" alt="Apple Calendar" class="h-8 opacity-70 hover:opacity-100 transition" />
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Agent 监控（差异化亮点）===================== -->
+  <section id="agent" class="border-t border-line">
+    <div class="max-w-content mx-auto px-5 py-24 grid lg:grid-cols-2 gap-14 items-center">
+      <div class="reveal">
+        <p class="text-accent/90 text-sm font-medium mb-3">给写代码的人</p>
+        <h2 class="text-3xl sm:text-4xl font-semibold tracking-tight leading-tight">
+          你的 agent 跑到哪了，刘海告诉你
+        </h2>
+        <p class="mt-5 text-white/55 leading-relaxed">
+          挂上 Claude Code / opencode 的 hook，刘海实时显示有几个会话在跑、哪个在等你确认。
+          一轮跑完弹一张卡，点一下直接跳回那个终端窗口。
+          不用再守着终端等它问你「要不要继续」。
+        </p>
+        <ul class="mt-7 space-y-3 text-white/70 text-[15px]">
+          <li class="flex gap-3"><span class="text-accent">·</span> 运行中 / 等待确认 实时计数</li>
+          <li class="flex gap-3"><span class="text-accent">·</span> 完成弹卡，点击跳回终端 / iTerm / tmux pane</li>
+          <li class="flex gap-3"><span class="text-accent">·</span> 子任务完成不打扰，只有整轮结束才提示</li>
+        </ul>
+      </div>
+      <div class="reveal slot rounded-2xl aspect-[4/3] flex items-center justify-center">
+        <div class="text-center text-white/35 text-sm px-6">
+          <div class="text-2xl mb-2">🤖</div>
+          放这里：<b class="text-white/60">Agent 会话卡 + 跳转终端</b> 录屏<br />
+          <span class="text-white/25">assets/agent.gif</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 结尾 CTA ===================== -->
+  <section id="get" class="border-t border-line bg-ink2">
+    <div class="max-w-content mx-auto px-5 py-28 text-center">
+      <h2 class="reveal text-4xl sm:text-5xl font-semibold tracking-tight leading-tight">
+        让刘海替你盯着今天
+      </h2>
+      <p class="reveal mt-5 text-white/55 max-w-md mx-auto">下载就能用。配置 Jira / 邮件 / AI 是可选的，不配也能当个顺手的待办。</p>
+      <div class="reveal mt-9 flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="#" class="px-6 py-3 rounded-xl bg-white text-ink font-semibold hover:-translate-y-0.5 transition">下载 MiniNotch</a>
+        <!-- 占位：二维码 -->
+        <div class="slot rounded-xl w-28 h-28 flex items-center justify-center text-white/30 text-[11px] text-center">二维码<br/>assets/qr.png</div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="border-t border-line">
+    <div class="max-w-content mx-auto px-5 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-white/40">
+      <span>MiniNotch · 为 MacBook 刘海而生</span>
+      <span>macOS 14+ · Apple Silicon &amp; Intel</span>
+    </div>
+  </footer>
+
+  <script>
+    // 滚动渐显：进入视口加 .in（once）。reduced-motion 时 CSS 已直接显示。
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+      }
+    }, { threshold: 0.15 });
+    document.querySelectorAll(".reveal").forEach((el, i) => {
+      el.style.transitionDelay = (i % 4) * 60 + "ms"; // 同屏元素轻微错峰
+      io.observe(el);
+    });
+  </script>
+</body>
+</html>
