@@ -267,7 +267,10 @@ final class EventKitCalendarService: CalendarService {
             // 所以映射在回调队列上用 nonisolated 方法就地完成，只回传 Sendable 的 [Meeting]。
             for predicate in [incompletePredicate, completedPredicate] {
                 let reminderMeetings: [Meeting] = await withCheckedContinuation { continuation in
-                    eventStore.fetchReminders(matching: predicate) { reminders in
+                    // @Sendable：剥离 MainActor 隔离。否则闭包继承 fetchMeetings 的 @MainActor，
+                    // Swift 6 会插入「必须在主执行器」断言，而 EventKit 在后台队列回调 → SIGTRAP 崩溃。
+                    // 捕获的 range/continuation/Self.mapReminders 均 Sendable，安全
+                    eventStore.fetchReminders(matching: predicate) { @Sendable reminders in
                         continuation.resume(returning: Self.mapReminders(reminders ?? [], dueWithin: range))
                     }
                 }
