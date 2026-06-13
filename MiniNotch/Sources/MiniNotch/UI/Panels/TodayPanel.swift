@@ -332,9 +332,10 @@ struct PersonalTodoRow: View {
         }
     }
 
-    /// 时间文案：当天裸 HH:mm（与 MeetingRow 一致）；非当天紧凑日期标签
+    /// 时间轨只承载时刻：任意一天都显示裸 HH:mm（与 MeetingRow 一致），
+    /// 所属日期交给分组段头表达——不出现「明天 / 周X / M/d」等日期文案。
     private func timeLabel(_ due: Date) -> String {
-        Calendar.current.isDateInToday(due) ? PanelFormat.hm(due) : due.dsShortLabel
+        PanelFormat.hm(due)
     }
 
     /// 时间颜色：完成灰 / 超期红 / 常规与 MeetingRow 一致（text1）
