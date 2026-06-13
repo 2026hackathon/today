@@ -9,3 +9,9 @@ xcuserdata/
 .agents/
 .claude/skills/
 skills-lock.json
+
+# Swift 编译中间产物（误落在 MiniNotch/ 根，应在 .build/）
+MiniNotch/*.o
+MiniNotch/*.d
+MiniNotch/*.swiftdeps
+MiniNotch/*.swiftdeps~
