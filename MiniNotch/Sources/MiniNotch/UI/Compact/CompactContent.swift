@@ -56,15 +56,15 @@ struct CompactContent: View {
             case .idle:
                 // 左翼维持「托盘 + 今日总数」（含只读 ticket，与面板口径一致）；
                 // "做完了"的打钩放右翼（用户指定布局）
-                compactIcon("tray", color: DS.Colors.text3)
+                compactIcon("flag.fill", color: DS.Colors.text3)
                 countText("\(store.todayFocusCount)", color: DS.Colors.text3)
             case .near:
                 // 提前 1h 档：弱脉冲（F-04 动效分级）
-                SoftPulseIcon(systemName: "clock", color: DS.Colors.text2)
+                SoftPulseIcon(systemName: "clock.fill", color: DS.Colors.text2)
                 countText("\(store.todayFocusCount)", color: DS.Colors.text1)
             case .urgent:
                 // 15min 内 = 预警橙；已过期才转红（F-04：中=橙色脉冲，极强=红持续闪烁）
-                BlinkingIcon(systemName: "exclamationmark.triangle", color: urgentColor)
+                BlinkingIcon(systemName: "exclamationmark.triangle.fill", color: urgentColor)
                 countText("\(store.todayFocusCount)", color: urgentColor)
             case .aiWorking:
                 PulsingSparkleIcon()
@@ -72,13 +72,13 @@ struct CompactContent: View {
                     .font(DS.Fonts.compactSide.weight(.bold))
                     .foregroundStyle(DS.Colors.accent)
             case .justCompleted:
-                compactIcon("checkmark", color: DS.Colors.success)
+                compactIcon("checkmark.circle.fill", color: DS.Colors.success)
                 countText("\(store.todayFocusCount)", color: DS.Colors.text1)
             case .celebrate:
                 compactIcon("crown.fill", color: DS.Colors.gold)
                 countText("0", color: DS.Colors.text1)
             default: // .normal 及兜底
-                compactIcon("tray", color: DS.Colors.text2)
+                compactIcon("flag.fill", color: DS.Colors.text2)
                 countText("\(store.todayFocusCount)", color: DS.Colors.text1)
             }
         }
@@ -92,7 +92,7 @@ struct CompactContent: View {
         switch state {
         case .idle:
             // 今日可动手的事清零 → 右翼绿色打钩（用户指定放这一侧）
-            compactIcon("checkmark", color: DS.Colors.success)
+            compactIcon("checkmark.circle.fill", color: DS.Colors.success)
         case .celebrate:
             sideText("清空", color: DS.Colors.text3)
         case .near:
