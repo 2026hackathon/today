@@ -26,9 +26,9 @@ struct QuickInputCard: View {
     @State private var manualDue: Date?
     @State private var manualPriority: Priority = .medium
     @State private var parseTask: Task<Void, Never>?
-    /// ⌘V 贴入的截图（缩略图预览用）与其 PNG 字节（送 AI 识别用）
-    @State private var pastedImage: NSImage?
-    @State private var pastedPNG: Data?
+    /// ⌘V 贴入的截图（缩略图预览用）与其 PNG 字节（送 AI 识别用）；支持连续贴多张
+    @State private var pastedImages: [NSImage] = []
+    @State private var pastedPNGs: [Data] = []
     /// ⌘V 本地按键监听（捕获剪贴板图片，纯文本放行给输入框）
     @State private var pasteMonitor: Any?
     @FocusState private var focused: Bool
@@ -42,9 +42,9 @@ struct QuickInputCard: View {
 
             inputRow
 
-            if let img = pastedImage {
-                // 贴了图：只展示截图缩略图，回车走 AI 识图（不再走文本解析/手动表单）
-                imageAttachment(img)
+            if !pastedImages.isEmpty {
+                // 贴了图：只展示截图缩略图（多张排成一排），回车走 AI 识图（不再走文本解析/手动表单）
+                imageAttachment
             } else {
                 if !skipAI {
                     if phase == .parsing {
@@ -96,15 +96,15 @@ struct QuickInputCard: View {
         }
     }
 
-    /// 剪贴板有图就吃进输入框，返回是否已处理（处理则吞掉 ⌘V，纯文本放行）
+    /// 剪贴板有图就吃进输入框（追加到已贴列表，支持连续贴多张），返回是否已处理
     private func capturePastedImage() -> Bool {
         guard let image = NSImage(pasteboard: .general),
               let png = Self.pngData(from: image)
         else { return false }
         parseTask?.cancel()
         phase = .idle
-        pastedImage = image
-        pastedPNG = png
+        pastedImages.append(image)
+        pastedPNGs.append(png)
         store.quickInputNotice = nil
         return true
     }
@@ -120,43 +120,59 @@ struct QuickInputCard: View {
         return png
     }
 
-    /// 已贴入的截图缩略图 + 移除按钮
-    private func imageAttachment(_ image: NSImage) -> some View {
-        HStack(spacing: 10) {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.s))
-                .overlay(
-                    RoundedRectangle(cornerRadius: DS.Radius.s)
-                        .stroke(DS.Colors.border, lineWidth: 1)
-                )
-            VStack(alignment: .leading, spacing: 2) {
-                Text("已粘贴截图")
+    /// 已贴入的截图缩略图（多张排成一排，逐张可删）+ 文案
+    private var imageAttachment: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(pastedImages.enumerated()), id: \.offset) { idx, image in
+                        thumb(image, index: idx)
+                    }
+                }
+                .padding(.horizontal, 18)
+            }
+            HStack(spacing: 6) {
+                Text(pastedImages.count > 1 ? "已粘贴 \(pastedImages.count) 张截图" : "已粘贴截图")
                     .font(DS.Fonts.button)
                     .foregroundStyle(DS.Colors.text1)
-                Text("回车开始 AI 识图，自动创建待办")
+                Text("· 可继续 ⌘V 添加，回车开始 AI 识图")
                     .font(DS.Fonts.meta)
                     .foregroundStyle(DS.Colors.text3)
             }
-            Spacer()
-            Button {
-                pastedImage = nil
-                pastedPNG = nil
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(DS.Colors.text3)
-            }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 18)
         }
-        .padding(.horizontal, 18)
         .padding(.bottom, 14)
         .overlay(alignment: .top) {
             Rectangle().fill(DS.Colors.border).frame(height: 1)
         }
         .padding(.top, 12)
+    }
+
+    /// 单张缩略图 + 右上角删除角标
+    private func thumb(_ image: NSImage, index: Int) -> some View {
+        Image(nsImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.s))
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.s)
+                    .stroke(DS.Colors.border, lineWidth: 1)
+            )
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    guard pastedImages.indices.contains(index) else { return }
+                    pastedImages.remove(at: index)
+                    pastedPNGs.remove(at: index)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(DS.Colors.text1)
+                        .background(Circle().fill(DS.Colors.islandBG))
+                }
+                .buttonStyle(.plain)
+                .offset(x: 5, y: -5)
+            }
     }
 
     private var isParsed: Bool {
@@ -299,7 +315,7 @@ struct QuickInputCard: View {
     private func scheduleParse(_ input: String) {
         parseTask?.cancel()
         // 贴图模式下文本只是备注，不触发文本解析
-        guard pastedImage == nil, !skipAI else { return }
+        guard pastedImages.isEmpty, !skipAI else { return }
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             phase = .idle
@@ -449,15 +465,15 @@ struct QuickInputCard: View {
                 phase = .idle
             }
             .buttonStyle(DSGhostButtonStyle(fullWidth: false))
-            .disabled(skipAI || pastedImage != nil)
-            .opacity(skipAI || pastedImage != nil ? 0.4 : 1)
+            .disabled(skipAI || !pastedImages.isEmpty)
+            .opacity(skipAI || !pastedImages.isEmpty ? 0.4 : 1)
 
             Spacer()
 
             Button("取消") { store.closeQuickInput() }
                 .buttonStyle(DSGhostButtonStyle(fullWidth: false))
 
-            Button(pastedImage != nil ? "识图创建" : "创建") { create() }
+            Button(!pastedImages.isEmpty ? "识图创建" : "创建") { create() }
                 .buttonStyle(DSPrimaryButtonStyle(fullWidth: false))
                 .disabled(createDisabled)
                 .opacity(createDisabled ? 0.4 : 1)
@@ -470,15 +486,15 @@ struct QuickInputCard: View {
     }
 
     private var createDisabled: Bool {
-        pastedPNG == nil && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        pastedPNGs.isEmpty && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func create() {
         parseTask?.cancel()
         // 贴了图：走与 F2 截图相同的 AI 识别流水线（识别完落 newTask/批量卡）。
         // 先回落 compact，让 isAIWorking 驱动识图流光；识别成功/失败由流水线接管呈现。
-        if let png = pastedPNG {
-            store.recognizeImage(png)
+        if !pastedPNGs.isEmpty {
+            store.recognizeImages(pastedPNGs)
             store.dismiss()   // 识图走 AI 流水线：须回落 compact 播流光，再由流水线弹 newTask
             return
         }

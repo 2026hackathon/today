@@ -225,7 +225,23 @@ struct PersonalTodoRow: View {
                         }
                         .dsTag()
                     }
-                    if let symbol = Self.sourceSymbol(todo.source) {
+                    // 截图来源且有图：小相机可点，点击用「预览」打开全部原图（多图带数量角标）
+                    if todo.source == .screenshot, !todo.screenshotPaths.isEmpty {
+                        Button {
+                            ScreenshotViewer.open(todo.screenshotPaths)
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "camera.fill").font(.system(size: 9))
+                                if todo.screenshotPaths.count > 1 {
+                                    Text("\(todo.screenshotPaths.count)")
+                                }
+                            }
+                            .dsTag(DS.Colors.text2)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(todo.screenshotPaths.count > 1 ? "查看 \(todo.screenshotPaths.count) 张原始截图" : "查看原始截图")
+                    } else if let symbol = Self.sourceSymbol(todo.source) {
                         Image(systemName: symbol)
                             .font(.system(size: 9))
                             .dsTag()
@@ -233,9 +249,9 @@ struct PersonalTodoRow: View {
                 }
             }
             Spacer(minLength: 0)
-            // 截图来源：行尾缩略图，点击用「预览」打开原图
-            if let path = todo.screenshotPath {
-                ScreenshotThumb(path: path)
+            // 截图来源：行尾缩略图（多图叠角标），点击用「预览」打开全部原图
+            if !todo.screenshotPaths.isEmpty {
+                ScreenshotThumb(paths: todo.screenshotPaths)
             }
             // 删除按钮（悬停显示）：本地任务直接删；苹果来源项删除前确认（会真删苹果日历/提醒）
             if hovering && store.canDelete(todo) {
@@ -301,13 +317,37 @@ struct PersonalTodoRow: View {
     }
 }
 
-// MARK: - 截图缩略图（行尾，点击看原图）
+// MARK: - 截图查看（单张/多张统一入口：用「预览」打开，多张落到同一个窗口）
+
+enum ScreenshotViewer {
+    /// 打开全部存在的截图原图。多张时优先用「预览」一个窗口打开；取不到预览则逐张打开兜底。
+    static func open(_ paths: [String]) {
+        let urls = paths
+            .filter { FileManager.default.fileExists(atPath: $0) }
+            .map { URL(fileURLWithPath: $0) }
+        guard !urls.isEmpty else { return }
+        if urls.count == 1 {
+            NSWorkspace.shared.open(urls[0])
+            return
+        }
+        if let preview = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview") {
+            NSWorkspace.shared.open(urls, withApplicationAt: preview, configuration: NSWorkspace.OpenConfiguration())
+        } else {
+            urls.forEach { NSWorkspace.shared.open($0) }
+        }
+    }
+}
+
+// MARK: - 截图缩略图（行尾，点击看原图；多图叠数量角标，点击打开全部）
 
 struct ScreenshotThumb: View {
-    let path: String
+    let paths: [String]
     @State private var image: NSImage?
     @State private var missing = false
     @State private var hovering = false
+
+    /// 缩略图取第一张；其余靠角标提示数量
+    private var firstPath: String { paths.first ?? "" }
 
     var body: some View {
         Group {
@@ -321,11 +361,10 @@ struct ScreenshotThumb: View {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(hovering ? DS.Colors.text2 : DS.Colors.border, lineWidth: 1)
                     )
-                    .onTapGesture {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: path))
-                    }
+                    .overlay(alignment: .bottomTrailing) { countBadge }
+                    .onTapGesture { ScreenshotViewer.open(paths) }
                     .onHover { hovering = $0 }
-                    .help("点击查看原始截图")
+                    .help(helpText)
             } else if missing {
                 // 原图文件已被清理：降级为占位图标，不崩溃
                 RoundedRectangle(cornerRadius: 4)
@@ -343,11 +382,29 @@ struct ScreenshotThumb: View {
                     .help("原图已不可用")
             }
         }
-        .task(id: path) {
-            let thumb = Self.thumbnail(for: path)
+        .task(id: firstPath) {
+            let thumb = Self.thumbnail(for: firstPath)
             image = thumb
             missing = thumb == nil
         }
+    }
+
+    /// 多图右下角「N」角标
+    @ViewBuilder private var countBadge: some View {
+        if paths.count > 1 {
+            Text("\(paths.count)")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(DS.Colors.text1)
+                .padding(.horizontal, 3)
+                .frame(minWidth: 12, minHeight: 12)
+                .background(DS.Colors.islandBG.opacity(0.85), in: Capsule())
+                .overlay(Capsule().stroke(DS.Colors.border, lineWidth: 0.5))
+                .padding(2)
+        }
+    }
+
+    private var helpText: String {
+        paths.count > 1 ? "点击查看 \(paths.count) 张原始截图" : "点击查看原始截图"
     }
 
     /// 解码并缓存小尺寸缩略图（避免列表滚动反复解码原图）

@@ -52,8 +52,9 @@ enum AIDebugLog {
 
 @MainActor
 protocol AIService: AnyObject {
-    /// 截图 → 草稿列表。1 个 = newTask 单卡；≥3 个 = batch 批量卡（ai-pipeline spec）
-    func parseScreenshot(_ imageData: Data) async throws -> [TodoDraft]
+    /// 截图 → 草稿列表。1 个 = newTask 单卡；≥3 个 = batch 批量卡（ai-pipeline spec）。
+    /// 支持多张图（快速录入连续贴多张）：一次调用把所有图喂给视觉模型一起理解。
+    func parseScreenshots(_ imagesData: [Data]) async throws -> [TodoDraft]
     /// 自然语言一句话 → 单个草稿（⌘N 快速输入）
     func parseQuickInput(_ text: String) async throws -> TodoDraft
     func generateMorningReport(_ ctx: ReportContext) async throws -> String
@@ -80,7 +81,7 @@ final class MockAIService: AIService {
 
     // MARK: 截图解析
 
-    func parseScreenshot(_ imageData: Data) async throws -> [TodoDraft] {
+    func parseScreenshots(_ imagesData: [Data]) async throws -> [TodoDraft] {
         try? await Task.sleep(for: .seconds(1.2)) // 模拟网络延迟
         if batchMode {
             return Self.meetingNotesDrafts()
@@ -419,9 +420,10 @@ final class OpenAIChatAIService: AIService {
 
     // MARK: AIService
 
-    func parseScreenshot(_ imageData: Data) async throws -> [TodoDraft] {
+    func parseScreenshots(_ imagesData: [Data]) async throws -> [TodoDraft] {
         let system = """
         你是任务提取助手。从用户的截图（聊天记录/会议纪要/邮件等）中提取待办事项。
+        用户可能一次给多张截图——它们通常描述同一件事的不同片段，请综合所有图再提取。
         只输出 JSON 对象：{"todos": [{"title": "...", "priority": "high|medium|low", \
         "kind": "event|reminder|task", \
         "dueDate": "yyyy-MM-dd HH:mm" 或 null, "recurrence": "每天"/"每周一"等周期描述（非周期为 null）, \
@@ -437,10 +439,15 @@ final class OpenAIChatAIService: AIService {
         reminderLeadMinutes 按性质定：会议/评审/需提前准备的事 60-120（早知道好准备）；\
         普通任务 30；吃饭/喝水/打卡等即兴小事 5-10。无截止时间可省略。
         """
-        let content: [[String: Any]] = [
-            ["type": "text", "text": "提取这张截图里的待办事项"],
-            ["type": "image_url", "image_url": ["url": "data:image/png;base64,\(imageData.base64EncodedString())"]],
+        var content: [[String: Any]] = [
+            ["type": "text", "text": imagesData.count > 1
+                ? "提取这 \(imagesData.count) 张截图里的待办事项（它们可能是同一件事）"
+                : "提取这张截图里的待办事项"],
         ]
+        for data in imagesData {
+            content.append(["type": "image_url",
+                            "image_url": ["url": "data:image/png;base64,\(data.base64EncodedString())"]])
+        }
         let reply = try await chat(system: system, userContent: content, jsonMode: true)
         let drafts = try Self.decodeDrafts(reply, source: .screenshot)
         if drafts.isEmpty {
@@ -776,10 +783,10 @@ final class AnthropicAIService: AIService {
         self.apiKey = apiKey
     }
 
-    func parseScreenshot(_ imageData: Data) async throws -> [TodoDraft] {
+    func parseScreenshots(_ imagesData: [Data]) async throws -> [TodoDraft] {
         guard !apiKey.isEmpty else { throw AIServiceError.notConfigured }
         // TODO: B 接真实 LLM 调用
-        // 1. imageData → base64，构造 Anthropic Messages API vision 请求
+        // 1. imagesData → base64，构造 Anthropic Messages API vision 请求（每张一个 image block）
         // 2. system prompt 要求输出 JSON 数组 [{title, priority, dueDate, aiExplanation}]
         // 3. JSONDecoder 解析 → [TodoDraft]（失败 throw .invalidResponse）
         throw AIServiceError.notImplemented

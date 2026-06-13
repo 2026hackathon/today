@@ -234,8 +234,9 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
     var completedAt: Date?
     var snoozedUntil: Date?
     var snoozeCount = 0
-    /// 原始截图文件路径（截图来源时有值）
-    var screenshotPath: String?
+    /// 原始截图文件路径（截图来源时有值；支持一条任务挂多张图）。
+    /// 旧数据为单个 `screenshotPath`，解码时自动迁移进数组（见下方 init(from:)）。
+    var screenshotPaths: [String] = []
     /// AI 紧急度判断依据，如「检测到『今晚之前』关键词」
     var aiExplanation: String?
     var tags: [String] = []
@@ -278,7 +279,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         id: UUID = UUID(), title: String, note: String? = nil,
         source: TodoSource = .manual, kind: DraftKind = .task, priority: Priority = .medium,
         dueDate: Date? = nil, createdAt: Date = Date(), completedAt: Date? = nil,
-        snoozedUntil: Date? = nil, snoozeCount: Int = 0, screenshotPath: String? = nil,
+        snoozedUntil: Date? = nil, snoozeCount: Int = 0, screenshotPaths: [String] = [],
         aiExplanation: String? = nil, tags: [String] = [],
         calendarEventId: String? = nil, reminderLeadMinutes: Int? = nil
     ) {
@@ -286,7 +287,7 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         self.source = source; self.kind = kind; self.priority = priority
         self.dueDate = dueDate; self.createdAt = createdAt; self.completedAt = completedAt
         self.snoozedUntil = snoozedUntil; self.snoozeCount = snoozeCount
-        self.screenshotPath = screenshotPath
+        self.screenshotPaths = screenshotPaths
         self.aiExplanation = aiExplanation; self.tags = tags
         self.calendarEventId = calendarEventId
         self.reminderLeadMinutes = reminderLeadMinutes
@@ -308,12 +309,21 @@ struct Todo: Identifiable, Codable, Equatable, Sendable {
         completedAt = try? c.decodeIfPresent(Date.self, forKey: .completedAt)
         snoozedUntil = try? c.decodeIfPresent(Date.self, forKey: .snoozedUntil)
         snoozeCount = (try? c.decodeIfPresent(Int.self, forKey: .snoozeCount)) ?? 0
-        screenshotPath = try? c.decodeIfPresent(String.self, forKey: .screenshotPath)
+        screenshotPaths = (try? c.decodeIfPresent([String].self, forKey: .screenshotPaths)) ?? []
+        // 向后兼容：旧数据是单个 screenshotPath（独立 key，不在合成 CodingKeys 里），迁移进数组
+        if screenshotPaths.isEmpty,
+           let lc = try? decoder.container(keyedBy: LegacyKeys.self),
+           let legacy = try? lc.decodeIfPresent(String.self, forKey: .screenshotPath), !legacy.isEmpty {
+            screenshotPaths = [legacy]
+        }
         aiExplanation = try? c.decodeIfPresent(String.self, forKey: .aiExplanation)
         tags = (try? c.decodeIfPresent([String].self, forKey: .tags)) ?? []
         calendarEventId = try? c.decodeIfPresent(String.self, forKey: .calendarEventId)
         reminderLeadMinutes = try? c.decodeIfPresent(Int.self, forKey: .reminderLeadMinutes)
     }
+
+    /// 旧版单图字段 key（已被 screenshotPaths 取代，仅解码迁移时用）
+    private enum LegacyKeys: String, CodingKey { case screenshotPath }
 }
 
 // MARK: - TodoDraft（AI 解析的中间产物，用户确认后转 Todo）
@@ -328,7 +338,8 @@ struct TodoDraft: Identifiable, Codable, Equatable, Sendable {
     var priority: Priority = .medium
     var dueDate: Date?
     var aiExplanation: String?
-    var screenshotPath: String?
+    /// 原始截图路径（支持多张）；批量识别时同一截图的多条草稿共享同一组路径
+    var screenshotPaths: [String] = []
     /// 批量识别卡片中是否勾选
     var isSelected = true
     /// 周期标签（如「每天」「每周一」），AI 解析或手动添加；完成时据此自动排下一次
@@ -339,7 +350,7 @@ struct TodoDraft: Identifiable, Codable, Equatable, Sendable {
     func toTodo() -> Todo {
         Todo(
             title: title, note: note, source: source, kind: kind, priority: priority,
-            dueDate: dueDate, screenshotPath: screenshotPath,
+            dueDate: dueDate, screenshotPaths: screenshotPaths,
             aiExplanation: aiExplanation, tags: tags,
             // 提前量未显式给出时，按 kind 兜底（日程提前更久 / 提醒中等 / 任务交回优先级）
             reminderLeadMinutes: reminderLeadMinutes ?? kind.defaultLeadMinutes

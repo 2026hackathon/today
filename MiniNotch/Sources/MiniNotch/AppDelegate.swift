@@ -168,13 +168,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func wireServices() {
         // F2 截图 → AI 解析 → 任务降落 / 批量识别（ai-pipeline spec）
-        captureService.onTodoCapture = { [weak self] data, path in
+        captureService.onTodoCapture = { [weak self] images, paths in
             guard let self else { return }
             self.store.isAIWorking = true
             Task { @MainActor in
                 do {
-                    var drafts = try await self.currentAIService().parseScreenshot(data)
-                    for i in drafts.indices { drafts[i].screenshotPath = path }
+                    var drafts = try await self.currentAIService().parseScreenshots(images)
+                    for i in drafts.indices { drafts[i].screenshotPaths = paths }
                     self.store.isAIWorking = false
                     if drafts.count >= 3 {
                         self.store.present(.batch(drafts: drafts))
@@ -286,9 +286,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // 快速录入框 ⌘V 贴图后回车：拿到 PNG 直接走与截图相同的识别流水线
-        store.onRecognizeImage = { [weak self] png in
-            self?.captureService.recognize(pngData: png)
+        // 快速录入框 ⌘V 贴图后回车：拿到 PNG（可多张）直接走与截图相同的识别流水线
+        store.onRecognizeImages = { [weak self] pngs in
+            self?.captureService.recognize(pngDataList: pngs)
         }
 
         // ⌥Space 全局语音速记：弹快速录入并自动开始聆听
@@ -950,7 +950,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             let mock = MockAIService()
             mock.batchMode = true
-            let drafts = (try? await mock.parseScreenshot(Data())) ?? []
+            let drafts = (try? await mock.parseScreenshots([Data()])) ?? []
             store.present(.batch(drafts: drafts))
         }
     }

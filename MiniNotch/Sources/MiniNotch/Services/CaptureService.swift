@@ -21,8 +21,9 @@ import Carbon.HIToolbox
 
 @MainActor
 protocol CaptureService: AnyObject {
-    /// F2 截图完成：(图像数据, 落盘路径) → AI 解析链路
-    var onTodoCapture: ((Data, _ savedPath: String) -> Void)? { get set }
+    /// 截图完成：(图像数据, 落盘路径) → AI 解析链路。
+    /// 统一走数组：F2 单张 = 1 元素；快速录入连续贴多张 = 多元素，归到同一条任务。
+    var onTodoCapture: ((_ images: [Data], _ savedPaths: [String]) -> Void)? { get set }
     /// F3 收藏完成：落盘路径（不走 AI）
     var onFavoriteCapture: ((String) -> Void)? { get set }
     /// 安装事件 handler（应用启动时调用一次）
@@ -37,6 +38,8 @@ protocol CaptureService: AnyObject {
     func captureFromPasteboard() -> Bool
     /// 已拿到 PNG 字节（如快速录入里 ⌘V 贴的图）：落盘后走与 F2 相同的 onTodoCapture 管线
     func recognize(pngData png: Data)
+    /// 多张 PNG（快速录入连续贴多张）：全部落盘后一次走 AI 流水线，归到同一条任务
+    func recognize(pngDataList pngs: [Data])
     /// 全局语音热键（⌥Space）：弹出快速录入并自动开始语音
     var onVoiceCapture: (() -> Void)? { get set }
     /// 缺「屏幕录制」权限：截图只会抓到桌面壁纸（窗口内容被系统抹掉），此时引导去授权
@@ -46,7 +49,7 @@ protocol CaptureService: AnyObject {
 @MainActor
 final class HotkeyCaptureService: CaptureService {
 
-    var onTodoCapture: ((Data, _ savedPath: String) -> Void)?
+    var onTodoCapture: ((_ images: [Data], _ savedPaths: [String]) -> Void)?
     var onFavoriteCapture: ((String) -> Void)?
     var onVoiceCapture: (() -> Void)?
     var onScreenRecordingDenied: (() -> Void)?
@@ -151,7 +154,7 @@ final class HotkeyCaptureService: CaptureService {
 
     func captureForTodo() {
         capture(into: Persistence.screenshotsDir) { [weak self] data, path in
-            self?.onTodoCapture?(data, path)
+            self?.onTodoCapture?([data], [path])
         }
     }
 
@@ -174,16 +177,29 @@ final class HotkeyCaptureService: CaptureService {
 
     /// 已拿到 PNG 字节（如快速录入里 ⌘V 贴的图）：落盘后走与 F2 截图相同的 AI 流水线
     func recognize(pngData png: Data) {
-        guard !png.isEmpty else { return }
-        let filename = Self.filenameFormatter.string(from: Date()) + "-paste.png"
-        let fileURL = Persistence.screenshotsDir.appendingPathComponent(filename)
-        do {
-            try png.write(to: fileURL)
-        } catch {
-            NSLog("[Capture] 贴图落盘失败: \(error)")
-            return
+        recognize(pngDataList: [png])
+    }
+
+    /// 多张 PNG（快速录入连续贴多张）：全部落盘后一次性走 AI 流水线，归到同一条任务。
+    /// 任一张落盘失败只跳过该张，不影响其余；全部失败则静默返回。
+    func recognize(pngDataList pngs: [Data]) {
+        var images: [Data] = []
+        var paths: [String] = []
+        for (i, png) in pngs.enumerated() where !png.isEmpty {
+            // 同批多张时间戳可能相同，加序号后缀避免互相覆盖
+            let suffix = pngs.count > 1 ? "-paste-\(i + 1)" : "-paste"
+            let filename = Self.filenameFormatter.string(from: Date()) + "\(suffix).png"
+            let fileURL = Persistence.screenshotsDir.appendingPathComponent(filename)
+            do {
+                try png.write(to: fileURL)
+                images.append(png)
+                paths.append(fileURL.path)
+            } catch {
+                NSLog("[Capture] 贴图落盘失败: \(error)")
+            }
         }
-        onTodoCapture?(png, fileURL.path)
+        guard !images.isEmpty else { return }
+        onTodoCapture?(images, paths)
     }
 
     /// NSImage → PNG 字节（位图重编码）。失败返回 nil。
