@@ -17,14 +17,15 @@ enum PanelTab: String, CaseIterable, Sendable {
     case agent = "Agent"
     case settings = "设置"
 
+    /// tab 显示名统一英文
     var title: String {
         switch self {
         case .today: "Today"
-        case .tasks: "任务"
-        case .workItems: "工作项"
-        case .events: "日历事件"
+        case .tasks: "Tasks"
+        case .workItems: "Work"
+        case .events: "Events"
         case .calendar: "Calendar"
-        case .messages: "信息"     // 邮件消息 + @我提及
+        case .messages: "Inbox"    // 邮件消息 + @我提及
         case .agent: "Agent"
         case .settings: "Settings"
         }
