@@ -251,6 +251,8 @@ struct PersonalTodoRow: View {
         }
         .padding(8)
         .background(hovering ? DS.Colors.surface1 : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+        // 整行（含右侧空白）参与命中测试，删除按钮不再只在文字上方才出现
+        .contentShape(Rectangle())
         .onHover { hovering = $0 }
         // 右键：编辑（开编辑卡）/ 快速改优先级（无需进卡）/ 删除
         .contextMenu {
@@ -273,6 +275,10 @@ struct PersonalTodoRow: View {
         ) {
             Button("删除", role: .destructive) { store.delete(todo) }
             Button("取消", role: .cancel) {}
+        }
+        // 弹窗期间抑制悬停移出自动收起（任何关闭路径都经此对称减计数）
+        .onChange(of: confirmingDelete) { _, presented in
+            store.dialogPresentedCount += presented ? 1 : -1
         }
     }
 
@@ -556,6 +562,8 @@ struct MeetingRow: View {
                 }
             }
         }
+        // 整行（含右侧空白）参与命中测试，删除按钮不再只在文字上方才出现
+        .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .opacity(isCompleted || meeting.status == .ended ? 0.65 : 1)
         .confirmationDialog(
@@ -564,6 +572,10 @@ struct MeetingRow: View {
         ) {
             Button("删除", role: .destructive) { store.deleteMeeting(meeting) }
             Button("取消", role: .cancel) {}
+        }
+        // 弹窗期间抑制悬停移出自动收起（任何关闭路径都经此对称减计数）
+        .onChange(of: confirmingDelete) { _, presented in
+            store.dialogPresentedCount += presented ? 1 : -1
         }
     }
 

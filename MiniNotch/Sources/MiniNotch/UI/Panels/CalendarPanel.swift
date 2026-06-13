@@ -41,9 +41,14 @@ struct CalendarPanel: View {
     /// 合并 meetings 与本地个人任务为按日期分组的时间线
     private var dayGroups: [DayGroup] {
         let cal = Calendar.current
+        // 展示窗：昨天 ~ 今天 +15 天（仅过滤展示，不改后台同步深度）
+        let today = cal.startOfDay(for: Date())
+        let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
+        let windowEnd = cal.date(byAdding: .day, value: 15, to: today)!
         var timedByDay: [Date: [TimelineItem]] = [:]
 
-        for entry in store.meetingsByDate {
+        // 会议：仅纳入 [今天, +15]；昨天及更早的苹果项不进时间线
+        for entry in store.meetingsByDate where entry.date >= today && entry.date <= windowEnd {
             timedByDay[entry.date, default: []].append(contentsOf: entry.meetings.map(TimelineItem.meeting))
         }
 
@@ -51,14 +56,19 @@ struct CalendarPanel: View {
         for todo in store.calendarPersonalTodos {
             if let due = todo.effectiveDue {
                 let day = cal.startOfDay(for: due)
-                timedByDay[day, default: []].append(.todo(todo))
+                if day == yesterday {
+                    // 昨天分组仅留本地自定义且未完成的任务
+                    if !todo.isCompleted { timedByDay[day, default: []].append(.todo(todo)) }
+                } else if day >= today && day <= windowEnd {
+                    timedByDay[day, default: []].append(.todo(todo))
+                }
+                // 窗口外（前天及更早、+15 之后）丢弃
             } else {
                 untimed.append(todo)
             }
         }
 
         // 无固定时间任务统一挂在今天分组下；若今天本无任何项，仍建一个空分组承载
-        let today = cal.startOfDay(for: Date())
         if !untimed.isEmpty, timedByDay[today] == nil {
             timedByDay[today] = []
         }
@@ -102,7 +112,7 @@ struct CalendarPanel: View {
 
     private func groupedList(_ groups: [DayGroup]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            overviewRow
+            overviewRow(groups)
             ForEach(groups) { group in
                 DateSection(date: group.date, timed: group.timed, untimed: group.untimed)
             }
@@ -113,11 +123,19 @@ struct CalendarPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 概览行（对齐 Today 的问候行样式）：日程/提醒/个人任务分开计数
-    private var overviewRow: some View {
-        let eventCount = store.meetings.filter { !$0.isReminder }.count
-        let reminderCount = store.meetings.count - eventCount
-        let todoCount = store.calendarPersonalTodos.count
+    /// 概览行（对齐 Today 的问候行样式）：日程/提醒/个人任务分开计数。
+    /// 计数取自展示窗内的可见数据（与时间线一致），不含窗口外被过滤掉的项。
+    private func overviewRow(_ groups: [DayGroup]) -> some View {
+        var eventCount = 0, reminderCount = 0, todoCount = 0
+        for group in groups {
+            for item in group.timed {
+                switch item {
+                case .meeting(let m): if m.isReminder { reminderCount += 1 } else { eventCount += 1 }
+                case .todo: todoCount += 1
+                }
+            }
+            todoCount += group.untimed.count
+        }
         var parts: [String] = []
         if eventCount > 0 { parts.append("\(eventCount) 场日程") }
         if reminderCount > 0 { parts.append("\(reminderCount) 个提醒") }
