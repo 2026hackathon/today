@@ -112,7 +112,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func dismissOnFocusLoss() {
-        guard store.islandState.isDismissable else { return }
+        // 看截图大图（盖在岛上层的模态）期间不收起，关闭查看器后恢复
+        guard store.islandState.isDismissable, !store.screenshotViewerOpen else { return }
         store.dismiss()
     }
 

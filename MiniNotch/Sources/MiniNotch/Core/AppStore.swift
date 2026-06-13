@@ -283,6 +283,9 @@ final class AppStore: ObservableObject {
     /// 确认弹窗（删除苹果日程/提醒的二次确认）打开计数——>0 时悬停移出不自动收起，
     /// 否则鼠标移向弹窗按钮途中离开悬停区会把弹窗一起收掉。各行 confirmationDialog 对称 +1/-1。
     @Published var dialogPresentedCount = 0
+    /// 截图大图查看器（盖在岛上层的模态）打开中——看图是一次聚焦模态，期间灵动岛保持不动、
+    /// 不自动收起；查看器关闭时由其生命周期回调清零，恢复正常悬停/失焦收起。
+    @Published var screenshotViewerOpen = false
 
     /// 快速录入卡顶部的提示条（截图解析失败/未识别时由 AppDelegate 注入，dismiss 清除）
     @Published var quickInputNotice: String?

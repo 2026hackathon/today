@@ -190,7 +190,7 @@ struct IslandRootView: View {
                 // 菜单跟踪中（Debug/右键菜单）鼠标在菜单上不算离开（review-fixes #12）；
                 // 确认弹窗打开时（删除二次确认）也不收起，否则移向弹窗按钮途中会把弹窗一起收掉
                 guard !Task.isCancelled, !isHovering, !store.isMenuTracking,
-                      store.dialogPresentedCount == 0 else { return }
+                      store.dialogPresentedCount == 0, !store.screenshotViewerOpen else { return }
                 store.dismiss()
             }
         }

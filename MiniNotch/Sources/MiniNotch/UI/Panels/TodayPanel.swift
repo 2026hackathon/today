@@ -234,7 +234,7 @@ struct PersonalTodoRow: View {
                     // 截图来源且有图：小相机可点，点击用「预览」打开全部原图（多图带数量角标）
                     if todo.source == .screenshot, !todo.screenshotPaths.isEmpty {
                         Button {
-                            ScreenshotViewer.open(todo.screenshotPaths)
+                            ScreenshotViewer.open(todo.screenshotPaths, store: store)
                         } label: {
                             HStack(spacing: 3) {
                                 Image(systemName: "camera.fill").font(.system(size: 9))
@@ -326,21 +326,15 @@ struct PersonalTodoRow: View {
 // MARK: - 截图查看（单张/多张统一入口：用「预览」打开，多张落到同一个窗口）
 
 enum ScreenshotViewer {
-    /// 打开全部存在的截图原图。多张时优先用「预览」一个窗口打开；取不到预览则逐张打开兜底。
-    static func open(_ paths: [String]) {
-        let urls = paths
-            .filter { FileManager.default.fileExists(atPath: $0) }
-            .map { URL(fileURLWithPath: $0) }
-        guard !urls.isEmpty else { return }
-        if urls.count == 1 {
-            NSWorkspace.shared.open(urls[0])
-            return
-        }
-        if let preview = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview") {
-            NSWorkspace.shared.open(urls, withApplicationAt: preview, configuration: NSWorkspace.OpenConfiguration())
-        } else {
-            urls.forEach { NSWorkspace.shared.open($0) }
-        }
+    /// 在灵动岛上层弹出大图查看器（独立透明窗口，层级高于岛）。多张图带翻页。
+    /// 看图当作一次聚焦模态：打开期间置 `screenshotViewerOpen` 让灵动岛保持不动，
+    /// 关闭时清零恢复正常收起 —— 生命周期由查看器回调驱动，完全可控。
+    @MainActor static func open(_ paths: [String], store: AppStore) {
+        ScreenshotViewerWindowController.shared.show(
+            paths: paths,
+            onWillOpen: { store.screenshotViewerOpen = true },
+            onDidClose: { store.screenshotViewerOpen = false }
+        )
     }
 }
 
@@ -348,6 +342,7 @@ enum ScreenshotViewer {
 
 struct ScreenshotThumb: View {
     let paths: [String]
+    @EnvironmentObject var store: AppStore
     @State private var image: NSImage?
     @State private var missing = false
     @State private var hovering = false
@@ -368,7 +363,7 @@ struct ScreenshotThumb: View {
                             .stroke(hovering ? DS.Colors.text2 : DS.Colors.border, lineWidth: 1)
                     )
                     .overlay(alignment: .bottomTrailing) { countBadge }
-                    .onTapGesture { ScreenshotViewer.open(paths) }
+                    .onTapGesture { ScreenshotViewer.open(paths, store: store) }
                     .onHover { hovering = $0 }
                     .help(helpText)
             } else if missing {
