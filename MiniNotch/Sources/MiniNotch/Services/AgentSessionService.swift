@@ -119,22 +119,31 @@ final class AgentSessionService {
             d = json.load(sys.stdin)
         except Exception:
             d = {}
-        # 标题：UserPromptSubmit 直接带 prompt；Stop 等事件无 prompt 时，
-        # 从 transcript 读最后一条用户文本消息（保证完成卡也有标题，不依赖是否捕获到 prompt）
+        ev = d.get("hook_event_name", "")
+        # title = 你的提问（UserPromptSubmit 带 prompt），作 session 名兜底
         title = " ".join(d.get("prompt", "").split())
-        if not title:
+        # 完成事件才读 transcript（大文件，避免每次工具调用都扫）：
+        # name = 会话名（custom-title / agentName）；answer = agent 最后一条回复
+        name = ""
+        answer = ""
+        if ev in ("Stop", "SubagentStop"):
             tp = d.get("transcript_path", "")
             if tp and os.path.exists(tp):
                 try:
-                    last = ""
+                    last_a = ""
                     with open(tp) as tf:
                         for line in tf:
                             try:
                                 o = json.loads(line)
                             except Exception:
                                 continue
+                            t = o.get("type")
+                            if t == "custom-title" and o.get("customTitle"):
+                                name = o["customTitle"]
+                            elif t == "agent-name" and o.get("agentName") and not name:
+                                name = o["agentName"]
                             m = o.get("message", o)
-                            if m.get("role") == "user" or o.get("type") == "user":
+                            if m.get("role") == "assistant" or t == "assistant":
                                 c = m.get("content", "")
                                 if isinstance(c, list):
                                     c = " ".join(
@@ -142,17 +151,19 @@ final class AgentSessionService {
                                         if isinstance(p, dict) and p.get("type") == "text"
                                     )
                                 if isinstance(c, str) and c.strip():
-                                    last = c
-                    title = " ".join(last.split())
+                                    last_a = c
+                    answer = " ".join(last_a.split())
                 except Exception:
                     pass
         out = {
-            "event": d.get("hook_event_name", ""),
+            "event": ev,
             "session_id": d.get("session_id", ""),
             "cwd": d.get("cwd", ""),
             "message": d.get("message", ""),
             "agent": "Claude Code",
             "title": title[:80],
+            "name": name[:60],
+            "answer": answer[:120],
             "term": os.environ.get("TERM_PROGRAM", ""),
             "term_bundle": os.environ.get("__CFBundleIdentifier", ""),
             "iterm_session": os.environ.get("ITERM_SESSION_ID", ""),
@@ -322,17 +333,18 @@ final class AgentSessionService {
           tmux_pane: process.env.TMUX_PANE ?? "",
         }
 
-        const titles = new Map<string, string>()
+        const names = new Map<string, string>()
 
-        function emit(event: string, sessionID: string, cwd: string, message: string, title: string) {
-          if (title) titles.set(sessionID, title)
+        function emit(event: string, sessionID: string, cwd: string, message: string, name: string) {
+          if (name) names.set(sessionID, name)
           if (last.get(sessionID) === event) return  // 去抖：状态没变不重复写
           last.set(sessionID, event)
           try {
             fs.mkdirSync(path.dirname(EVENTS), { recursive: true })
             fs.appendFileSync(
               EVENTS,
-              JSON.stringify({ event, session_id: sessionID, cwd, message, agent: "opencode", title: titles.get(sessionID) ?? "", ...TERM }) + "\\n"
+              // name = opencode 自动会话名；answer 暂不抓（插件事件无最后回复，留空）
+              JSON.stringify({ event, session_id: sessionID, cwd, message, agent: "opencode", name: names.get(sessionID) ?? "", answer: "", ...TERM }) + "\\n"
             )
           } catch {}
         }
@@ -343,22 +355,22 @@ final class AgentSessionService {
               const p = event.properties ?? {}
               const sid = p.sessionID ?? p.sessionId ?? p.info?.id ?? directory
               // opencode 自动生成的 session 标题（session.updated/idle 的 info.title）
-              const title = (p.info?.title ?? "").slice(0, 80)
+              const name = (p.info?.title ?? "").slice(0, 60)
               switch (event.type) {
                 case "session.status":
-                  if (p.status?.type === "busy") emit("UserPromptSubmit", sid, directory, "", title)
+                  if (p.status?.type === "busy") emit("UserPromptSubmit", sid, directory, "", name)
                   break
                 case "session.updated":
                   emit(last.get(sid) ?? "UserPromptSubmit", sid, directory, "", title)
                   break
                 case "permission.updated":
-                  emit("Notification", sid, directory, "opencode 请求确认", title)
+                  emit("Notification", sid, directory, "opencode 请求确认", name)
                   break
                 case "permission.replied":
-                  emit("UserPromptSubmit", sid, directory, "", title)
+                  emit("UserPromptSubmit", sid, directory, "", name)
                   break
                 case "session.idle":
-                  emit("Stop", sid, directory, "", title)
+                  emit("Stop", sid, directory, "", name)
                   break
               }
             },

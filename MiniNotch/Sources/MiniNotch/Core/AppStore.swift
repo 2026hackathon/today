@@ -115,7 +115,10 @@ final class AppStore: ObservableObject {
             if mapped == .waiting { agentSessions[i].message = event.message }
             if let cwd = event.cwd, !cwd.isEmpty { agentSessions[i].cwd = cwd }
             if let term = event.terminal { agentSessions[i].terminal = term }
-            if let t = event.title, !t.isEmpty { agentSessions[i].title = t } // 保留已有标题，不被空值覆盖
+            // 非空才覆盖，保留已有值（Stop 不带 prompt、UserPromptSubmit 不带 name/answer）
+            if let t = event.title, !t.isEmpty { agentSessions[i].title = t }
+            if let n = event.name, !n.isEmpty { agentSessions[i].name = n }
+            if let a = event.answer, !a.isEmpty { agentSessions[i].answer = a }
             replied = agentSessions[i]
         } else {
             becameReplied = mapped == .replied  // 首个事件就是完成（少见但也算一次完成）
@@ -127,7 +130,9 @@ final class AppStore: ObservableObject {
                 message: event.message,
                 updatedAt: Date(),
                 terminal: event.terminal,
-                title: event.title?.isEmpty == false ? event.title : nil
+                title: event.title?.isEmpty == false ? event.title : nil,
+                name: event.name?.isEmpty == false ? event.name : nil,
+                answer: event.answer?.isEmpty == false ? event.answer : nil
             )
             agentSessions.append(s)
             replied = s

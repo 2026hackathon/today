@@ -87,9 +87,9 @@ struct AgentSessionRow: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                // 标题优先（session 标题/指令），没有则显示 agent 名
+                // 主行：会话名（custom-title / session.title），没有则 agent 名
                 HStack(spacing: 6) {
-                    Text(session.title?.isEmpty == false ? session.title! : session.agent)
+                    Text(session.displayName ?? session.agent)
                         .font(DS.Fonts.todoTitle)
                         .foregroundStyle(DS.Colors.text1)
                         .lineLimit(1)
@@ -99,7 +99,7 @@ struct AgentSessionRow: View {
                 }
                 HStack(spacing: 6) {
                     // 标题占了主行时，agent 名落到这里，状态色标注
-                    Text(session.title?.isEmpty == false ? "\(session.agent) · \(stateLabel)" : stateLabel)
+                    Text(session.displayName != nil ? "\(session.agent) · \(stateLabel)" : stateLabel)
                         .font(DS.Fonts.meta)
                         .foregroundStyle(color)
                     if session.state == .waiting, let msg = session.message, !msg.isEmpty {

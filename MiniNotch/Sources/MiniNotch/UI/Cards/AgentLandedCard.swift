@@ -63,17 +63,17 @@ struct AgentLandedCard: View {
     }
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // 优先显示 session 标题（你给 agent 的指令）；没有则通用文案
-            Text(session.title?.isEmpty == false ? session.title! : "等你 review / 下一步")
+        VStack(alignment: .leading, spacing: 5) {
+            // 主行：会话名（custom-title / opencode session.title），无则提问兜底
+            Text(session.displayName ?? "已完成一轮")
                 .font(DS.Fonts.cardTitle)
                 .foregroundStyle(DS.Colors.text1)
+                .lineLimit(1)
+            // 次行：agent 这轮的回答（Claude Code 从 transcript 取），无则通用文案
+            Text(session.answer?.isEmpty == false ? session.answer! : "等你 review / 下一步")
+                .font(DS.Fonts.meta)
+                .foregroundStyle(DS.Colors.text2)
                 .lineLimit(2)
-            if session.title?.isEmpty == false {
-                Text("等你 review / 下一步")
-                    .font(DS.Fonts.meta)
-                    .foregroundStyle(DS.Colors.text3)
-            }
         }
         .padding(.bottom, 10)
     }
