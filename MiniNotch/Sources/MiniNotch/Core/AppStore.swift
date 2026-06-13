@@ -54,6 +54,60 @@ final class AppStore: ObservableObject {
     /// 提醒事项任务完成/撤销 → EventKit 回写（calendarItemIdentifier, 完成态），AppDelegate 装配
     var onReminderCompletionChanged: ((String, Bool) -> Void)?
 
+    // MARK: - Agent 会话（agent-session spec，借鉴 Vibe Island）
+    // 独立于 todo：coding agent 的瞬态监控，只驱动收缩态徽章，不进任何列表。
+
+    @Published private(set) var agentSessions: [AgentSession] = []
+
+    /// 运行中（左翼 active 计数）
+    var activeAgentCount: Int { agentSessions.filter { $0.state == .working }.count }
+    /// 需要你处理：已回复 + 等待确认（右翼计数）
+    var waitingAgentCount: Int { agentSessions.filter { $0.state.needsAttention }.count }
+    /// 有任意徽章 → 收缩态加宽
+    var hasAgentBadge: Bool { activeAgentCount > 0 || waitingAgentCount > 0 }
+
+    /// 应用一条 hook 事件（AgentSessionService 解析 JSONL 后调用）
+    func applyAgentEvent(_ event: AgentEvent) {
+        guard let mapped = event.mappedState else { return }
+        if mapped == .ended {
+            agentSessions.removeAll { $0.id == event.session_id }
+            return
+        }
+        if let i = agentSessions.firstIndex(where: { $0.id == event.session_id }) {
+            agentSessions[i].state = mapped
+            agentSessions[i].updatedAt = Date()
+            if mapped == .waiting { agentSessions[i].message = event.message }
+            if let cwd = event.cwd, !cwd.isEmpty { agentSessions[i].cwd = cwd }
+        } else {
+            agentSessions.append(AgentSession(
+                id: event.session_id,
+                agent: event.agent ?? "Claude Code",
+                cwd: event.cwd,
+                state: mapped,
+                message: event.message,
+                updatedAt: Date()
+            ))
+        }
+    }
+
+    /// 陈旧清理：working 超 30min / 其它超 2h 无更新 → 视为结束（agent 崩溃兜底）
+    func sweepStaleAgentSessions(now: Date = Date()) {
+        agentSessions.removeAll { s in
+            let idle = now.timeIntervalSince(s.updatedAt)
+            return idle > (s.state == .working ? 30 * 60 : 2 * 3600)
+        }
+    }
+
+    /// Debug/测试：直接塞一个会话
+    func debugUpsertAgentSession(id: String, state: AgentSessionState, project: String, message: String? = nil) {
+        applyAgentEvent(AgentEvent(
+            event: state == .waiting ? "Notification" : (state == .replied ? "Stop" : "UserPromptSubmit"),
+            session_id: id, cwd: "/Users/me/\(project)", message: message, agent: "Claude Code"
+        ))
+    }
+
+    func clearAgentSessions() { agentSessions.removeAll() }
+
     // MARK: - 日历权限（未授权时日历面板空态引导授权）
 
     /// 日历权限 UI 状态（AppDelegate 按 EKAuthorizationStatus 维护）

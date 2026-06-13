@@ -19,7 +19,10 @@ struct IslandRootView: View {
     @State private var measuredContentHeight: CGFloat = 0
 
     private var geo: IslandGeometry {
-        IslandGeometry.geometry(for: store.islandState, notchSize: notchSize)
+        IslandGeometry.geometry(
+            for: store.islandState, notchSize: notchSize,
+            agentBadge: store.islandState.isCompact && store.hasAgentBadge
+        )
     }
 
     var body: some View {

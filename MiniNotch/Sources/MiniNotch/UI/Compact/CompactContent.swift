@@ -27,6 +27,22 @@ struct CompactContent: View {
     @ViewBuilder
     private var leftContent: some View {
         HStack(spacing: 6) {
+            todoLeftContent
+            // agent 运行中徽章：叠加在 todo 内容右侧（独立于状态，agent-session spec）
+            if store.activeAgentCount > 0 {
+                AgentBadge(
+                    systemName: "cpu",
+                    count: store.activeAgentCount,
+                    color: DS.Colors.accent,
+                    pulsing: true
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var todoLeftContent: some View {
+        HStack(spacing: 6) {
             switch state {
             case .idle:
                 // 左翼维持「托盘 + 今日总数」（含只读 ticket，与面板口径一致）；
@@ -63,6 +79,21 @@ struct CompactContent: View {
 
     @ViewBuilder
     private var rightContent: some View {
+        // agent 等待你处理：优先于截止上下文（更 actionable，agent-session spec）
+        if store.waitingAgentCount > 0 {
+            AgentBadge(
+                systemName: "bell.fill",
+                count: store.waitingAgentCount,
+                color: DS.Colors.warning,
+                pulsing: true
+            )
+        } else {
+            todoRightContent
+        }
+    }
+
+    @ViewBuilder
+    private var todoRightContent: some View {
         switch state {
         case .idle:
             // 今日可动手的事清零 → 右翼绿色打钩（用户指定放这一侧）
@@ -131,6 +162,33 @@ struct CompactContent: View {
             .font(DS.Fonts.compactSide)
             .foregroundStyle(color)
             .lineLimit(1)
+    }
+}
+
+// MARK: - Agent 会话徽章（图标 + 计数，可选弱脉冲）
+
+private struct AgentBadge: View {
+    let systemName: String
+    let count: Int
+    let color: Color
+    var pulsing = false
+    @State private var dimmed = false
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .semibold))
+            Text("\(count)")
+                .font(DS.Fonts.compactCount)
+        }
+        .foregroundStyle(color)
+        .opacity(dimmed ? 0.5 : 1)
+        .onAppear {
+            guard pulsing else { return }
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                dimmed = true
+            }
+        }
     }
 }
 

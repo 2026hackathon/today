@@ -78,21 +78,24 @@ struct IslandGeometry: Equatable {
     var height: CGFloat?
     var cornerRadius: CGFloat
 
-    static func geometry(for state: IslandState, notchSize: CGSize) -> IslandGeometry {
+    /// - Parameter agentBadge: 收缩态有 agent 徽章时加宽，给左/右翼额外计数留位
+    static func geometry(for state: IslandState, notchSize: CGSize, agentBadge: Bool = false) -> IslandGeometry {
         // compact 态宽度不小于真实刘海，保证视觉上完全盖住刘海
         let compactW = max(notchSize.width, 200)
         let compactH = max(notchSize.height, 32)
+        // agent 徽章占位：左翼 +图标计数、右翼 +图标计数，约需 +60pt
+        let badge: CGFloat = agentBadge ? 60 : 0
 
         switch state {
         case .idle:
             // 非活跃态收窄：内容只有「图标+数｜✓」，两翼各 ~55pt 足够，
             // 今日做完后刘海尽量低存在感（宽度变化由弹簧平滑过渡）
-            return .init(width: compactW + 110, height: compactH, cornerRadius: DS.Radius.islandCompact)
+            return .init(width: compactW + 110 + badge, height: compactH, cornerRadius: DS.Radius.islandCompact)
         case .normal, .near, .urgent, .justCompleted, .celebrate:
             // 真刘海中央是摄像头，compact 内容显示在两侧"翅膀"（各 ~75pt）
-            return .init(width: compactW + 150, height: compactH, cornerRadius: DS.Radius.islandCompact)
+            return .init(width: compactW + 150 + badge, height: compactH, cornerRadius: DS.Radius.islandCompact)
         case .aiWorking:
-            return .init(width: compactW + 190, height: compactH, cornerRadius: DS.Radius.islandCompact)
+            return .init(width: compactW + 190 + badge, height: compactH, cornerRadius: DS.Radius.islandCompact)
         case .hoverPreview:
             // 与 compact 同宽：悬停时壳体只向下拉伸，不发生横向跳变
             return .init(width: compactW + 150, height: nil, cornerRadius: DS.Radius.island)

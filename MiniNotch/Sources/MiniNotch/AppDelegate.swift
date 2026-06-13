@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let eventKitCalendarService = EventKitCalendarService()
     private lazy var reminderScheduler: ReminderScheduler = TimerReminderScheduler()
     private lazy var pushService: PushService = NoopPushService()     // owner C: 按 settings 换 Feishu/Bark
+    /// coding agent 会话监控（agent-session spec，借鉴 Vibe Island）
+    private let agentService = AgentSessionService()
 
     /// 外部源同步基线：首次「成功」同步后置位，之后的新 key 才弹通知卡。
     /// 失败不置位（review-fixes #2：否则首轮断网 → 第二轮全量误报为新分配）
@@ -54,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuTrackingObserver()
         setupKeyboardFocusForInputStates()
         wireServices()
+        setupAgentMonitor()
         requestCalendarAccess()    // accessory 应用需临时激活才能弹权限弹窗
         startPolling()
         maybeShowMorningReport()
@@ -567,10 +570,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(for: .seconds(15 * 60))
             }
         })
-        // 晚报：每分钟检查是否到点（reminders/ai-pipeline spec）
+        // 晚报每分钟检查是否到点（reminders/ai-pipeline spec）+ agent 陈旧会话清理
         pollingTasks.append(Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 self?.maybeShowEveningReport()
+                self?.store.sweepStaleAgentSessions()
                 try? await Task.sleep(for: .seconds(60))
             }
         })
@@ -672,6 +676,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("全屏庆祝", #selector(debugCelebrate)),
             ("模拟 Jira 新分配", #selector(debugJiraAssign)),
             ("模拟 PR 新分配", #selector(debugPRAssign)),
+            ("模拟 Agent 运行中", #selector(debugAgentWorking)),
+            ("模拟 Agent 等待确认", #selector(debugAgentWaiting)),
+            ("清空 Agent 会话", #selector(debugAgentClear)),
+            ("安装 Claude Code Hook", #selector(debugInstallAgentHook)),
             ("回到收缩态", #selector(debugDismiss)),
             ("重置演示数据", #selector(debugReset)),
         ]
@@ -683,6 +691,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSMenuItem(title: "Debug 状态", action: nil, keyEquivalent: "")
         item.submenu = debugMenu
         return item
+    }
+
+    // MARK: - Agent 会话监控（agent-session spec）
+
+    private func setupAgentMonitor() {
+        agentService.onEvent = { [weak self] event in
+            self?.store.applyAgentEvent(event)
+        }
+        agentService.start()
     }
 
     // MARK: - 刘海面板
@@ -828,6 +845,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 store.mergeExternalTodos(prs, source: .github, notify: true, prune: false)
             }
         }
+    }
+
+    @objc private func debugAgentWorking() {
+        store.debugUpsertAgentSession(id: "demo-\(store.agentSessions.count + 1)", state: .working, project: "today")
+    }
+
+    @objc private func debugAgentWaiting() {
+        store.debugUpsertAgentSession(
+            id: "demo-wait-\(store.waitingAgentCount + 1)", state: .waiting,
+            project: "today", message: "需要权限运行 Bash"
+        )
+    }
+
+    @objc private func debugAgentClear() { store.clearAgentSessions() }
+
+    @objc private func debugInstallAgentHook() {
+        let msg = agentService.installClaudeCodeHook()
+        NSLog("[Agent] \(msg)")
     }
 
     @objc private func debugDismiss() { store.dismiss() }
