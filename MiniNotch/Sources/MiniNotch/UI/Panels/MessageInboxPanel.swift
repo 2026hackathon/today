@@ -92,6 +92,12 @@ private struct MessageRow: View {
     @State private var hovering = false
 
     private var processed: Bool { message.isProcessed }
+    /// 跳转链接：优先用归一好的 link；旧邮件 link 为空时，登录 Gmail 则按 Message-ID 兜底拼 Gmail 网页链接。
+    private var effectiveLink: URL? {
+        if let link = message.link { return link }
+        guard message.source == .email, GoogleOAuth.shared.isSignedIn else { return nil }
+        return EmailClassifier.gmailWebLink(messageId: message.messageId)
+    }
     /// 未处理白、已处理灰（message-inbox spec）
     private var titleColor: Color { processed ? DS.Colors.text3 : DS.Colors.text1 }
     /// 分级样式主色（已处理统一灰）
@@ -137,7 +143,7 @@ private struct MessageRow: View {
             }
             Spacer(minLength: 0)
             // 跳转：打开链接 + 标记已处理（message-inbox spec：跳转即已处理）
-            if message.link != nil {
+            if effectiveLink != nil {
                 Button(action: openAndProcess) {
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 10, weight: .medium))
@@ -153,7 +159,7 @@ private struct MessageRow: View {
     }
 
     private func openAndProcess() {
-        if let url = message.link { NSWorkspace.shared.open(url) }
+        if let url = effectiveLink { NSWorkspace.shared.open(url) }
         store.markProcessed(message)
     }
 }

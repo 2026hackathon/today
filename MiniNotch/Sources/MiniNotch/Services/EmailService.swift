@@ -66,18 +66,23 @@ enum EmailClassifier {
     /// Gmail → 网页端 rfc822msgid 链接；其余通用 IMAP 无已知 webmail 时才回退
     /// `message://`（唤起本地邮件客户端，最后兜底）。不再扫描正文 http 链接。
     private static func mailLink(messageId: String, host: String) -> URL? {
-        let trimmed = messageId.trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
-        guard !trimmed.isEmpty,
-              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
-        else { return nil }
-
         // Gmail：用 Message-ID 打开 Gmail 网页端的原始邮件（不走苹果邮箱 message://）
         if host.lowercased().contains("gmail.com") {
-            return URL(string: "https://mail.google.com/mail/u/0/#search/rfc822msgid:\(encoded)")
+            return gmailWebLink(messageId: messageId)
         }
         // 通用 IMAP 无已知 webmail：不再回退 message://——该 scheme 仅当邮件恰好在本机
         // Mail.app 才打得开，SES/IMAP 邮件点了只会弹「MCMailErrorDomain 1030」。无链接即不显示跳转箭头。
         return nil
+    }
+
+    /// Message-ID → Gmail 网页端原始邮件链接（rfc822msgid 搜索）。
+    /// 抽成公开方法，供 UI 给「已落盘但 link 为空」的旧邮件兜底拼接跳转（仅在登录 Gmail 时）。
+    static func gmailWebLink(messageId: String) -> URL? {
+        let trimmed = messageId.trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
+        guard !trimmed.isEmpty,
+              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+        else { return nil }
+        return URL(string: "https://mail.google.com/mail/u/0/#search/rfc822msgid:\(encoded)")
     }
 
     private static func firstMatch(in text: String, pattern: String) -> URL? {
