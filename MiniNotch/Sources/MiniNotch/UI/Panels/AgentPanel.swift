@@ -135,8 +135,8 @@ struct AgentSessionRow: View {
     private var color: Color {
         switch session.state {
         case .working: DS.Colors.accent
-        case .waiting: DS.Colors.warning
-        case .replied: DS.Colors.success
+        // 待确认/完成待 review 都是「需要你处理」→ 统一橙色，与刘海待处理铃铛一致
+        case .waiting, .replied: DS.Colors.warning
         case .ended: DS.Colors.text3
         }
     }
@@ -145,7 +145,7 @@ struct AgentSessionRow: View {
         switch session.state {
         case .working: "运行中"
         case .waiting: "等待确认"
-        case .replied: "已完成 · 等你 review"
+        case .replied: "待确认"
         case .ended: "已结束"
         }
     }
