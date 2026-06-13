@@ -103,7 +103,11 @@ struct TodayPanel: View {
             if !store.sortedAgentSessions.isEmpty {
                 PanelMiniDividerLabel(text: "Agent")
                 ForEach(store.sortedAgentSessions) { session in
-                    AgentSessionRow(session: session) { store.jumpToAgent(session) }
+                    AgentSessionRow(
+                        session: session,
+                        onJump: { store.jumpToAgent(session) },
+                        onAcknowledge: { store.acknowledgeAgentSession(session.id) }
+                    )
                 }
             }
             // 外部只读项沉底（Jira/GitHub 不可完成，不挡可操作任务）

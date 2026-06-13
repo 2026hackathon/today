@@ -153,6 +153,12 @@ final class AppStore: ObservableObject {
 
     func clearAgentSessions() { agentSessions.removeAll() }
 
+    /// 标记某 agent 会话已处理 → 从列表移除（Today/Agent 栏点「已完成」圈）。
+    /// 该 session 之后若再来新事件（如又发了 prompt）会按新事件重新出现。
+    func acknowledgeAgentSession(_ id: String) {
+        agentSessions.removeAll { $0.id == id }
+    }
+
     /// 跳转到 agent 所属终端 session（Agent 面板/卡片点击），AppDelegate 装配 → AgentSessionService.jumpTo
     var onAgentJump: ((AgentSession) -> Void)?
     func jumpToAgent(_ session: AgentSession) { onAgentJump?(session) }
