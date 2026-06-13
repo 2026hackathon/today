@@ -119,14 +119,40 @@ final class AgentSessionService {
             d = json.load(sys.stdin)
         except Exception:
             d = {}
+        # 标题：UserPromptSubmit 直接带 prompt；Stop 等事件无 prompt 时，
+        # 从 transcript 读最后一条用户文本消息（保证完成卡也有标题，不依赖是否捕获到 prompt）
+        title = " ".join(d.get("prompt", "").split())
+        if not title:
+            tp = d.get("transcript_path", "")
+            if tp and os.path.exists(tp):
+                try:
+                    last = ""
+                    with open(tp) as tf:
+                        for line in tf:
+                            try:
+                                o = json.loads(line)
+                            except Exception:
+                                continue
+                            m = o.get("message", o)
+                            if m.get("role") == "user" or o.get("type") == "user":
+                                c = m.get("content", "")
+                                if isinstance(c, list):
+                                    c = " ".join(
+                                        p.get("text", "") for p in c
+                                        if isinstance(p, dict) and p.get("type") == "text"
+                                    )
+                                if isinstance(c, str) and c.strip():
+                                    last = c
+                    title = " ".join(last.split())
+                except Exception:
+                    pass
         out = {
             "event": d.get("hook_event_name", ""),
             "session_id": d.get("session_id", ""),
             "cwd": d.get("cwd", ""),
             "message": d.get("message", ""),
             "agent": "Claude Code",
-            # UserPromptSubmit 带 prompt = 用户这轮的指令，当 session 标题（截断 + 去换行）
-            "title": " ".join(d.get("prompt", "").split())[:80],
+            "title": title[:80],
             "term": os.environ.get("TERM_PROGRAM", ""),
             "term_bundle": os.environ.get("__CFBundleIdentifier", ""),
             "iterm_session": os.environ.get("ITERM_SESSION_ID", ""),
