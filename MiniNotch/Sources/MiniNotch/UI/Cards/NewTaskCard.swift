@@ -138,26 +138,91 @@ struct NewTaskCard: View {
 
     @ViewBuilder
     private func optionRow(for field: EditField) -> some View {
-        HStack(spacing: 6) {
-            switch field {
-            case .priority:
+        switch field {
+        case .priority:
+            HStack(spacing: 6) {
                 ForEach(Priority.allCases, id: \.self) { p in
                     optionChip(p.label, selected: edited.priority == p) { edited.priority = p }
                 }
-            case .time:
-                optionChip("今晚", selected: false) { edited.dueDate = Self.todayAt(hour: 18) }
-                optionChip("明早", selected: false) { edited.dueDate = Self.tomorrowAt(hour: 9) }
-                optionChip("周五", selected: false) { edited.dueDate = Self.nextFriday() }
-                optionChip("无", selected: edited.dueDate == nil) { edited.dueDate = nil }
-            case .lead:
-                ForEach([0, 5, 15, 30, 60], id: \.self) { m in
+            }
+        case .lead:
+            HStack(spacing: 6) {
+                ForEach([0, 5, 15, 30, 60, 120], id: \.self) { m in
                     optionChip(Self.leadChip(m),
                                selected: (edited.reminderLeadMinutes ?? edited.kind.defaultLeadMinutes) == m) {
                         edited.reminderLeadMinutes = m
                     }
                 }
             }
+        case .time:
+            timeEditor
         }
+    }
+
+    /// 时间编辑器：快捷预设 + DS 风格日期/时间步进器（不用原生 DatePicker，匹配暗色 UI）
+    private var timeEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                optionChip("今晚", selected: false) { edited.dueDate = Self.todayAt(hour: 18) }
+                optionChip("明早", selected: false) { edited.dueDate = Self.tomorrowAt(hour: 9) }
+                optionChip("周五", selected: false) { edited.dueDate = Self.nextFriday() }
+                optionChip("无", selected: edited.dueDate == nil) { edited.dueDate = nil }
+            }
+            if edited.dueDate != nil {
+                stepper(label: "日期", value: dueDateLabel,
+                        dec: { shiftDue(days: -1) }, inc: { shiftDue(days: 1) })
+                stepper(label: "时间", value: dueTimeLabel,
+                        dec: { shiftDue(minutes: -30) }, inc: { shiftDue(minutes: 30) })
+            }
+        }
+    }
+
+    /// DS 风格步进器：◀ 值 ▶（保持展开，连续微调）
+    private func stepper(label: String, value: String,
+                         dec: @escaping () -> Void, inc: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(DS.Colors.text3)
+                .frame(width: 30, alignment: .leading)
+            stepBtn("chevron.left", dec)
+            Text(value)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(DS.Colors.text1)
+                .frame(minWidth: 96)
+            stepBtn("chevron.right", inc)
+        }
+    }
+
+    private func stepBtn(_ symbol: String, _ action: @escaping () -> Void) -> some View {
+        Button { store.cardHeld = true; action() } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(DS.Colors.text2)
+                .frame(width: 26, height: 24)
+                .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func shiftDue(days: Int = 0, minutes: Int = 0) {
+        let base = edited.dueDate ?? Self.todayAt(hour: 18)
+        let cal = Calendar.current
+        edited.dueDate = cal.date(byAdding: DateComponents(day: days, minute: minutes), to: base) ?? base
+    }
+
+    /// 日期标签：今天/明天/周X + M/d
+    private var dueDateLabel: String {
+        guard let due = edited.dueDate else { return "—" }
+        let cal = Calendar.current
+        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN")
+        if cal.isDateInToday(due) { f.dateFormat = "'今天' M/d"; return f.string(from: due) }
+        if cal.isDateInTomorrow(due) { f.dateFormat = "'明天' M/d"; return f.string(from: due) }
+        f.dateFormat = "EEE M/d"; return f.string(from: due)
+    }
+
+    private var dueTimeLabel: String {
+        edited.dueDate.map(PanelFormat.hm) ?? "—"
     }
 
     private func optionChip(_ text: String, selected: Bool, action: @escaping () -> Void) -> some View {
