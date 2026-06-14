@@ -3,3 +3,7 @@ dist/
 .DS_Store
 *.xcodeproj
 .swiftpm/
+
+# 图标中间产物（由 icon.svg 重新渲染即可；只追踪 icon.svg + AppIcon.icns）
+AppIcon/AppIcon.iconset/
+AppIcon/icon-1024.png

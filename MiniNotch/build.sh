@@ -2,11 +2,14 @@
 set -euo pipefail
 
 # ============================================================
-# MiniNotch 打包脚本
-# 产出: MiniNotch.app (可直接双击运行) + MiniNotch.zip (发给别人)
+# Next 打包脚本（内部代号 MiniNotch）
+# 产出: Next.app (可直接双击运行) + Next.zip (发给别人)
+# 说明: 可执行文件名沿用 SwiftPM target「MiniNotch」，对用户不可见；
+#       产品名 / 包名 / 显示名统一为「Next」。
 # ============================================================
 
-APP_NAME="MiniNotch"
+APP_NAME="Next"              # 产品名：.app / .zip / 显示名
+BIN_NAME="MiniNotch"         # 可执行文件名（= SwiftPM target，勿改）
 BUILD_DIR=".build/apple/Products/Release"
 APP_BUNDLE="dist/${APP_NAME}.app"
 
@@ -21,8 +24,11 @@ echo "==> [3/5] 组装 .app bundle..."
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
 
-cp "${BUILD_DIR}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+# 可执行文件名保持 BIN_NAME（须与 Info.plist 的 CFBundleExecutable 一致）
+cp "${BUILD_DIR}/${BIN_NAME}" "${APP_BUNDLE}/Contents/MacOS/${BIN_NAME}"
 cp Info.plist "${APP_BUNDLE}/Contents/Info.plist"
+# App 展示图标（Dock / Finder / 切换器）
+[ -f AppIcon/AppIcon.icns ] && cp AppIcon/AppIcon.icns "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
 echo -n "APPL????" > "${APP_BUNDLE}/Contents/PkgInfo"
 
 # SwiftPM 资源 bundle 必须一起打进 Resources，否则发布版会丢资源：

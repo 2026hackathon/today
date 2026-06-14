@@ -1,0 +1,71 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 深色机身渐变（冷黑，非纯黑，保留层次） -->
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#1B1B24"/>
+      <stop offset="0.55" stop-color="#111119"/>
+      <stop offset="1"   stop-color="#0A0A10"/>
+    </linearGradient>
+
+    <!-- 灵动岛胶囊渐变（品牌紫，明亮、克制） -->
+    <linearGradient id="pill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0"   stop-color="#9B82FF"/>
+      <stop offset="1"   stop-color="#6A4BF0"/>
+    </linearGradient>
+
+    <!-- 胶囊四周的克制光晕（贴着胶囊，不铺满整块） -->
+    <radialGradient id="bloom" cx="50%" cy="50%" r="50%">
+      <stop offset="0"   stop-color="#8B6BFF" stop-opacity="0.55"/>
+      <stop offset="55%" stop-color="#7C5CFF" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#7C5CFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 机身顶部微高光 -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="0.18" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- 漂浮投影：让图标像悬在 Dock 上 -->
+    <filter id="drop" x="-25%" y="-25%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="22" stdDeviation="26" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+
+    <!-- 胶囊外发光 -->
+    <filter id="soft" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+
+    <clipPath id="mask"><rect x="100" y="100" width="824" height="824" rx="184" ry="184"/></clipPath>
+  </defs>
+
+  <!-- 机身 squircle（Big Sur 留白 + 漂浮投影） -->
+  <g filter="url(#drop)">
+    <rect x="100" y="100" width="824" height="824" rx="184" ry="184" fill="url(#body)"/>
+  </g>
+
+  <g clip-path="url(#mask)">
+    <!-- 顶部微高光 -->
+    <rect x="100" y="100" width="824" height="824" fill="url(#sheen)"/>
+    <!-- 贴着胶囊的紫色光晕 -->
+    <ellipse cx="512" cy="478" rx="360" ry="250" fill="url(#bloom)"/>
+  </g>
+
+  <!-- 灵动岛胶囊：外发光 -->
+  <rect x="322" y="402" width="380" height="152" rx="76" ry="76"
+        fill="#7C5CFF" filter="url(#soft)" opacity="0.85"/>
+
+  <!-- 灵动岛胶囊：实体 -->
+  <rect x="322" y="402" width="380" height="152" rx="76" ry="76" fill="url(#pill)"/>
+  <!-- 胶囊上沿玻璃高光 -->
+  <rect x="338" y="416" width="348" height="60" rx="30" ry="30"
+        fill="#FFFFFF" opacity="0.16"/>
+
+  <!-- 前进 chevron：「Next / 下一件事」 -->
+  <path d="M 486 442 L 548 478 L 486 514" fill="none"
+        stroke="#FFFFFF" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 机身内描边，收边更精致 -->
+  <rect x="101.25" y="101.25" width="821.5" height="821.5" rx="183" ry="183"
+        fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2.5"/>
+</svg>

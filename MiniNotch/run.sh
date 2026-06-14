@@ -28,6 +28,8 @@ if [ -d "${BUILD_DIR}/${APP_NAME}_${APP_NAME}.bundle" ]; then
     cp -R "${BUILD_DIR}/${APP_NAME}_${APP_NAME}.bundle" "${APP_BUNDLE}/Contents/Resources/"
 fi
 cp Info.plist "${APP_BUNDLE}/Contents/Info.plist"
+# App 展示图标（Dock / Finder / 切换器）
+[ -f AppIcon/AppIcon.icns ] && cp AppIcon/AppIcon.icns "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
 echo -n "APPL????" > "${APP_BUNDLE}/Contents/PkgInfo"
 
 # 优先用自签名证书（FocusIsland Dev）：签名身份稳定，TCC 日历授权

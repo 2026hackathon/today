@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>MiniNotch</string>
+    <string>Next</string>
     <key>CFBundleDisplayName</key>
-    <string>MiniNotch</string>
+    <string>Next</string>
     <key>CFBundleIdentifier</key>
     <string>com.mininotch.app</string>
     <key>CFBundleVersion</key>
@@ -16,6 +16,8 @@
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>MiniNotch</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
