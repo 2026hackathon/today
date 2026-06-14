@@ -18,3 +18,7 @@ MiniNotch/*.swiftdeps~
 
 node_modules/
 deck/qa/
+
+# 路演 PPT 生成产物（源在 deck/，产物不入库）
+/Next-*.pptx
+outputs/
