@@ -106,8 +106,13 @@ enum EmailClassifier {
     /// 抽成公开方法，供 UI 给「已落盘但 link 为空」的旧邮件兜底拼接跳转（仅在登录 Gmail 时）。
     static func gmailWebLink(messageId: String) -> URL? {
         let trimmed = messageId.trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
+        // Message-ID 常含 '+'（如 CAHbneZqZvpJwRST9BvCz+KmK2-...@mail.gmail.com）。
+        // urlPathAllowed 不编码 '+'，Gmail 会把 '+' 当搜索词分隔符，rfc822msgid 只收到 '+' 前半段→搜不到。
+        // 故从允许集移除 '+'，强制编码为 %2B，让 Gmail 收到完整 Message-ID。
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "+")
         guard !trimmed.isEmpty,
-              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: allowed)
         else { return nil }
         return URL(string: "https://mail.google.com/mail/u/0/#search/rfc822msgid:\(encoded)")
     }
