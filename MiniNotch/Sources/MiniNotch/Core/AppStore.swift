@@ -583,6 +583,14 @@ final class AppStore: ObservableObject {
             .sorted { $0.date < $1.date }
     }
 
+    /// 解析 .calendar 任务对应的会议（按 EventKit 稳定标识匹配），用于在今日任务行展示
+    /// 会议平台标签与加入链接。纯内存查找：依赖 replaceMeetings 已填充 meetings，
+    /// 无副作用、不触发同步；非 .calendar 来源或无 calendarEventId / 未命中均返回 nil。
+    func meeting(for todo: Todo) -> Meeting? {
+        guard todo.source == .calendar, let eid = todo.calendarEventId else { return nil }
+        return meetings.first { $0.eventIdentifier == eid }
+    }
+
     // MARK: - 今日焦点派生（today-focus-redesign spec）
     // Today 只回答「我今天要关注什么」：按时间相关性筛选，来源只是行内标识。
     // 外部工单（Jira/GitHub）已抽成 WorkItem，见下方 activeWorkItems / inboxWorkItems。

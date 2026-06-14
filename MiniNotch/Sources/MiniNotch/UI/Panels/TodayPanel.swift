@@ -192,6 +192,9 @@ struct PersonalTodoRow: View {
     @State private var hovering = false
     @State private var confirmingDelete = false
 
+    /// .calendar 任务对应的会议（命中才有），用于行内展示会议平台标签与加入链接
+    private var meeting: Meeting? { store.meeting(for: todo) }
+
     var body: some View {
         HStack(alignment: .center, spacing: PanelRowMetric.spacing) {
             // 状态字形：完成绿勾(撤销) / 可完成圈 / 未来静态小点，等宽占位
@@ -221,6 +224,10 @@ struct PersonalTodoRow: View {
                     Text(tag)
                 }
                 .dsTag()
+            }
+            // 会议平台标签：.calendar 任务命中对应会议且检测到平台时常驻展示（复用 MeetingRow 视觉）
+            if let platform = meeting?.platform {
+                Text(platform.label).dsTag()
             }
             // 截图来源且有图：小相机可点，点击用「预览」打开全部原图（多图带数量角标）
             if todo.source == .screenshot, !todo.screenshotPaths.isEmpty {
@@ -252,6 +259,21 @@ struct PersonalTodoRow: View {
             // 截图来源：行尾缩略图（多图叠角标），点击用「预览」打开全部原图
             if !todo.screenshotPaths.isEmpty {
                 ScreenshotThumb(paths: todo.screenshotPaths)
+            }
+            // 加入会议（悬停显示）：命中会议且有链接时一键打开，复用 MeetingRow 行为；
+            // 遵循行内 hover 控件约定，不挤压静止态布局
+            if hovering, let link = meeting?.link {
+                Button { NSWorkspace.shared.open(link) } label: {
+                    Text("加入会议")
+                        .font(DS.Fonts.tag)
+                        .foregroundStyle(DS.Colors.accent)
+                        .padding(.horizontal, 7)
+                        .frame(height: 18)
+                        .background(DS.Colors.accentSoft, in: RoundedRectangle(cornerRadius: 4))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("加入会议")
             }
             // 编辑 + 删除按钮（悬停显示）：编辑开编辑卡；删除时本地直接删、苹果来源项删前确认
             if hovering && !todo.isCompleted {
