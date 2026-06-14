@@ -171,6 +171,8 @@ private struct MessageRow: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(processed ? DS.Colors.text3 : DS.Colors.accent)
                         .opacity(hovering || !processed ? 1 : 0.4)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
