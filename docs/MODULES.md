@@ -15,6 +15,8 @@ swift run        # 跑起来：刘海出现黑岛，菜单栏出现图标
 先把每个状态点一遍，你就理解整个产品了。
 
 > **Agent 会话监控**（Claude Code / opencode 状态上刘海）配置见 [AGENT-SESSION-SETUP.md](./AGENT-SESSION-SETUP.md)。
+>
+> **邮件筛选逻辑**（拉取 → 硬过滤 → 去重 → AI 价值判定的 4 道关 + Prompt 原文）见 [EMAIL-FILTERING.md](./EMAIL-FILTERING.md)。
 
 ## 架构 60 秒版
 
