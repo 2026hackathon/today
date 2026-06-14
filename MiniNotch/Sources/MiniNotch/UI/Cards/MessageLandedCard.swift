@@ -64,6 +64,17 @@ struct MessageLandedCard: View {
         .padding(.bottom, 10)
     }
 
+    /// 卡片标题取邮件主题，缺失回退一句话 summary（island-shell spec）
+    private var cardTitle: String {
+        let subject = (message.rawSubject ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return subject.isEmpty ? message.summary : subject
+    }
+    /// AI 一句话提醒副行；无主题（标题已等于 summary）时不重复展示
+    private var reminderLine: String? {
+        let subject = (message.rawSubject ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return subject.isEmpty ? nil : message.summary
+    }
+
     private var summaryBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let sender = message.sender {
@@ -71,10 +82,16 @@ struct MessageLandedCard: View {
                     .font(DS.Fonts.compactSide.weight(.semibold))
                     .foregroundStyle(sourceColor)
             }
-            Text(message.summary)
+            Text(cardTitle)
                 .font(DS.Fonts.cardTitle)
                 .foregroundStyle(DS.Colors.text1)
                 .lineLimit(3)
+            if let reminder = reminderLine, !reminder.isEmpty {
+                Text(reminder)
+                    .font(DS.Fonts.compactSide)
+                    .foregroundStyle(DS.Colors.text2)
+                    .lineLimit(2)
+            }
         }
         .padding(.bottom, 10)
     }

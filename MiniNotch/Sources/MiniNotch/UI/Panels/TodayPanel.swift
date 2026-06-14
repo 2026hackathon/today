@@ -763,16 +763,27 @@ private struct CompletedRow: View {
 
 struct PanelCheckCircle: View {
     let action: () -> Void
+    /// 已完成态：true 显示填充绿色对勾圈，false 显示空心圈
+    var isDone: Bool = false
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Circle()
-                .strokeBorder(hovering ? DS.Colors.text1 : DS.Colors.text3, lineWidth: 1.5)
-                .frame(width: 16, height: 16)
-                // 形状的点击判定只算画了像素的区域——纯描边圆只有 1.5pt 的环可点。
-                // 负 inset 只外扩命中区域(26×26)不占布局，保持与 Jira 行 16pt 图标列对齐
-                .contentShape(Rectangle().inset(by: -5))
+            ZStack {
+                // 未完成：空心圈；条件渲染放进 overlay/ZStack 内部，宿主身份稳定
+                Circle()
+                    .strokeBorder(hovering ? DS.Colors.text1 : DS.Colors.text3, lineWidth: 1.5)
+                    .opacity(isDone ? 0 : 1)
+                // 已完成：绿色对勾——与日历/任务完成态统一（checkmark.circle.fill @ 11pt）
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DS.Colors.success)
+                    .opacity(isDone ? 1 : 0)
+            }
+            .frame(width: 16, height: 16)
+            // 形状的点击判定只算画了像素的区域——空心描边圆只有 1.5pt 的环可点。
+            // 负 inset 只外扩命中区域(26×26)不占布局，保持与 Jira 行 16pt 图标列对齐
+            .contentShape(Rectangle().inset(by: -5))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

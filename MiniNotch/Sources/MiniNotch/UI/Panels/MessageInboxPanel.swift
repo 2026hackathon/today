@@ -118,6 +118,11 @@ private struct MessageRow: View {
     }
     /// 未处理白、已处理灰（message-inbox spec）
     private var titleColor: Color { processed ? DS.Colors.text3 : DS.Colors.text1 }
+    /// 行标题直接取邮件主题；主题缺失时回退一句话 summary（message-inbox spec）
+    private var rowTitle: String {
+        let subject = (message.rawSubject ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return subject.isEmpty ? message.summary : subject
+    }
     /// 分级样式主色（已处理统一灰）
     private var levelColor: Color { processed ? DS.Colors.text3 : DS.importanceColor(message.importance) }
 
@@ -129,12 +134,11 @@ private struct MessageRow: View {
                 .frame(width: 3)
                 .padding(.vertical, 1)
 
-            // 完成圈：点击 = 标记已处理（不打开链接）
-            PanelCheckCircle(action: { store.markProcessed(message) })
-                .opacity(processed ? 0.4 : 1)
+            // 完成圈：点击 = 标记已处理（不打开链接）；已完成显示绿色对勾圈
+            PanelCheckCircle(action: { store.markProcessed(message) }, isDone: processed)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(message.summary)
+                Text(rowTitle)
                     .font(DS.Fonts.todoTitle)
                     .foregroundStyle(titleColor)
                     .strikethrough(processed, color: DS.Colors.text3)
