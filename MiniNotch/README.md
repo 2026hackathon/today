@@ -26,7 +26,21 @@ cd MiniNotch
 为什么需要：ad-hoc 签名的身份是二进制 cdhash，每次重编译都变 → macOS 把它当新应用，
 日历(TCC)授权随之失效。用固定证书签名后身份 = bundle id + 证书，重编译、换人构建都不掉权限。
 
-## 环境要求
+## 系统要求（使用者）
+
+运行这个 App 的 Mac 需要满足：
+
+- **系统版本**：macOS 14.0 (Sonoma) 或更新 —— 硬门槛。刘海定位依赖 `NSScreen.safeAreaInsets.top`，14 之前不支持。
+- **芯片**：Apple Silicon (M 系列) 与 Intel 均可。发布包是 Universal Binary（arm64 + x86_64），两类 Mac 都原生运行。
+- **刘海：不是必须**。
+  - 带刘海的 MacBook Pro 14"/16"（M1 Pro/Max 起，2021 款及以后）→ 面板精确贴合真刘海，体验最佳；
+  - 没刘海的机器（老 MacBook Air/Pro、Intel 机型、Mac mini/Studio/iMac 接显示器）→ 自动在屏幕顶部正中用 200×32 的「伪刘海」回退，功能完全一致。
+- **GPU**：辉光基于 Metal（SwiftGlow），所有能跑 macOS 14 的 Mac 都内置支持，无额外门槛。
+- **权限（可选，按需授权）**：日历 / 提醒事项（显示今日会议与提醒）、麦克风 / 语音识别（语音输入待办）。不授权也能用，仅对应功能关闭。
+- **网络 / AI（可选）**：截图解析、自然语言建议、晨/晚报需联网并配置 AI Key；未配置或断网时有不出网的本地规则兜底，核心待办照常用。
+- **首次打开**：非 App Store 分发（自签名 / ad-hoc），首次需右键 →「打开」绕过 Gatekeeper。
+
+## 环境要求（开发）
 
 - macOS 14+ (Sonoma)，Xcode 16+（Swift 6 工具链）
 - 依赖：[SwiftGlow](https://github.com/margox/SwiftGlow) 0.1.3（SPM 自动拉取）
