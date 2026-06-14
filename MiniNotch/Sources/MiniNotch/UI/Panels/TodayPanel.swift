@@ -168,7 +168,8 @@ enum PanelRowMetric {
     /// 状态字形列宽（绿勾 / 完成圈 / 小点）
     static let statusGlyphWidth: CGFloat = 16
     /// 时间轨列宽（等宽左对齐，标题对齐到同一竖线）
-    static let timeTrackWidth: CGFloat = 44
+    /// 56pt 为 snooze 铃铛(8pt)+间距(3pt)+HH:mm 预留，避免时间换行
+    static let timeTrackWidth: CGFloat = 56
 }
 
 // MARK: - 统一任务行（Todo 现已全是个人来源；外部工单走 WorkItemRow）
@@ -315,18 +316,22 @@ struct PersonalTodoRow: View {
         }
     }
 
-    /// 时间轨：有有效截止显示时间（snooze 过的标铃铛）；无则留空占位以对齐标题
+    /// 时间轨：有有效截止显示时间，snooze 过的把铃铛放在时间「后面」——
+    /// 这样所有行的 HH:mm 从列首同一位置起,带不带铃铛都对齐。
+    /// 时间栏宽度（timeTrackWidth=56）已为 HH:mm+铃铛 预留空间，lineLimit 兜底防换行。
     @ViewBuilder
     private var timeTrack: some View {
         if let due = todo.effectiveDue {
             HStack(spacing: 3) {
+                Text(timeLabel(due))
                 if todo.snoozedUntil != nil {
                     Image(systemName: "bell.fill").font(.system(size: 8))
                 }
-                Text(timeLabel(due))
             }
             .font(DS.Fonts.compactSide)
             .foregroundStyle(timeColor)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
         } else {
             Color.clear.frame(height: 1)
         }
