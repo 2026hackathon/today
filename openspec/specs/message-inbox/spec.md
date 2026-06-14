@@ -22,7 +22,15 @@ TBD - created by archiving change email-message-reminders. Update Purpose after 
 - 组内邮件按 `receivedAt` **倒序**：当天最新收到的在该组最上方。
 - 未处理区与已处理区各自 SHALL 最多展示**最近 3 天**（按存在邮件的日历日计，从最新一天起取 3 天）的分组；更早的日期不展示。
 
-每条邮件 SHALL 展示一句话 summary、来源标识、重要级别，以及该邮件的**收件时间**（见「行内时间等于真实收件时间」要求）。
+每条邮件行 SHALL 以**邮件主题（`rawSubject`）为标题**展示；主题为空时回退到一句话 summary。每条邮件行还 SHALL 展示来源标识、重要级别，以及该邮件的**收件时间**（见「行内时间等于真实收件时间」要求）。
+
+#### Scenario: 行标题取用邮件主题
+- **WHEN** 一封邮件的 `rawSubject` 为「Q3 预算评审需你今天反馈」
+- **THEN** 其消息行标题显示该主题原文，而非 AI 生成的一句话建议
+
+#### Scenario: 主题缺失回退
+- **WHEN** 一封邮件的 `rawSubject` 为空或缺失
+- **THEN** 其消息行标题回退展示该邮件的一句话 summary
 
 #### Scenario: 同一天的邮件归入同一组
 - **WHEN** 切换到「消息」页签且某天收到多封邮件
@@ -54,9 +62,19 @@ TBD - created by archiving change email-message-reminders. Update Purpose after 
 ### Requirement: 完成与跳转均转已处理
 消息条目 SHALL 提供两种交互：「点击完成」与「点击跳转链接」。两者 SHALL 都调用 `AppStore.markProcessed(_:)` 将该消息标记为已处理（记录 processedAt）；该操作 SHALL 幂等（重复标记不报错、时间不被重复刷新）。「跳转」SHALL 同时打开该消息的 `link`。
 
+消息行的完成控件 SHALL 按已处理态切换形态：未处理（`processedAt == nil`）显示**空心圈**；已处理（`processedAt != nil`）显示**填充的绿色对勾圈**（绿色填充 + 白色/对比色对勾），以提供明确的完成正反馈。绿色 SHALL 取自 `DS.*` 设计令牌，不使用裸色值。
+
 #### Scenario: 点击完成
 - **WHEN** 用户点击某未处理消息的「完成」
 - **THEN** 该消息 processedAt 置为当前时间并转灰，不打开链接
+
+#### Scenario: 已完成显示绿色对勾圈
+- **WHEN** 一条消息被标记已处理
+- **THEN** 其完成控件由空心圈变为填充的绿色对勾圈
+
+#### Scenario: 未完成保持空心圈
+- **WHEN** 一条消息 processedAt 为空
+- **THEN** 其完成控件显示为空心圈
 
 #### Scenario: 点击跳转
 - **WHEN** 用户点击某未处理消息的链接
