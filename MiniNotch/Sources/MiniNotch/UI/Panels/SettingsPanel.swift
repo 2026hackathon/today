@@ -847,8 +847,7 @@ private struct AIModelRow: View {
             HStack(spacing: 6) {
                 if models.isEmpty {
                     // 未拉取/拉取失败：始终保留手填能力，留空即用内置默认模型
-                    SettingsInputField(placeholder: AIDefaults.model, text: $store.settings.aiModel)
-                        .frame(width: 150)
+                    SettingsInputField(placeholder: AIDefaults.model, text: $store.settings.aiModel, width: 150)
                 } else {
                     Menu {
                         ForEach(models, id: \.self) { id in
@@ -923,6 +922,7 @@ private struct SettingsInputField: View {
     let placeholder: String
     @Binding var text: String
     var secure = false
+    var width: CGFloat = 180
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -938,7 +938,7 @@ private struct SettingsInputField: View {
         .font(DS.Fonts.compactSide)
         .foregroundStyle(DS.Colors.text1)
         .padding(.horizontal, 9)
-        .frame(width: 180, height: 24)
+        .frame(width: width, height: 24)
         // 自绘占位符：.plain 样式下 prompt 的颜色样式不生效，黑底上看不清，
         // 改为文字为空时自己叠一层（颜色完全走 DS token）
         .overlay(alignment: .leading) {
