@@ -382,7 +382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 手动点 ↻（force）始终重算。
             if !force, sig == lastSuggestionSignature { return }
             // 未配置 AI Key：给明确提示，而不是伪装成一条真建议（Mock 那句固定文案没用到真实任务）
-            guard !store.settings.aiAPIKey.isEmpty else {
+            guard !store.settings.aiAPIKey.isEmpty, !store.settings.aiBaseURL.isEmpty else {
                 store.updateAISuggestion("建议: 未配置 AI，前往设置 ⚙ 填入 API Key 即可获得基于今日任务的个性化建议")
                 lastSuggestionSignature = sig   // 提示已展示，相同上下文不重复
                 return
@@ -601,12 +601,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 按配置动态选择 Jira 服务：三项齐全 → Real，否则 → Mock。
     /// 每个轮询周期重新判定，设置面板改完即生效，无需重启（integrations spec delta）。
-    /// AI：填了 Key 就走真实 AI（端点/模型用 AIDefaults 固定值，settings 留作隐藏覆盖口），否则 Mock
+    /// AI：URL + Key 配齐走真实 AI，否则 Mock（模型可留空，用 AIDefaults.model）
     private func currentAIService() -> AIService {
         let s = store.settings
-        guard !s.aiAPIKey.isEmpty else { return mockAIService }
+        guard !s.aiAPIKey.isEmpty, !s.aiBaseURL.isEmpty else { return mockAIService }
         return OpenAIChatAIService(
-            baseURL: s.aiBaseURL.isEmpty ? AIDefaults.baseURL : s.aiBaseURL,
+            baseURL: s.aiBaseURL,
             apiKey: s.aiAPIKey,
             model: s.aiModel.isEmpty ? AIDefaults.model : s.aiModel
         )

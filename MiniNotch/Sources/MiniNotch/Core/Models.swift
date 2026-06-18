@@ -541,7 +541,7 @@ struct AppSettings: Codable, Equatable, Sendable {
     var eveningReportHour = 18
     /// 装饰性动效开关（撒花/烟花/流光）
     var effectsEnabled = true
-    /// AI 配置：OpenAI 兼容端点（Azure Foundry 的 .../openai/v1 也行）；Key 为空走 Mock
+    /// AI 配置：OpenAI 兼容端点 + Key 均在设置面板填写，两项齐全才走真实 AI，否则 Mock
     var aiAPIKey = ""
     var aiBaseURL = ""
     /// 模型/部署名（Azure 上必须是部署名，例如 gpt-5.5）

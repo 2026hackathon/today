@@ -37,14 +37,24 @@ struct SettingsPanel: View {
 
     // MARK: - API 配置
 
+    private var aiConfigured: Bool {
+        !store.settings.aiBaseURL.isEmpty && !store.settings.aiAPIKey.isEmpty
+    }
+
     private var apiSection: some View {
         SettingsSection(label: "API 配置") {
-            SettingsRow(label: "AI API Key") {
+            SettingsRow(label: "AI") { SettingsStatusText(configured: aiConfigured) }
+            SettingsRow(label: "Base URL") {
+                SettingsInputField(
+                    placeholder: "https://xxx.services.ai.azure.com/openai/v1",
+                    text: $store.settings.aiBaseURL
+                )
+            }
+            SettingsRow(label: "API Key") {
                 SettingsInputField(placeholder: "Azure Key", text: $store.settings.aiAPIKey, secure: true)
             }
-            // 端点/模型固定在 AIDefaults（团队共用 Azure 资源），UI 不暴露
             SettingsRow(label: "模型") {
-                Text("\(AIDefaults.model)（内置）· 未配置 Key 时用 Mock")
+                Text("\(store.settings.aiModel.isEmpty ? AIDefaults.model : store.settings.aiModel)（\(store.settings.aiModel.isEmpty ? "默认" : "自定义")）· URL+Key 未配齐时用 Mock")
                     .font(DS.Fonts.compactSide)
                     .foregroundStyle(DS.Colors.text3)
             }

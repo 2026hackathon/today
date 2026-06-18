@@ -387,13 +387,10 @@ final class MockAIService: AIService {
     }
 }
 
-// MARK: - AI 默认配置（hackathon：端点/模型固定，设置页只填 Key）
+// MARK: - AI 默认配置（模型/推理参数；端点与 Key 由用户在设置里填写）
 
 enum AIDefaults {
-    /// 团队共用的 Azure Foundry 资源（OpenAI 兼容 /v1 端点）
-    static let baseURL = "https://murphy-key-resource.services.ai.azure.com/openai/v1"
-    /// 该资源唯一的部署：识图和文本生成都用它。
-    /// 注意：换部署前先确认资源上真的部署了（目录可见 ≠ 已部署，没部署调用 404）
+    /// 默认部署名（settings.aiModel 为空时使用）
     static let model = "gpt-5.5"
     /// 推理力度：low 足够做「明天中午前」类日期换算（实测 ~3s），
     /// minimal 该模型不支持，medium 以上只会拖慢岛上等待动画
