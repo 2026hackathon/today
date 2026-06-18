@@ -42,6 +42,15 @@ struct AgentPanel: View {
         return parts.isEmpty ? "\(store.agentSessions.count) 个会话" : parts.joined(separator: "、")
     }
 
+    // 安装 hook/插件入口只在开发版 Debug 菜单里，发布版不提示它
+    private var agentHint: String {
+        #if DEBUG
+        "在 Claude Code / opencode 里开会话即可显示\n（菜单栏 Debug 可安装 hook / 插件）"
+        #else
+        "在 Claude Code / opencode 里开会话即可显示"
+        #endif
+    }
+
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "cpu")
@@ -50,7 +59,7 @@ struct AgentPanel: View {
             Text("暂无 agent 会话")
                 .font(DS.Fonts.button)
                 .foregroundStyle(DS.Colors.text3)
-            Text("在 Claude Code / opencode 里开会话即可显示\n（菜单栏 Debug 可安装 hook / 插件）")
+            Text(agentHint)
                 .font(DS.Fonts.meta)
                 .foregroundStyle(DS.Colors.text3)
                 .multilineTextAlignment(.center)

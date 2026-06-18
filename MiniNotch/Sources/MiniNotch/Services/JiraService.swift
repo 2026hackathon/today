@@ -92,6 +92,37 @@ final class RealJiraService: JiraService {
         self.apiToken = apiToken
     }
 
+    /// 设置页「测试连接」用：打 `/rest/api/3/myself` 做权威鉴权校验，返回登录账号名。
+    /// 比 fetchAssignedTickets 更可靠——不依赖站点专属字段(customfield_*)/是否有 ticket，
+    /// 只要 URL 对、凭据有效就能拿到当前账号，真正确认「连上了」。
+    func verifyConnection() async throws -> String {
+        guard !baseURL.isEmpty, !email.isEmpty, !apiToken.isEmpty else {
+            throw JiraServiceError.notConfigured
+        }
+        guard let url = URL(string: "\(baseURL)/rest/api/3/myself") else {
+            throw JiraServiceError.notConfigured
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        let credentials = Data("\(email):\(apiToken)".utf8).base64EncodedString()
+        request.setValue("Basic \(credentials)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw JiraServiceError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else { throw JiraServiceError.http(http.statusCode) }
+        // 必须能解出账号对象才算真连上——错误的 URL 即便回 200(登录页 HTML) 也会在此失败
+        guard let me = try? JSONDecoder().decode(Myself.self, from: data) else {
+            throw JiraServiceError.invalidResponse
+        }
+        return me.displayName ?? me.emailAddress ?? "已连接"
+    }
+
+    private struct Myself: Decodable {
+        let displayName: String?
+        let emailAddress: String?
+    }
+
     func fetchAssignedTickets() async throws -> [WorkItem] {
         guard !baseURL.isEmpty, !email.isEmpty, !apiToken.isEmpty else {
             throw JiraServiceError.notConfigured

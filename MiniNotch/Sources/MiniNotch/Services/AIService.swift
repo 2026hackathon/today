@@ -400,6 +400,55 @@ enum AIDefaults {
     static let reasoningEffort = "low"
 }
 
+// MARK: - 端点模型发现（OpenAI 兼容 GET {baseURL}/models）
+
+enum AIModelDiscovery {
+    /// 拉取端点可用模型 id 列表（设置页填好 URL+Key 后供下拉选择）。
+    /// 任何 OpenAI 兼容端点都支持 `GET /models`；失败抛错，UI 回退手填。
+    static func fetchModels(baseURL: String, apiKey: String) async throws -> [String] {
+        guard !apiKey.isEmpty else { throw AIServiceError.notConfigured }
+        let base = baseURL.isEmpty ? AIDefaults.baseURL : baseURL
+        let trimmed = base.hasSuffix("/") ? String(base.dropLast()) : base
+        guard let url = URL(string: "\(trimmed)/models") else { throw AIServiceError.notConfigured }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AIServiceError.invalidResponse
+        }
+        guard let list = try? JSONDecoder().decode(ModelList.self, from: data) else {
+            throw AIServiceError.invalidResponse
+        }
+        // 去重 + 字母序，稳定展示
+        return Array(Set(list.data.map(\.id))).sorted()
+    }
+
+    private struct ModelList: Decodable {
+        struct Model: Decodable { let id: String }
+        let data: [Model]
+    }
+}
+
+// MARK: - 未配置占位实现（发布版无 Key 时用，绝不返回 Mock 演示数据）
+
+/// 发布(Release)版未填 AI Key 时使用：所有调用抛 `notConfigured`，
+/// 由各调用点降级（截图解析给「请配置」提示、报告/建议走规则兜底）。
+/// 取代旧的「无 Key 回退 MockAIService」——正式产品不应出现假数据。
+@MainActor
+final class DisabledAIService: AIService {
+    func parseScreenshots(_ imagesData: [Data]) async throws -> [TodoDraft] { throw AIServiceError.notConfigured }
+    func parseQuickInput(_ text: String) async throws -> TodoDraft { throw AIServiceError.notConfigured }
+    func generateMorningReport(_ ctx: ReportContext) async throws -> String { throw AIServiceError.notConfigured }
+    func generateEveningReport(_ ctx: ReportContext) async throws -> String { throw AIServiceError.notConfigured }
+    func generateDailySuggestion(_ ctx: ReportContext) async throws -> String { throw AIServiceError.notConfigured }
+    func analyzeEmails(_ inputs: [EmailDigestInput]) async throws -> [EmailAnalysis] { throw AIServiceError.notConfigured }
+    func classifyStorageItems(_ items: [StorageItemInput]) async throws -> [StorageClassification] { throw AIServiceError.notConfigured }
+}
+
 // MARK: - OpenAI 兼容真实现（Azure AI Foundry /openai/v1 实测可用）
 
 /// 任何 OpenAI 兼容端点都能用：baseURL 填到 /v1 为止。

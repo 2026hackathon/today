@@ -17,15 +17,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - 服务（换真实现改这里 —— 见 docs/MODULES.md）
 
-    /// Mock 常驻：AI 配置不全时兜底（CODING_GUIDELINES：保留 Mock）
-    private let mockAIService = MockAIService()
     private lazy var captureService: CaptureService = HotkeyCaptureService() // owner C
-    /// Mock 常驻：配置不全时兜底 + Debug「模拟 Jira 新分配」演示
+    // Mock 服务仅供开发版 Debug 菜单演示（模拟 Jira/PR/邮件分配、流光预览等）；
+    // 发布版不打包任何 Mock 数据路径（见 #if DEBUG 门控的 currentAIService / Debug actions）。
+    #if DEBUG
+    private let mockAIService = MockAIService()
     private let mockJiraService = MockJiraService()
-    /// Mock 常驻：配置不全时兜底 + Debug「模拟 PR 新分配」演示
     private let mockGitHubService = MockGitHubService()
-    /// Mock 常驻：邮件未配置时兜底演示 + Debug「模拟新邮件」演示
     private let mockEmailService = MockEmailService()
+    #endif
     /// EventKit 真实日历服务（权限就绪时使用；被拒/失败 → 上层按空列表处理，不用 Mock 填充）
     private let eventKitCalendarService = EventKitCalendarService()
     private lazy var reminderScheduler: ReminderScheduler = TimerReminderScheduler()
@@ -362,7 +362,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 磁盘清理：扫描无需凭证（du 只读），分类复用 currentAIService()（无 Key 时回退规则）
         store.diskCleanupServiceProvider = { [weak self] in
-            self?.currentDiskCleanupService() ?? RealDiskCleanupService(ai: MockAIService())
+            self?.currentDiskCleanupService() ?? RealDiskCleanupService(ai: DisabledAIService())
         }
 
         // 启动后等首轮 Jira/日历同步落地，再生成 Today 底部一句话建议
@@ -604,7 +604,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// AI：填了 Key 就走真实 AI（端点/模型用 AIDefaults 固定值，settings 留作隐藏覆盖口），否则 Mock
     private func currentAIService() -> AIService {
         let s = store.settings
-        guard !s.aiAPIKey.isEmpty else { return mockAIService }
+        guard !s.aiAPIKey.isEmpty else {
+            // 未配置 Key：开发版用 Mock 便于联调；发布版用 DisabledAIService（调用即抛错，
+            // 各处降级为「请配置」提示/规则兜底），绝不返回 Mock 假数据。
+            #if DEBUG
+            return mockAIService
+            #else
+            return DisabledAIService()
+            #endif
+        }
         return OpenAIChatAIService(
             baseURL: s.aiBaseURL.isEmpty ? AIDefaults.baseURL : s.aiBaseURL,
             apiKey: s.aiAPIKey,
@@ -855,14 +863,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "语音速记（⌥Space）", action: #selector(voiceCapture), keyEquivalent: "")
         menu.addItem(withTitle: "快速新建 Todo", action: #selector(quickNew), keyEquivalent: "n")
         menu.addItem(.separator())
+        // Debug 状态菜单仅开发版可见，发布版不出现
+        #if DEBUG
         menu.addItem(buildDebugMenu())
         menu.addItem(.separator())
+        #endif
         menu.addItem(withTitle: "退出 TodoIsland", action: #selector(quitApp), keyEquivalent: "q")
         item.menu = menu
 
         self.statusItem = item
     }
 
+#if DEBUG
     /// 面板里的 Debug 入口（PanelTabBar 瓢虫按钮）：菜单栏图标可能被刘海吞掉，
     /// 这里在鼠标位置直接弹同一份 Debug 菜单
     func showDebugMenuAtMouse() {
@@ -912,6 +924,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.submenu = debugMenu
         return item
     }
+#endif
 
     // MARK: - Agent 会话监控（agent-session spec）
 
@@ -993,7 +1006,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quitApp() { NSApp.terminate(nil) }
 
-    // MARK: - Debug actions
+#if DEBUG
+    // MARK: - Debug actions（仅开发版编译）
 
     /// 走完整 AI 链路（含流光），用 Mock 数据
     /// 优先用真实任务数据预览降落卡（没有未完成个人任务才回退 Mock 草稿）
@@ -1182,4 +1196,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func debugDismiss() { store.dismiss() }
     @objc private func debugReset() { store.resetDemoData() }
+#endif
 }

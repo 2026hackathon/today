@@ -39,14 +39,15 @@ struct SettingsPanel: View {
 
     private var apiSection: some View {
         SettingsSection(label: "API 配置") {
-            SettingsRow(label: "AI API Key") {
-                SettingsInputField(placeholder: "Azure Key", text: $store.settings.aiAPIKey, secure: true)
+            // URL / 模型留空即用内置默认值（占位符即默认）；任何 OpenAI 兼容端点都可填
+            SettingsRow(label: "AI URL") {
+                SettingsInputField(placeholder: AIDefaults.baseURL, text: $store.settings.aiBaseURL)
             }
-            // 端点/模型固定在 AIDefaults（团队共用 Azure 资源），UI 不暴露
+            SettingsRow(label: "AI API Key") {
+                SettingsInputField(placeholder: "API Key", text: $store.settings.aiAPIKey, secure: true)
+            }
             SettingsRow(label: "模型") {
-                Text("\(AIDefaults.model)（内置）· 未配置 Key 时用 Mock")
-                    .font(DS.Fonts.compactSide)
-                    .foregroundStyle(DS.Colors.text3)
+                AIModelRow()
             }
         }
     }
@@ -526,7 +527,7 @@ private struct JiraConnectionTestRow: View {
 
     private enum TestState: Equatable {
         case idle, testing
-        case success(Int)
+        case success(String)
         case failure(String)
     }
     @State private var state: TestState = .idle
@@ -540,10 +541,12 @@ private struct JiraConnectionTestRow: View {
                 ProgressView()
                     .controlSize(.small)
                 Spacer()
-            case .success(let count):
-                Text("✓ 连接正常 · \(count) 个指派 ticket")
+            case .success(let message):
+                Text("✓ \(message)")
                     .font(DS.Fonts.meta)
                     .foregroundStyle(DS.Colors.success)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer(minLength: 8)
             case .failure(let message):
                 Text("✗ \(message)")
@@ -576,10 +579,16 @@ private struct JiraConnectionTestRow: View {
                     email: settings.jiraEmail,
                     apiToken: settings.jiraAPIToken
                 )
-                let tickets = try await service.fetchAssignedTickets()
-                state = .success(tickets.count)
+                // 先用 /myself 做权威鉴权校验（真正确认连上了 + 拿到登录账号）
+                let account = try await service.verifyConnection()
+                // 连上之后顺带给个指派 ticket 数（失败不影响「已连接」判定）
+                let count = (try? await service.fetchAssignedTickets())?.count
+                state = .success(count.map { "已连接：\(account) · \($0) 个指派 ticket" }
+                                 ?? "已连接：\(account)")
             } catch JiraServiceError.notConfigured {
                 state = .failure("请先填写 URL / Email / Token")
+            } catch JiraServiceError.invalidResponse {
+                state = .failure("响应异常，检查 URL 是否为 Jira 站点")
             } catch JiraServiceError.http(let code) {
                 state = .failure(code == 401 || code == 403
                     ? "认证失败 (\(code))，检查 Email/Token"
@@ -824,6 +833,91 @@ private struct SettingsStatusText: View {
 }
 
 // MARK: - 输入框（settings-input：surface1 + border + mono 11pt，宽 180）
+
+// MARK: - AI 模型选择行（填好 URL+Key 后从端点拉取模型列表供下拉选择，拉取失败回退手填）
+
+private struct AIModelRow: View {
+    @EnvironmentObject var store: AppStore
+    @State private var models: [String] = []
+    @State private var loading = false
+    @State private var note: String?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            HStack(spacing: 6) {
+                if models.isEmpty {
+                    // 未拉取/拉取失败：始终保留手填能力，留空即用内置默认模型
+                    SettingsInputField(placeholder: AIDefaults.model, text: $store.settings.aiModel)
+                        .frame(width: 150)
+                } else {
+                    Menu {
+                        ForEach(models, id: \.self) { id in
+                            Button(id) { store.settings.aiModel = id }
+                        }
+                        Divider()
+                        Button("手动输入…") { models = [] }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(store.settings.aiModel.isEmpty ? "选择模型" : store.settings.aiModel)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .foregroundStyle(store.settings.aiModel.isEmpty ? DS.Colors.text3 : DS.Colors.text1)
+                            Spacer(minLength: 2)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 9))
+                                .foregroundStyle(DS.Colors.text3)
+                        }
+                        .font(DS.Fonts.compactSide)
+                        .padding(.horizontal, 9)
+                        .frame(width: 150, height: 24)
+                        .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: DS.Radius.s))
+                        .overlay(RoundedRectangle(cornerRadius: DS.Radius.s)
+                            .strokeBorder(DS.Colors.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                }
+
+                Button(action: fetchModels) {
+                    Image(systemName: loading ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(loading ? DS.Colors.text3 : DS.Colors.accent)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .disabled(loading)
+                .help("从端点拉取可用模型")
+            }
+            if let note {
+                Text(note)
+                    .font(DS.Fonts.meta)
+                    .foregroundStyle(DS.Colors.text3)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+    }
+
+    private func fetchModels() {
+        loading = true
+        note = nil
+        let s = store.settings
+        Task { @MainActor in
+            defer { loading = false }
+            guard !s.aiAPIKey.isEmpty else { note = "请先填写 API Key"; return }
+            do {
+                let list = try await AIModelDiscovery.fetchModels(baseURL: s.aiBaseURL, apiKey: s.aiAPIKey)
+                guard !list.isEmpty else { note = "端点未返回模型，可手动输入"; return }
+                models = list
+                note = "拉取到 \(list.count) 个模型"
+            } catch {
+                note = "拉取失败，可手动输入模型名"
+            }
+        }
+    }
+}
 
 private struct SettingsInputField: View {
     let placeholder: String
