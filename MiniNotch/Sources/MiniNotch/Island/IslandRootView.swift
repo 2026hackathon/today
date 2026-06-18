@@ -101,7 +101,11 @@ struct IslandRootView: View {
                 Task { @MainActor in applyMeasuredHeight(newHeight) }
             }
             .onPreferenceChange(IslandShellSizeKey.self) { size in
-                Task { @MainActor in hitRegion?.islandSize = size }
+                let radius = geo.cornerRadius
+                Task { @MainActor in
+                    hitRegion?.islandSize = size
+                    hitRegion?.cornerRadius = radius   // 命中区按壳体圆角收成 NotchShape 同形
+                }
             }
     }
 

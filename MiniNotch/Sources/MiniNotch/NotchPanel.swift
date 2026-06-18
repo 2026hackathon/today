@@ -4,8 +4,14 @@ import SwiftUI
 /// 灵动岛当前可交互区域 —— 由 `IslandRootView` 实测壳体尺寸后写入，
 /// 供 `PassthroughHostingView` 在命中测试时把"岛体之外的透明区"放行给下方应用。
 /// `islandSize == nil` 表示尚未实测（启动首帧），命中测试回退为整窗捕获（安全侧）。
+///
+/// 注意：glow 溢光（SwiftGlow 的 Metal 层）本身不参与命中（`hitTest → nil` +
+/// `allowsHitTesting(false)`），且 `islandSize` 在挂 glow 之前实测，所以发光态不会
+/// 放大命中区。命中范围只跟随岛体壳体（含圆角）。
 final class IslandHitRegion {
     var islandSize: CGSize?
+    /// 壳体下沿圆角半径（compact 18 / 展开 24），用于把命中区收成与岛体同形的 NotchShape
+    var cornerRadius: CGFloat = 0
     init() {}
 }
 
@@ -13,8 +19,10 @@ final class IslandHitRegion {
 /// 实际渲染所覆盖的矩形接收点击，其余透明区域返回 nil 让点击穿透到下方应用。
 /// （island-shell spec：不打扰的窗口行为 —— 透明区点击穿透）
 final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
-    /// 岛体顶部居中之外再放宽的命中容差，避免贴边一两点像素点不到
-    private let hitSlop: CGFloat = 6
+    /// 贴边命中容差：只向外放宽这么点，避免点岛体边缘差一两像素点不到。
+    /// 必须保持小——它会把岛体下方/两侧的下层应用 UI 一并吞掉（之前 6pt 会在岛体
+    /// 下沿额外留出 ~12pt 死区，挡住紧贴刘海的他应用按钮）。
+    private let hitSlop: CGFloat = 2
 
     private let hitRegion: IslandHitRegion
 
@@ -34,14 +42,33 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
     override func hitTest(_ point: NSPoint) -> NSView? {
         // 尚未实测尺寸 → 维持整窗捕获，绝不误穿透
         guard let size = hitRegion.islandSize else { return super.hitTest(point) }
-        // 岛体顶部贴窗顶、水平居中（IslandRootView 用 alignment: .top）；
-        // hosting view 非 flipped，AppKit 左下原点 → 岛顶在 bounds.maxY
-        let w = size.width + hitSlop * 2
-        let h = size.height + hitSlop * 2
-        let islandRect = NSRect(x: bounds.midX - w / 2, y: bounds.maxY - h, width: w, height: h)
-        // 透明区放行：点击穿透到下方应用/桌面
-        guard islandRect.contains(point) else { return nil }
+        // 命中区按"可见岛体轮廓（NotchShape：上沿直角、下沿圆角）"裁剪，而不是外接矩形。
+        // 这样圆角缺口、岛体下沿之外、以及 glow 光晕区都放行给下方应用，
+        // 紧贴刘海的他应用 UI（标签栏 / 输入框 / 按钮）不再被吞。
+        guard islandHitPath(islandSize: size).contains(point) else { return nil }
         return super.hitTest(point)
+    }
+
+    /// 与可见岛体同形的命中路径（hosting view 非 flipped，AppKit 左下原点 → 岛顶在 bounds.maxY）。
+    /// 仅向外放宽 `hitSlop` 一点点容差；下沿两角按壳体圆角收成弧形。
+    private func islandHitPath(islandSize size: CGSize) -> NSBezierPath {
+        let left = bounds.midX - size.width / 2 - hitSlop
+        let right = bounds.midX + size.width / 2 + hitSlop
+        let top = bounds.maxY                              // 岛顶贴窗顶，不向屏幕外延伸
+        let bottom = bounds.maxY - size.height - hitSlop
+        let r = max(0, min(hitRegion.cornerRadius, (right - left) / 2, (top - bottom) / 2))
+
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: left, y: top))            // 左上（直角）
+        path.line(to: NSPoint(x: right, y: top))           // 上沿 → 右上（直角）
+        path.line(to: NSPoint(x: right, y: bottom + r))    // 右沿下行
+        path.appendArc(withCenter: NSPoint(x: right - r, y: bottom + r),
+                       radius: r, startAngle: 0, endAngle: -90, clockwise: true)   // 右下圆角
+        path.line(to: NSPoint(x: left + r, y: bottom))     // 下沿
+        path.appendArc(withCenter: NSPoint(x: left + r, y: bottom + r),
+                       radius: r, startAngle: -90, endAngle: -180, clockwise: true) // 左下圆角
+        path.close()
+        return path
     }
 }
 

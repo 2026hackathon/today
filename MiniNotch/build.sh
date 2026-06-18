@@ -32,8 +32,8 @@ cp Info.plist "${APP_BUNDLE}/Contents/Info.plist"
 echo -n "APPL????" > "${APP_BUNDLE}/Contents/PkgInfo"
 
 # SwiftPM 资源 bundle 必须一起打进 Resources，否则发布版会丢资源：
-# MiniNotch_MiniNotch.bundle = 品牌 SVG 图标（缺则退化成 SF Symbol）；
-# SwiftGlow_SwiftGlow.bundle = 流光库的 Metal 资源（缺则 aiWorking 流光失效）。
+# MiniNotch_MiniNotch.bundle = 品牌 SVG 图标（缺则退化成 SF Symbol）。
+# 注：glow/流光已改为纯 SwiftUI 自绘，不再依赖第三方 Metal 资源 bundle。
 for bundle in "${BUILD_DIR}"/*.bundle; do
     [ -e "${bundle}" ] && cp -R "${bundle}" "${APP_BUNDLE}/Contents/Resources/"
 done
