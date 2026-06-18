@@ -592,7 +592,7 @@ private struct JiraConnectionTestRow: View {
                 state = .failure("请先填写 URL / Email / Token")
             } catch JiraServiceError.http(let code) {
                 state = .failure(code == 401 || code == 403
-                    ? "认证失败 (\(code))，检查 Email/Token"
+                    ? "认证失败 (\(code))，检查 Email/Token 是否过期"
                     : "请求失败 HTTP \(code)，检查 URL")
             } catch {
                 state = .failure("网络错误：\(error.localizedDescription)")

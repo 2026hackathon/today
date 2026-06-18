@@ -77,6 +77,7 @@ final class MockJiraService: JiraService {
 
 /// 注意端点：Jira Cloud 已下线旧 `GET /rest/api/3/search`，
 /// 现行端点是 `GET /rest/api/3/search/jql`（2026-06 在 wonder.atlassian.net 实测通过）。
+/// `/search/jql` 匿名也可 200+空列表，必须先调 `/myself` 验证 Token。
 @MainActor
 final class RealJiraService: JiraService {
 
@@ -93,9 +94,7 @@ final class RealJiraService: JiraService {
     }
 
     func fetchAssignedTickets() async throws -> [WorkItem] {
-        guard !baseURL.isEmpty, !email.isEmpty, !apiToken.isEmpty else {
-            throw JiraServiceError.notConfigured
-        }
+        try await verifyCredentials()
 
         // 分页拉全（jira-sync-prune spec）：清理逻辑要求结果完整，截断会误删。
         // 5 页 × 50 条封顶，超出属异常工作量，不再翻页。
@@ -123,6 +122,33 @@ final class RealJiraService: JiraService {
         }
     }
 
+    /// 验证 Email + API Token 是否有效（`/search/jql` 不能用来判认证）。
+    private func verifyCredentials() async throws {
+        guard !baseURL.isEmpty, !email.isEmpty, !apiToken.isEmpty else {
+            throw JiraServiceError.notConfigured
+        }
+        guard let url = URL(string: "\(baseURL)/rest/api/3/myself") else {
+            throw JiraServiceError.notConfigured
+        }
+        let (data, response) = try await URLSession.shared.data(for: makeRequest(url: url))
+        guard let http = response as? HTTPURLResponse else { throw JiraServiceError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            let code = http.statusCode
+            NSLog("[Jira] auth verify failed: HTTP \(code) \(String(data: data.prefix(200), encoding: .utf8) ?? "")")
+            throw JiraServiceError.http(code)
+        }
+    }
+
+    private func makeRequest(url: URL, method: String = "GET") -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 15
+        let credentials = Data("\(email):\(apiToken)".utf8).base64EncodedString()
+        request.setValue("Basic \(credentials)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        return request
+    }
+
     /// Story Points 字段 ID —— wonder.atlassian.net 实测为 customfield_10025
     /// （Jira 每个站点不同，换站点用 GET /rest/api/3/field 搜 "Story Points"，
     /// 同时改这里和 Fields.CodingKeys）
@@ -143,13 +169,7 @@ final class RealJiraService: JiraService {
         components?.queryItems = items
         guard let url = components?.url else { throw JiraServiceError.notConfigured }
 
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-        let credentials = Data("\(email):\(apiToken)".utf8).base64EncodedString()
-        request.setValue("Basic \(credentials)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: makeRequest(url: url))
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             NSLog("[Jira] fetch failed: HTTP \(code)")
