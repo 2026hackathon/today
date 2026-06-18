@@ -21,6 +21,7 @@ struct IslandRootView: View {
     /// 壳体动画高度：实测内容自然高度后由弹簧驱动插值。
     /// 不能依赖内容自适应（height=nil 时分支切换没有可插值的量，壳体会闪现替换）
     @State private var measuredContentHeight: CGFloat = 0
+    @State private var goldFlashing = false
 
     private var geo: IslandGeometry {
         IslandGeometry.geometry(
@@ -50,6 +51,25 @@ struct IslandRootView: View {
     }
 
     private var islandBody: some View {
+        ZStack(alignment: .top) {
+            if let glowSpec = IslandNeonGlowSpec.active(
+                effectsEnabled: store.settings.effectsEnabled,
+                islandState: store.islandState,
+                overdueTodosEmpty: store.overdueTodos.isEmpty,
+                debugForceRedGlow: store.debugForceRedGlow,
+                goldFlashing: goldFlashing
+            ) {
+                IslandNeonGlow(cornerRadius: geo.cornerRadius, spec: glowSpec)
+                    .frame(width: geo.width, height: shellHeight)
+                    .allowsHitTesting(false)
+            }
+
+            islandChrome
+        }
+        .modifier(GoldFlashModifier(trigger: store.completionFlash, goldFlashing: $goldFlashing))
+    }
+
+    private var islandChrome: some View {
         content
             // 灵动岛编舞：旧内容速隐 → 壳体拉伸 → 新内容带模糊浮现
             .transition(IslandTransition.content)
@@ -75,19 +95,14 @@ struct IslandRootView: View {
                         .allowsHitTesting(false)
                 }
             }
-            .aiParsingGlow(active: store.islandState == .aiWorking, cornerRadius: geo.cornerRadius)
-            // F-04 三档递进 glow：1h 微弱橙呼吸 → 15min 橙色脉冲 → 过期红色强脉冲
-            .nearGlow(active: store.islandState == .near, cornerRadius: geo.cornerRadius)
-            .warningGlow(
-                active: store.islandState == .urgent && store.overdueTodos.isEmpty && !store.debugForceRedGlow,
-                cornerRadius: geo.cornerRadius
-            )
-            .urgentGlow(
-                active: store.islandState == .urgent && (!store.overdueTodos.isEmpty || store.debugForceRedGlow),
-                cornerRadius: geo.cornerRadius
-            )
-            .goldFlash(trigger: store.completionFlash, cornerRadius: geo.cornerRadius)
-            .shadow(color: .black.opacity(store.islandState.isCompact ? 0 : 0.35), radius: 14, y: 6)
+            .overlay(alignment: .top) {
+                if !store.islandState.isCompact {
+                    NotchShape(cornerRadius: geo.cornerRadius)
+                        .fill(Color.black.opacity(0.001))
+                        .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
+                        .allowsHitTesting(false)
+                }
+            }
             .contentShape(NotchShape(cornerRadius: geo.cornerRadius))
             // 右键退出（重写壳子时从旧 NotchView 丢失过，勿删）
             .contextMenu {
@@ -101,7 +116,7 @@ struct IslandRootView: View {
                 Task { @MainActor in applyMeasuredHeight(newHeight) }
             }
             .onPreferenceChange(IslandShellSizeKey.self) { size in
-                Task { @MainActor in hitRegion?.islandSize = size }
+                Task { @MainActor in hitRegion?.update(size: size) }
             }
     }
 

@@ -3,9 +3,22 @@ import SwiftUI
 
 /// 灵动岛当前可交互区域 —— 由 `IslandRootView` 实测壳体尺寸后写入，
 /// 供 `PassthroughHostingView` 在命中测试时把"岛体之外的透明区"放行给下方应用。
-/// `islandSize == nil` 表示尚未实测（启动首帧），命中测试回退为整窗捕获（安全侧）。
 final class IslandHitRegion {
     var islandSize: CGSize?
+    /// 最近一次有效壳体尺寸；首帧未实测时用于估算命中区（避免整窗误挡）
+    private(set) var lastKnownSize = CGSize(width: 350, height: 40)
+
+    var effectiveSize: CGSize {
+        if let s = islandSize, s.width > 0, s.height > 0 { return s }
+        return lastKnownSize
+    }
+
+    func update(size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        islandSize = size
+        lastKnownSize = size
+    }
+
     init() {}
 }
 
@@ -13,8 +26,10 @@ final class IslandHitRegion {
 /// 实际渲染所覆盖的矩形接收点击，其余透明区域返回 nil 让点击穿透到下方应用。
 /// （island-shell spec：不打扰的窗口行为 —— 透明区点击穿透）
 final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
-    /// 岛体顶部居中之外再放宽的命中容差，避免贴边一两点像素点不到
-    private let hitSlop: CGFloat = 6
+    private let hitSlopX: CGFloat = 6
+    private let hitSlopTop: CGFloat = 4
+    /// 辉光向下溢出，底部不加容差，避免挡下方 IDE tab / 工具栏
+    private let hitSlopBottom: CGFloat = 0
 
     private let hitRegion: IslandHitRegion
 
@@ -32,14 +47,13 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // 尚未实测尺寸 → 维持整窗捕获，绝不误穿透
-        guard let size = hitRegion.islandSize else { return super.hitTest(point) }
-        // 岛体顶部贴窗顶、水平居中（IslandRootView 用 alignment: .top）；
-        // hosting view 非 flipped，AppKit 左下原点 → 岛顶在 bounds.maxY
-        let w = size.width + hitSlop * 2
-        let h = size.height + hitSlop * 2
-        let islandRect = NSRect(x: bounds.midX - w / 2, y: bounds.maxY - h, width: w, height: h)
-        // 透明区放行：点击穿透到下方应用/桌面
+        let size = hitRegion.effectiveSize
+        let w = size.width + hitSlopX * 2
+        let h = size.height + hitSlopTop + hitSlopBottom
+        let x = bounds.midX - w / 2
+        // NSHostingView 为 flipped 坐标（原点在左上）；岛体 alignment: .top → y 从 0 向下
+        let y = isFlipped ? bounds.minY : (bounds.maxY - h)
+        let islandRect = NSRect(x: x, y: y, width: w, height: h)
         guard islandRect.contains(point) else { return nil }
         return super.hitTest(point)
     }
